@@ -1,21 +1,18 @@
 // ==========================================
-// 1. DATA INITIALIZATION (Cấu hình gốc)
+// 1. DATA INITIALIZATION
 // ==========================================
 
-// Cấu hình Ngân hàng
 const BANK_INFO = {
     PERSONAL: {
         name: 'MB NGÂN HÀNG QUÂN ĐỘI',
         accName: 'NGUYEN THI THU TRANG',
         accNum: 'VQRQ0002k28ju',
-        // Dùng template QR có sẵn của MB
         qrString: 'MB-VQRQ0002k28ju' 
     },
     COMPANY: {
         name: 'NGÂN HÀNG ACB',
         accName: 'CÔNG TY TNHH DÁNG TIÊN',
         accNum: '80808668',
-        // Dùng chuẩn VietQR: ACB-<SoTK>
         qrString: 'ACB-80808668'
     }
 };
@@ -29,15 +26,15 @@ const COURT_MAP = {
 };
 
 const DEFAULT_RULES = [
-    { id: 1, group: 'Cầu lông', name: 'Sân Cầu lông (Sáng/Chiều T2-T6)', days: [1,2,3,4,5], start: '06:00', end: '17:30', price: 220000 },
-    { id: 2, group: 'Cầu lông', name: 'Sân Cầu lông (Tối T2-T6)', days: [1,2,3,4,5], start: '17:30', end: '22:00', price: 220000 },
-    { id: 3, group: 'Cầu lông', name: 'Sân Cầu lông (Cuối tuần)', days: [6,0], start: '06:00', end: '22:00', price: 220000 },
-    { id: 4, group: 'Bóng rổ 1/2', name: 'Bóng rổ 1 rổ (T2-T6)', days: [1,2,3,4,5], start: '06:00', end: '22:00', price: 240000 },
-    { id: 5, group: 'Bóng rổ 1/2', name: 'Bóng rổ 1 rổ (Cuối tuần)', days: [6,0], start: '06:00', end: '22:00', price: 270000 },
-    { id: 6, group: 'Bóng rổ Full', name: 'Bóng rổ Full (T2-T6)', days: [1,2,3,4,5], start: '06:00', end: '22:00', price: 450000 },
-    { id: 7, group: 'Bóng rổ Full', name: 'Bóng rổ Full (Cuối tuần)', days: [6,0], start: '06:00', end: '22:00', price: 500000 },
-    { id: 8, group: 'Bóng đá', name: 'Sân Bóng đá (Sáng)', days: [0,1,2,3,4,5,6], start: '06:00', end: '17:00', price: 450000 },
-    { id: 9, group: 'Bóng đá', name: 'Sân Bóng đá (Tối)', days: [0,1,2,3,4,5,6], start: '17:00', end: '22:00', price: 550000 },
+    { id: 1, group: 'Cầu lông', name: 'Sáng/Chiều T2-T6', days: [1,2,3,4,5], start: '06:00', end: '17:30', price: 220000 },
+    { id: 2, group: 'Cầu lông', name: 'Tối T2-T6', days: [1,2,3,4,5], start: '17:30', end: '22:00', price: 220000 },
+    { id: 3, group: 'Cầu lông', name: 'Cuối tuần', days: [6,0], start: '06:00', end: '22:00', price: 220000 },
+    { id: 4, group: 'Bóng rổ 1/2', name: 'T2-T6', days: [1,2,3,4,5], start: '06:00', end: '22:00', price: 240000 },
+    { id: 5, group: 'Bóng rổ 1/2', name: 'Cuối tuần', days: [6,0], start: '06:00', end: '22:00', price: 270000 },
+    { id: 6, group: 'Bóng rổ Full', name: 'T2-T6', days: [1,2,3,4,5], start: '06:00', end: '22:00', price: 450000 },
+    { id: 7, group: 'Bóng rổ Full', name: 'Cuối tuần', days: [6,0], start: '06:00', end: '22:00', price: 500000 },
+    { id: 8, group: 'Bóng đá', name: 'Sáng', days: [0,1,2,3,4,5,6], start: '06:00', end: '17:00', price: 450000 },
+    { id: 9, group: 'Bóng đá', name: 'Tối', days: [0,1,2,3,4,5,6], start: '17:00', end: '22:00', price: 550000 },
 ];
 
 let pricingRules = JSON.parse(localStorage.getItem('pricingRules')) || DEFAULT_RULES;
@@ -60,11 +57,20 @@ function calculateHours(start, end) {
     return diff > 0 ? parseFloat(diff.toFixed(2)) : 0;
 }
 
-function formatDate(d) {
-    return `${d.getDate()}/${d.getMonth()+1}`;
-}
-function formatDateFull(d) {
-    return `${d.getDate()}/${d.getMonth()+1}/${d.getFullYear()}`;
+function formatDate(d) { return `${d.getDate()}/${d.getMonth()+1}`; }
+function formatDateFull(d) { return `${d.getDate()}/${d.getMonth()+1}/${d.getFullYear()}`; }
+
+// Hàm tìm giá thông minh (Core Logic)
+function findBestPrice(group, dayOfWeek, checkTime) {
+    // 1. Lọc các rule thuộc môn thể thao này và áp dụng cho thứ này
+    const candidates = pricingRules.filter(r => r.group === group && r.days.includes(dayOfWeek));
+    
+    // 2. Tìm rule khớp khung giờ nhất
+    // So sánh chuỗi giờ (VD: "17:00" >= "06:00" và "17:00" < "17:30")
+    const match = candidates.find(r => checkTime >= r.start && checkTime < r.end);
+    
+    // Trả về giá, hoặc 0 nếu không tìm thấy
+    return match ? match.price : 0;
 }
 
 // ==========================================
@@ -72,7 +78,7 @@ function formatDateFull(d) {
 // ==========================================
 
 document.addEventListener('DOMContentLoaded', () => {
-    populateFieldSelect();
+    initSelectors();
     renderWeekdays('weekday-container', []);
 
     const today = new Date();
@@ -92,55 +98,33 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    // Field Select Logic
-    document.getElementById('field-select').addEventListener('change', function() {
-        const subSelect = document.getElementById('sub-field-select');
-        subSelect.innerHTML = ''; 
-        const option = this.options[this.selectedIndex];
-
-        if(option.value) {
-            const price = parseInt(option.dataset.price);
-            document.getElementById('unit-price').value = price;
-            document.getElementById('unit-price-display').value = formatVND(price);
-            document.getElementById('time-start').value = option.dataset.start;
-            document.getElementById('time-end').value = option.dataset.end;
-            
-            const days = JSON.parse(option.dataset.days);
-            renderWeekdays('weekday-container', days);
-            updateDuration();
-
-            const ruleId = parseInt(this.value);
-            const rule = pricingRules.find(r => r.id === ruleId);
-            
-            if (rule && COURT_MAP[rule.group]) {
-                COURT_MAP[rule.group].forEach(courtName => {
-                    const opt = document.createElement('option');
-                    opt.value = courtName;
-                    opt.textContent = courtName;
-                    subSelect.appendChild(opt);
-                });
-            } else {
+    // Sport Select Change -> Update Courts
+    document.getElementById('sport-select').addEventListener('change', function() {
+        const courtSelect = document.getElementById('court-select');
+        courtSelect.innerHTML = '<option value="">-- Chọn sân --</option>';
+        
+        const group = this.value;
+        if(group && COURT_MAP[group]) {
+            COURT_MAP[group].forEach(court => {
                 const opt = document.createElement('option');
-                opt.value = "";
-                opt.textContent = "Không có tùy chọn sân";
-                subSelect.appendChild(opt);
-            }
-        } else {
-             subSelect.innerHTML = '<option value="">-- Vui lòng chọn dịch vụ trước --</option>';
+                opt.value = court;
+                opt.textContent = court;
+                courtSelect.appendChild(opt);
+            });
         }
+        updateEstimatedPrice();
     });
 
-    document.getElementById('time-start').addEventListener('change', updateDuration);
-    document.getElementById('time-end').addEventListener('change', updateDuration);
+    document.getElementById('time-start').addEventListener('change', () => { updateDuration(); updateEstimatedPrice(); });
+    document.getElementById('time-end').addEventListener('change', () => { updateDuration(); updateEstimatedPrice(); });
 
     document.getElementById('add-to-bill-btn').addEventListener('click', addToBill);
     
-    // Live update on Discount or VAT change
+    // Live update Payment info
     document.getElementById('discount-val').addEventListener('input', renderInvoice);
     document.getElementById('discount-type').addEventListener('change', renderInvoice);
     document.getElementById('vat-check').addEventListener('change', renderInvoice);
     
-    // Initial Invoice Render (Empty)
     renderInvoice(); 
 
     document.getElementById('print-btn').addEventListener('click', () => {
@@ -152,6 +136,18 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 });
 
+function initSelectors() {
+    const sportSelect = document.getElementById('sport-select');
+    sportSelect.innerHTML = '<option value="">-- Chọn Môn Thể Thao --</option>';
+    // Lấy danh sách nhóm từ COURT_MAP
+    Object.keys(COURT_MAP).forEach(group => {
+        const opt = document.createElement('option');
+        opt.value = group;
+        opt.textContent = group;
+        sportSelect.appendChild(opt);
+    });
+}
+
 function updateDuration() {
     const s = document.getElementById('time-start').value;
     const e = document.getElementById('time-end').value;
@@ -159,25 +155,39 @@ function updateDuration() {
     document.getElementById('calculated-duration').textContent = hours + " giờ";
 }
 
+function updateEstimatedPrice() {
+    const group = document.getElementById('sport-select').value;
+    const startTime = document.getElementById('time-start').value;
+    
+    if(!group || !startTime) {
+        document.getElementById('estimated-price').textContent = "---";
+        return;
+    }
+    
+    // Dự tính giá dựa trên ngày hôm nay
+    const todayDay = new Date().getDay();
+    const price = findBestPrice(group, todayDay, startTime);
+    document.getElementById('estimated-price').textContent = price > 0 ? formatVND(price) + "/h (Hôm nay)" : "Chưa có giá";
+}
+
 function addToBill() {
-    const select = document.getElementById('field-select');
-    if(!select.value) { Swal.fire('Lỗi', 'Vui lòng chọn loại sân/dịch vụ', 'error'); return; }
+    const group = document.getElementById('sport-select').value;
+    const courtName = document.getElementById('court-select').value;
+    
+    if(!group || !courtName) { Swal.fire('Lỗi', 'Vui lòng chọn Môn và Sân', 'error'); return; }
 
     const startDate = new Date(document.getElementById('start-date').value);
     const endDate = new Date(document.getElementById('end-date').value);
-    const unitPrice = parseFloat(document.getElementById('unit-price').value) || 0;
-    const excludeText = document.getElementById('exclude-dates').value;
-    
     const startTime = document.getElementById('time-start').value;
     const endTime = document.getElementById('time-end').value;
+    const excludeText = document.getElementById('exclude-dates').value;
+
     const duration = calculateHours(startTime, endTime);
-    
-    if(duration <= 0) { Swal.fire('Lỗi', 'Giờ kết thúc phải lớn hơn giờ bắt đầu', 'error'); return; }
-    if(isNaN(startDate) || isNaN(endDate) || endDate < startDate) { Swal.fire('Lỗi', 'Ngày không hợp lệ', 'error'); return; }
+    if(duration <= 0) { Swal.fire('Lỗi', 'Giờ kết thúc phải lớn hơn bắt đầu', 'error'); return; }
 
     const selectedDays = [];
     document.querySelectorAll('input[name="weekday"]:checked').forEach(cb => selectedDays.push(parseInt(cb.value)));
-    if(selectedDays.length === 0) { Swal.fire('Lỗi', 'Vui lòng chọn thứ trong tuần', 'error'); return; }
+    if(selectedDays.length === 0) { Swal.fire('Lỗi', 'Chọn thứ trong tuần', 'error'); return; }
 
     const excludes = new Set();
     excludeText.split('\n').forEach(line => {
@@ -186,26 +196,38 @@ function addToBill() {
     });
 
     let count = 0;
+    let totalPriceItem = 0;
     let skippedDates = [];
     let current = new Date(startDate);
     
+    // LOGIC TÍNH TIỀN THÔNG MINH (Iterate days)
     while(current <= endDate) {
-        if(selectedDays.includes(current.getDay())) {
+        const currentDayOfWeek = current.getDay();
+        
+        if(selectedDays.includes(currentDayOfWeek)) {
             if(excludes.has(current.toDateString())) {
                 skippedDates.push(formatDate(current));
             } else {
-                count++;
+                // Tự động tìm giá cho ngày này
+                const priceToday = findBestPrice(group, currentDayOfWeek, startTime);
+                
+                if(priceToday > 0) {
+                    count++;
+                    totalPriceItem += (priceToday * duration);
+                }
             }
         }
         current.setDate(current.getDate() + 1);
     }
 
     if(count === 0 && skippedDates.length === 0) { Swal.fire('Thông báo', 'Không có ngày phù hợp', 'warning'); return; }
+    if(totalPriceItem === 0 && count > 0) { Swal.fire('Cảnh báo', 'Không tìm thấy cấu hình giá cho khung giờ này!', 'warning'); return; }
 
-    const serviceName = select.options[select.selectedIndex].text;
-    const subFieldName = document.getElementById('sub-field-select').value;
-    const itemName = subFieldName ? `${serviceName} [${subFieldName}]` : serviceName;
-    const total = count * duration * unitPrice;
+    // Tạo tên hiển thị
+    const itemName = `${group} [${courtName}]`;
+    
+    // Tính đơn giá trung bình (để hiển thị cho đẹp, dù tính toán là dùng tổng)
+    const avgPrice = totalPriceItem / (count * duration);
 
     billItems.push({
         id: Date.now(),
@@ -214,8 +236,8 @@ function addToBill() {
         skipped: skippedDates,
         count: count,
         duration: duration,
-        price: unitPrice,
-        total: total
+        price: avgPrice, // Hiển thị giá trung bình
+        total: totalPriceItem // Tổng tiền chính xác
     });
 
     renderInvoice();
@@ -227,7 +249,6 @@ function renderInvoice() {
     tbody.innerHTML = '';
     let subTotal = 0;
 
-    // 1. Render Table Rows
     if(billItems.length === 0) {
         document.getElementById('empty-cart-msg').style.display = 'block';
     } else {
@@ -235,6 +256,9 @@ function renderInvoice() {
         billItems.forEach(item => {
             subTotal += item.total;
             let skippedText = item.skipped && item.skipped.length > 0 ? `<br><span class="text-xs text-red-500 italic font-medium">Trừ ngày: ${item.skipped.join(', ')}</span>` : '';
+
+            // Hiển thị đơn giá: Nếu là số lẻ (do trung bình cộng) thì làm tròn
+            const displayPrice = Math.round(item.price);
 
             const tr = document.createElement('tr');
             tr.className = "border-b border-gray-100";
@@ -245,7 +269,7 @@ function renderInvoice() {
                 </td>
                 <td class="p-3 text-center font-medium">${item.count} buổi</td>
                 <td class="p-3 text-center font-medium">${item.duration}h</td>
-                <td class="p-3 text-right text-gray-600">${formatVND(item.price)}</td>
+                <td class="p-3 text-right text-gray-600">~${formatVND(displayPrice)}</td>
                 <td class="p-3 text-right font-bold text-gray-800">${formatVND(item.total)}</td>
                 <td class="p-3 text-center no-print">
                     <button onclick="removeItem(${item.id})" class="text-red-400 hover:text-red-600"><i class="fa-solid fa-xmark"></i></button>
@@ -255,14 +279,13 @@ function renderInvoice() {
         });
     }
 
-    // 2. Calculate Discount
+    // Calc Discount & VAT
     let discount = 0;
     const discVal = parseFloat(document.getElementById('discount-val').value) || 0;
     const discType = document.getElementById('discount-type').value;
     if(discType === 'percent') discount = subTotal * (discVal / 100);
     else discount = discVal;
 
-    // 3. Calculate VAT
     const isVatChecked = document.getElementById('vat-check').checked;
     const preTaxTotal = subTotal - discount;
     let vatAmount = 0;
@@ -278,13 +301,12 @@ function renderInvoice() {
 
     const finalTotal = preTaxTotal + vatAmount;
 
-    // 4. Update UI Values
+    // Update UI
     document.getElementById('sub-total').textContent = formatVND(subTotal);
     document.getElementById('print-discount').textContent = formatVND(discount);
     document.getElementById('vat-amount').textContent = formatVND(vatAmount);
     document.getElementById('final-total').textContent = formatVND(finalTotal);
 
-    // 5. Update Payment Info (QR & Bank Account)
     updatePaymentInfo(finalTotal, isVatChecked);
 }
 
@@ -296,29 +318,19 @@ function updatePaymentInfo(finalTotal, isVatChecked) {
     const qrSection = document.getElementById('qr-section');
 
     let selectedBank;
-
-    // LOGIC ĐIỀU HƯỚNG THANH TOÁN
-    // Nếu có tick VAT VÀ tổng tiền >= 5 triệu -> Chuyển khoản Công ty
     if(isVatChecked && finalTotal >= 5000000) {
         selectedBank = BANK_INFO.COMPANY;
-        // Đổi màu nền để nổi bật việc chuyển khoản công ty
         qrSection.classList.remove('bg-indigo-50', 'border-indigo-200');
         qrSection.classList.add('bg-blue-50', 'border-blue-300');
     } else {
-        // Các trường hợp còn lại: Không VAT hoặc Có VAT nhưng < 5 triệu -> Cá nhân
         selectedBank = BANK_INFO.PERSONAL;
-        // Màu mặc định
         qrSection.classList.add('bg-indigo-50', 'border-indigo-200');
         qrSection.classList.remove('bg-blue-50', 'border-blue-300');
     }
 
-    // Cập nhật text
     bankNameEl.textContent = selectedBank.name;
     accNameEl.textContent = selectedBank.accName;
     accNumEl.textContent = selectedBank.accNum;
-
-    // Tạo link VietQR động
-    // Format: https://img.vietqr.io/image/<BANK_TEMPLATE>-compact.png
     qrImageEl.src = `https://img.vietqr.io/image/${selectedBank.qrString}-compact.png`;
 }
 
@@ -328,9 +340,8 @@ function removeItem(id) {
 }
 
 // ==========================================
-// 4. CONFIGURATION & BACKUP
+// 4. CONFIG & BACKUP (Standard)
 // ==========================================
-// (Phần này giữ nguyên như cũ, chỉ rút gọn để hiển thị)
 function switchTab(tabName) {
     document.querySelectorAll('[id^="tab-booking"], [id^="tab-config"]').forEach(el => el.classList.add('hidden'));
     document.getElementById(`tab-${tabName}`).classList.remove('hidden');
@@ -341,7 +352,6 @@ function switchTab(tabName) {
     if(tabName === 'booking') {
         btnBooking.className = "tab-active py-4 px-1 inline-flex items-center text-sm border-b-2 font-medium cursor-pointer";
         btnConfig.className = "tab-inactive py-4 px-1 inline-flex items-center text-sm border-b-2 border-transparent font-medium cursor-pointer";
-        populateFieldSelect();
     } else {
         btnConfig.className = "tab-active py-4 px-1 inline-flex items-center text-sm border-b-2 font-medium cursor-pointer";
         btnBooking.className = "tab-inactive py-4 px-1 inline-flex items-center text-sm border-b-2 border-transparent font-medium cursor-pointer";
@@ -395,32 +405,6 @@ function renderConfigTable() {
         `;
         tbody.appendChild(tr);
     });
-}
-function populateFieldSelect() {
-    const select = document.getElementById('field-select');
-    const currentVal = select.value;
-    select.innerHTML = '<option value="">-- Chọn dịch vụ --</option>';
-    const groups = {};
-    pricingRules.forEach(rule => {
-        if(!groups[rule.group]) groups[rule.group] = [];
-        groups[rule.group].push(rule);
-    });
-    for(const [groupName, rules] of Object.entries(groups)) {
-        const optgroup = document.createElement('optgroup');
-        optgroup.label = groupName;
-        rules.forEach(rule => {
-            const option = document.createElement('option');
-            option.value = rule.id;
-            option.textContent = rule.name;
-            option.dataset.price = rule.price;
-            option.dataset.start = rule.start;
-            option.dataset.end = rule.end;
-            option.dataset.days = JSON.stringify(rule.days);
-            optgroup.appendChild(option);
-        });
-        select.appendChild(optgroup);
-    }
-    if(currentVal) select.value = currentVal;
 }
 function renderWeekdays(containerId, selectedDays = [], isModal = false) {
     const container = document.getElementById(containerId);
@@ -487,13 +471,11 @@ function saveRule() {
     localStorage.setItem('pricingRules', JSON.stringify(pricingRules));
     renderConfigTable();
     closeModal();
-    populateFieldSelect();
 }
 function deleteRule(id) {
     if(confirm("Xóa quy tắc này?")) {
         pricingRules = pricingRules.filter(r => r.id !== id);
         localStorage.setItem('pricingRules', JSON.stringify(pricingRules));
         renderConfigTable();
-        populateFieldSelect();
     }
 }
