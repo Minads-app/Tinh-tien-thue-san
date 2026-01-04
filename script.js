@@ -2,6 +2,24 @@
 // 1. DATA INITIALIZATION (Cấu hình gốc)
 // ==========================================
 
+// Cấu hình Ngân hàng
+const BANK_INFO = {
+    PERSONAL: {
+        name: 'MB NGÂN HÀNG QUÂN ĐỘI',
+        accName: 'NGUYEN THI THU TRANG',
+        accNum: 'VQRQ0002k28ju',
+        // Dùng template QR có sẵn của MB
+        qrString: 'MB-VQRQ0002k28ju' 
+    },
+    COMPANY: {
+        name: 'NGÂN HÀNG ACB',
+        accName: 'CÔNG TY TNHH DÁNG TIÊN',
+        accNum: '80808668',
+        // Dùng chuẩn VietQR: ACB-<SoTK>
+        qrString: 'ACB-80808668'
+    }
+};
+
 const COURT_MAP = {
     'Bóng đá': ['Sân bóng đá'],
     'Cầu lông': ['Sân cầu lông 1', 'Sân cầu lông 2', 'Sân cầu lông 3', 'Sân cầu lông 4'],
@@ -74,6 +92,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
+    // Field Select Logic
     document.getElementById('field-select').addEventListener('change', function() {
         const subSelect = document.getElementById('sub-field-select');
         subSelect.innerHTML = ''; 
@@ -115,9 +134,15 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('time-end').addEventListener('change', updateDuration);
 
     document.getElementById('add-to-bill-btn').addEventListener('click', addToBill);
+    
+    // Live update on Discount or VAT change
     document.getElementById('discount-val').addEventListener('input', renderInvoice);
     document.getElementById('discount-type').addEventListener('change', renderInvoice);
+    document.getElementById('vat-check').addEventListener('change', renderInvoice);
     
+    // Initial Invoice Render (Empty)
+    renderInvoice(); 
+
     document.getElementById('print-btn').addEventListener('click', () => {
         const note = document.getElementById('inv-note').value;
         document.getElementById('print-note').textContent = note;
@@ -154,7 +179,6 @@ function addToBill() {
     document.querySelectorAll('input[name="weekday"]:checked').forEach(cb => selectedDays.push(parseInt(cb.value)));
     if(selectedDays.length === 0) { Swal.fire('Lỗi', 'Vui lòng chọn thứ trong tuần', 'error'); return; }
 
-    // Parse Excludes
     const excludes = new Set();
     excludeText.split('\n').forEach(line => {
         const parts = line.trim().split('/');
@@ -162,29 +186,21 @@ function addToBill() {
     });
 
     let count = 0;
-    let skippedDates = []; // Lưu danh sách ngày bị trừ
+    let skippedDates = [];
     let current = new Date(startDate);
     
     while(current <= endDate) {
-        // Chỉ xét những ngày đúng thứ trong tuần
         if(selectedDays.includes(current.getDay())) {
             if(excludes.has(current.toDateString())) {
-                // Nếu nằm trong danh sách loại trừ -> Thêm vào skipped
                 skippedDates.push(formatDate(current));
             } else {
-                // Nếu không bị loại trừ -> Tính tiền
                 count++;
             }
         }
         current.setDate(current.getDate() + 1);
     }
 
-    if(count === 0 && skippedDates.length === 0) { 
-        Swal.fire('Thông báo', 'Không có ngày nào phù hợp bộ lọc thứ', 'warning'); return; 
-    }
-    if(count === 0 && skippedDates.length > 0) { 
-        Swal.fire('Thông báo', 'Tất cả các ngày đều rơi vào ngày nghỉ', 'warning'); return; 
-    }
+    if(count === 0 && skippedDates.length === 0) { Swal.fire('Thông báo', 'Không có ngày phù hợp', 'warning'); return; }
 
     const serviceName = select.options[select.selectedIndex].text;
     const subFieldName = document.getElementById('sub-field-select').value;
@@ -195,7 +211,7 @@ function addToBill() {
         id: Date.now(),
         name: itemName,
         desc: `${formatDate(startDate)} - ${formatDate(endDate)} (${startTime}-${endTime})`,
-        skipped: skippedDates, // Lưu mảng ngày nghỉ
+        skipped: skippedDates,
         count: count,
         duration: duration,
         price: unitPrice,
@@ -203,7 +219,7 @@ function addToBill() {
     });
 
     renderInvoice();
-    Swal.fire({ icon: 'success', title: 'Đã thêm vào phiếu', toast: true, position: 'top-end', showConfirmButton: false, timer: 1500 });
+    Swal.fire({ icon: 'success', title: 'Đã thêm', toast: true, position: 'top-end', showConfirmButton: false, timer: 1500 });
 }
 
 function renderInvoice() {
@@ -211,28 +227,21 @@ function renderInvoice() {
     tbody.innerHTML = '';
     let subTotal = 0;
 
+    // 1. Render Table Rows
     if(billItems.length === 0) {
         document.getElementById('empty-cart-msg').style.display = 'block';
     } else {
         document.getElementById('empty-cart-msg').style.display = 'none';
         billItems.forEach(item => {
             subTotal += item.total;
-            
-            // Xử lý hiển thị ngày nghỉ
-            let skippedText = '';
-            if(item.skipped && item.skipped.length > 0) {
-                skippedText = `<br><span class="text-xs text-red-500 italic font-medium">Trừ ngày: ${item.skipped.join(', ')}</span>`;
-            }
+            let skippedText = item.skipped && item.skipped.length > 0 ? `<br><span class="text-xs text-red-500 italic font-medium">Trừ ngày: ${item.skipped.join(', ')}</span>` : '';
 
             const tr = document.createElement('tr');
             tr.className = "border-b border-gray-100";
             tr.innerHTML = `
                 <td class="p-3">
                     <div class="font-bold text-gray-800">${item.name}</div>
-                    <div class="text-xs text-gray-500">
-                        ${item.desc}
-                        ${skippedText}
-                    </div>
+                    <div class="text-xs text-gray-500">${item.desc}${skippedText}</div>
                 </td>
                 <td class="p-3 text-center font-medium">${item.count} buổi</td>
                 <td class="p-3 text-center font-medium">${item.duration}h</td>
@@ -246,16 +255,71 @@ function renderInvoice() {
         });
     }
 
-    document.getElementById('sub-total').textContent = formatVND(subTotal);
-    
+    // 2. Calculate Discount
     let discount = 0;
     const discVal = parseFloat(document.getElementById('discount-val').value) || 0;
     const discType = document.getElementById('discount-type').value;
     if(discType === 'percent') discount = subTotal * (discVal / 100);
     else discount = discVal;
 
+    // 3. Calculate VAT
+    const isVatChecked = document.getElementById('vat-check').checked;
+    const preTaxTotal = subTotal - discount;
+    let vatAmount = 0;
+    
+    if(isVatChecked) {
+        vatAmount = preTaxTotal * 0.10;
+        document.getElementById('vat-amount').style.display = 'block';
+        document.getElementById('vat-label-print').style.display = 'block';
+    } else {
+        document.getElementById('vat-amount').style.display = 'none';
+        document.getElementById('vat-label-print').style.display = 'none';
+    }
+
+    const finalTotal = preTaxTotal + vatAmount;
+
+    // 4. Update UI Values
+    document.getElementById('sub-total').textContent = formatVND(subTotal);
     document.getElementById('print-discount').textContent = formatVND(discount);
-    document.getElementById('final-total').textContent = formatVND(subTotal - discount);
+    document.getElementById('vat-amount').textContent = formatVND(vatAmount);
+    document.getElementById('final-total').textContent = formatVND(finalTotal);
+
+    // 5. Update Payment Info (QR & Bank Account)
+    updatePaymentInfo(finalTotal, isVatChecked);
+}
+
+function updatePaymentInfo(finalTotal, isVatChecked) {
+    const bankNameEl = document.getElementById('bank-name');
+    const accNameEl = document.getElementById('bank-acc-name');
+    const accNumEl = document.getElementById('bank-acc-num');
+    const qrImageEl = document.getElementById('qr-image');
+    const qrSection = document.getElementById('qr-section');
+
+    let selectedBank;
+
+    // LOGIC ĐIỀU HƯỚNG THANH TOÁN
+    // Nếu có tick VAT VÀ tổng tiền >= 5 triệu -> Chuyển khoản Công ty
+    if(isVatChecked && finalTotal >= 5000000) {
+        selectedBank = BANK_INFO.COMPANY;
+        // Đổi màu nền để nổi bật việc chuyển khoản công ty
+        qrSection.classList.remove('bg-indigo-50', 'border-indigo-200');
+        qrSection.classList.add('bg-blue-50', 'border-blue-300');
+    } else {
+        // Các trường hợp còn lại: Không VAT hoặc Có VAT nhưng < 5 triệu -> Cá nhân
+        selectedBank = BANK_INFO.PERSONAL;
+        // Màu mặc định
+        qrSection.classList.add('bg-indigo-50', 'border-indigo-200');
+        qrSection.classList.remove('bg-blue-50', 'border-blue-300');
+    }
+
+    // Cập nhật text
+    bankNameEl.textContent = selectedBank.name;
+    accNameEl.textContent = selectedBank.accName;
+    accNumEl.textContent = selectedBank.accNum;
+
+    // Tạo link VietQR động
+    // Format: https://img.vietqr.io/image/<BANK_TEMPLATE>-compact.png
+    qrImageEl.src = `https://img.vietqr.io/image/${selectedBank.qrString}-compact.png`;
 }
 
 function removeItem(id) {
@@ -266,7 +330,7 @@ function removeItem(id) {
 // ==========================================
 // 4. CONFIGURATION & BACKUP
 // ==========================================
-
+// (Phần này giữ nguyên như cũ, chỉ rút gọn để hiển thị)
 function switchTab(tabName) {
     document.querySelectorAll('[id^="tab-booking"], [id^="tab-config"]').forEach(el => el.classList.add('hidden'));
     document.getElementById(`tab-${tabName}`).classList.remove('hidden');
@@ -284,7 +348,6 @@ function switchTab(tabName) {
         renderConfigTable();
     }
 }
-
 function backupData() {
     const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(pricingRules));
     const dlAnchorElem = document.createElement('a');
@@ -294,7 +357,6 @@ function backupData() {
     dlAnchorElem.click();
     dlAnchorElem.remove();
 }
-
 function restoreData(input) {
     const file = input.files[0];
     if(!file) return;
@@ -313,7 +375,6 @@ function restoreData(input) {
     reader.readAsText(file);
     input.value = '';
 }
-
 function renderConfigTable() {
     const tbody = document.getElementById('config-table-body');
     tbody.innerHTML = '';
@@ -335,18 +396,15 @@ function renderConfigTable() {
         tbody.appendChild(tr);
     });
 }
-
 function populateFieldSelect() {
     const select = document.getElementById('field-select');
     const currentVal = select.value;
     select.innerHTML = '<option value="">-- Chọn dịch vụ --</option>';
-    
     const groups = {};
     pricingRules.forEach(rule => {
         if(!groups[rule.group]) groups[rule.group] = [];
         groups[rule.group].push(rule);
     });
-
     for(const [groupName, rules] of Object.entries(groups)) {
         const optgroup = document.createElement('optgroup');
         optgroup.label = groupName;
@@ -364,7 +422,6 @@ function populateFieldSelect() {
     }
     if(currentVal) select.value = currentVal;
 }
-
 function renderWeekdays(containerId, selectedDays = [], isModal = false) {
     const container = document.getElementById(containerId);
     container.innerHTML = '';
@@ -387,7 +444,6 @@ function renderWeekdays(containerId, selectedDays = [], isModal = false) {
         `;
     });
 }
-
 function closeModal() { document.getElementById('rule-modal').classList.add('hidden'); }
 function addNewRule() {
     currentEditingRuleId = null;
@@ -420,9 +476,7 @@ function saveRule() {
     const end = document.getElementById('rule-end').value;
     const days = [];
     document.querySelectorAll('input[name="modal-weekday"]:checked').forEach(cb => days.push(parseInt(cb.value)));
-
     if(!name || days.length === 0) { Swal.fire('Lỗi', 'Nhập tên và chọn ngày!', 'error'); return; }
-
     if(currentEditingRuleId) {
         const idx = pricingRules.findIndex(r => r.id === currentEditingRuleId);
         if(idx !== -1) pricingRules[idx] = { id: currentEditingRuleId, group, name, days, start, end, price };
