@@ -1,7 +1,26 @@
-body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
-.tab-active { border-bottom: 2px solid #2563eb; color: #2563eb; font-weight: 600; }
-.tab-inactive { color: #6b7280; }
-.tab-inactive:hover { color: #374151; }
+/* --- GLOBAL STYLES --- */
+body { 
+    font-family: 'Inter', sans-serif; 
+    background-color: #f3f4f6; 
+}
+
+/* Tab Navigation Styles */
+.tab-active { 
+    border-bottom: 2px solid #2563eb; 
+    color: #2563eb; 
+    font-weight: 600; 
+    cursor: pointer;
+}
+.tab-inactive { 
+    color: #6b7280; 
+    border-bottom: 2px solid transparent;
+    font-weight: 500;
+    cursor: pointer;
+}
+.tab-inactive:hover { 
+    color: #374151; 
+    border-color: #e5e7eb;
+}
 
 /* Custom Checkbox Style for Weekdays */
 .weekday-check:checked + div {
@@ -13,20 +32,47 @@ body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
     display: inline-block;
 }
 
-/* Print Styles */
-@media print {
-    .no-print { display: none !important; }
-    .print-only { display: block !important; }
-    body, #invoice-area { background-color: white; margin: 0; padding: 0; width: 100%; }
-    .shadow-lg, .shadow-sm { box-shadow: none !important; }
-    .border { border: 1px solid #ddd !important; }
-    #main-nav { display: none; }
-    /* Ensure colors print correctly */
-    * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-}
-
 /* Custom Scrollbar */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: #f1f1f1; }
 ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+/* --- PRINT STYLES (Quan trọng cho in phiếu) --- */
+@media print {
+    /* Ẩn tất cả các phần không cần thiết */
+    .no-print, 
+    #main-nav, 
+    #tab-config, 
+    button, 
+    .swal2-container { 
+        display: none !important; 
+    }
+
+    /* Hiển thị phần cần in */
+    .print-only { 
+        display: block !important; 
+    }
+
+    /* Reset background và margin để in full trang A4/A5 */
+    body, #invoice-area { 
+        background-color: white !important; 
+        margin: 0 !important; 
+        padding: 0 !important; 
+        width: 100% !important; 
+        box-shadow: none !important;
+        border: none !important;
+    }
+
+    /* Đảm bảo màu sắc in ra đúng (không bị trắng đen) */
+    * { 
+        -webkit-print-color-adjust: exact !important; 
+        print-color-adjust: exact !important; 
+    }
+
+    /* Tinh chỉnh font chữ khi in */
+    body {
+        font-size: 12pt;
+        color: #000;
+    }
+}
