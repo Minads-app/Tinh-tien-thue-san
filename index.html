@@ -173,60 +173,70 @@
                     </div>
 
                     <div class="mt-6 border-t pt-4">
-                        <div class="flex justify-end">
-                            <div class="w-full md:w-1/2 space-y-2">
-                                <div class="flex justify-between text-gray-600 text-sm">
-                                    <span>Tổng cộng:</span>
-                                    <span class="font-medium" id="sub-total">0 ₫</span>
-                                </div>
-                                <div class="flex justify-between items-center text-gray-600 text-sm no-print">
-                                    <span>Giảm giá:</span>
-                                    <div class="flex items-center space-x-1">
-                                        <select id="discount-type" class="border rounded px-1 py-0.5 text-xs bg-white"><option value="money">VNĐ</option><option value="percent">%</option></select>
-                                        <input type="number" id="discount-val" class="w-20 border rounded text-right px-1 py-0.5 text-xs" placeholder="0">
-                                    </div>
-                                </div>
-                                <div class="flex justify-between text-gray-600 text-sm print-only">
-                                    <span>Giảm giá:</span>
-                                    <span id="print-discount">0 ₫</span>
-                                </div>
-                                <div class="flex justify-between text-xl font-bold text-blue-800 border-t border-dashed pt-2">
-                                    <span>Thanh toán:</span>
-                                    <span id="final-total">0 ₫</span>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6 pt-4 border-t border-gray-200">
-                             <div>
-                                <p class="text-xs font-bold text-gray-600 uppercase">Hình thức thanh toán</p>
-                                <div class="flex gap-3 mt-1 text-sm no-print">
-                                    <label><input type="radio" name="pay-method" value="Tiền mặt" checked> TM</label>
-                                    <label><input type="radio" name="pay-method" value="Chuyển khoản"> CK</label>
-                                </div>
-                                <p class="text-sm mt-1 print-only" id="print-pay-method">Tiền mặt</p>
-                             </div>
-                             <div>
-                                <p class="text-xs font-bold text-gray-600 uppercase">Ghi chú</p>
-                                <textarea id="inv-note" class="w-full border rounded p-1 text-sm mt-1 h-12 no-print" placeholder="..."></textarea>
-                                <p id="print-note" class="text-sm italic text-gray-600 print-only"></p>
-                             </div>
-                        </div>
+    <div class="flex justify-end">
+        <div class="w-full md:w-1/2 space-y-2">
+            <div class="flex justify-between text-gray-600 text-sm">
+                <span>Tổng tiền hàng:</span>
+                <span class="font-medium" id="sub-total">0 ₫</span>
+            </div>
 
-                        <div id="qr-section" class="mt-6 border-2 border-dashed border-indigo-200 bg-indigo-50 p-4 rounded-lg flex items-center justify-between">
-                            <div class="space-y-1">
-                                <p class="text-xs font-bold text-indigo-800 uppercase mb-2">Thông tin chuyển khoản</p>
-                                <p class="text-sm font-bold text-gray-800">MB NGÂN HÀNG QUÂN ĐỘI</p>
-                                <p class="text-sm text-gray-700">Tên TK: <span class="font-bold">NGUYEN THI THU TRANG</span></p>
-                                <p class="text-sm text-gray-700">Số TK: <span class="font-mono font-bold text-indigo-700 text-lg">VQRQ0002k28ju</span></p>
-                                <p class="text-xs text-gray-500 italic mt-1">Vui lòng ghi nội dung: Tên khách + SĐT</p>
-                            </div>
-                            <div class="bg-white p-2 rounded shadow-sm border">
-                                <img src="https://img.vietqr.io/image/MB-VQRQ0002k28ju-compact.png" alt="QR Code Payment" class="w-32 h-32 object-contain">
-                            </div>
-                        </div>
-                    </div>
+            <div class="flex justify-between items-center text-gray-600 text-sm no-print">
+                <span>Giảm giá:</span>
+                <div class="flex items-center space-x-1">
+                    <select id="discount-type" class="border rounded px-1 py-0.5 text-xs bg-white"><option value="money">VNĐ</option><option value="percent">%</option></select>
+                    <input type="number" id="discount-val" class="w-20 border rounded text-right px-1 py-0.5 text-xs" placeholder="0">
                 </div>
+            </div>
+            <div class="flex justify-between text-gray-600 text-sm print-only">
+                <span>Giảm giá:</span>
+                <span id="print-discount">0 ₫</span>
+            </div>
+
+            <div class="flex justify-between items-center py-1">
+                <label class="inline-flex items-center cursor-pointer no-print">
+                    <input type="checkbox" id="vat-check" class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 h-4 w-4">
+                    <span class="ml-2 text-sm font-bold text-indigo-700">Lấy hóa đơn VAT (+10%)</span>
+                </label>
+                <span class="text-sm font-bold text-indigo-700 print-only" id="vat-label-print" style="display:none">Thuế VAT (10%)</span>
+                <span class="text-sm font-bold text-indigo-700" id="vat-amount" style="display:none">0 ₫</span>
+            </div>
+
+            <div class="flex justify-between text-xl font-bold text-blue-800 border-t border-dashed pt-2">
+                <span>Thanh toán:</span>
+                <span id="final-total">0 ₫</span>
+            </div>
+        </div>
+    </div>
+    
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6 pt-4 border-t border-gray-200">
+            <div>
+            <p class="text-xs font-bold text-gray-600 uppercase">Hình thức thanh toán</p>
+            <div class="flex gap-3 mt-1 text-sm no-print">
+                <label><input type="radio" name="pay-method" value="Tiền mặt" checked> TM</label>
+                <label><input type="radio" name="pay-method" value="Chuyển khoản"> CK</label>
+            </div>
+            <p class="text-sm mt-1 print-only" id="print-pay-method">Tiền mặt</p>
+            </div>
+            <div>
+            <p class="text-xs font-bold text-gray-600 uppercase">Ghi chú</p>
+            <textarea id="inv-note" class="w-full border rounded p-1 text-sm mt-1 h-12 no-print" placeholder="..."></textarea>
+            <p id="print-note" class="text-sm italic text-gray-600 print-only"></p>
+            </div>
+    </div>
+
+    <div id="qr-section" class="mt-6 border-2 border-dashed border-indigo-200 bg-indigo-50 p-4 rounded-lg flex items-center justify-between transition-colors duration-300">
+        <div class="space-y-1">
+            <p class="text-xs font-bold text-indigo-800 uppercase mb-2">Thông tin chuyển khoản</p>
+            <p class="text-sm font-bold text-gray-800" id="bank-name">MB NGÂN HÀNG QUÂN ĐỘI</p>
+            <p class="text-sm text-gray-700">Tên TK: <span class="font-bold" id="bank-acc-name">NGUYEN THI THU TRANG</span></p>
+            <p class="text-sm text-gray-700">Số TK: <span class="font-mono font-bold text-indigo-700 text-lg" id="bank-acc-num">VQRQ0002k28ju</span></p>
+            <p class="text-xs text-gray-500 italic mt-1">Nội dung: Tên khách + SĐT</p>
+        </div>
+        <div class="bg-white p-2 rounded shadow-sm border">
+            <img id="qr-image" src="" alt="QR Code" class="w-32 h-32 object-contain">
+        </div>
+    </div>
+</div>
 
                 <div class="mt-4 flex justify-end gap-3 no-print">
                     <button onclick="window.location.reload()" class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded text-sm font-medium">Làm mới</button>
@@ -332,4 +342,5 @@
     <script src="script.js"></script>
 </body>
 </html>
+
 
