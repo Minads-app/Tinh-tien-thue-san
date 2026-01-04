@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Quản Lý Sân & Tính Tiền - V3.2 (Payment Update)</title>
+    <title>Quản Lý Sân & Tính Tiền - V4.0 (Smart Auto-Pricing)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -53,40 +53,40 @@
                     </h2>
                     
                     <div class="space-y-3">
-                        <div>
-                            <label class="text-xs font-semibold text-gray-500 uppercase">Loại sân & Dịch vụ</label>
-                            <select id="field-select" class="w-full mt-1 px-3 py-2 border rounded bg-gray-50 text-sm focus:border-indigo-500 outline-none">
-                                <option value="">-- Chọn dịch vụ --</option>
-                            </select>
-                        </div>
-                        
-                        <div class="mt-3">
-                            <label class="text-xs font-semibold text-gray-500 uppercase">Chọn Sân Số / Tên Sân</label>
-                            <select id="sub-field-select" class="w-full mt-1 px-3 py-2 border rounded bg-white text-sm focus:border-indigo-500 outline-none font-medium text-gray-700">
-                                <option value="">-- Vui lòng chọn dịch vụ trước --</option>
-                            </select>
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <label class="text-xs font-semibold text-gray-500 uppercase">Môn thể thao</label>
+                                <select id="sport-select" class="w-full mt-1 px-3 py-2 border rounded bg-gray-50 text-sm focus:border-indigo-500 outline-none font-bold text-indigo-700">
+                                    <option value="">-- Chọn --</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="text-xs font-semibold text-gray-500 uppercase">Chọn Sân</label>
+                                <select id="court-select" class="w-full mt-1 px-3 py-2 border rounded bg-white text-sm focus:border-indigo-500 outline-none">
+                                    <option value="">-- Chọn sân --</option>
+                                </select>
+                            </div>
                         </div>
 
                         <div class="grid grid-cols-2 gap-3">
                             <div>
                                 <label class="text-xs font-semibold text-gray-500 uppercase">Giờ bắt đầu</label>
-                                <input type="time" id="time-start" class="w-full mt-1 px-2 py-2 border rounded text-sm font-mono">
+                                <input type="time" id="time-start" class="w-full mt-1 px-2 py-2 border rounded text-sm font-mono" value="17:00">
                             </div>
                             <div>
                                 <label class="text-xs font-semibold text-gray-500 uppercase">Giờ kết thúc</label>
-                                <input type="time" id="time-end" class="w-full mt-1 px-2 py-2 border rounded text-sm font-mono">
+                                <input type="time" id="time-end" class="w-full mt-1 px-2 py-2 border rounded text-sm font-mono" value="18:00">
                             </div>
                         </div>
 
                         <div class="bg-indigo-50 p-2 rounded border border-indigo-200 text-xs text-indigo-800 flex justify-between items-center">
-                            <span><i class="fa-regular fa-clock mr-1"></i> Thời gian thuê:</span>
+                            <span><i class="fa-regular fa-clock mr-1"></i> Thời gian:</span>
                             <span id="calculated-duration" class="font-bold">0 giờ</span>
                         </div>
                         
-                        <div>
-                            <label class="text-xs font-semibold text-gray-500 uppercase">Đơn giá (VNĐ/Giờ)</label>
-                            <input type="text" id="unit-price-display" class="w-full mt-1 px-3 py-2 border rounded text-right font-mono font-bold text-indigo-700 bg-gray-50" placeholder="0" readonly>
-                            <input type="hidden" id="unit-price">
+                        <div class="bg-green-50 p-2 rounded border border-green-200 text-xs text-green-800 flex justify-between items-center">
+                            <span><i class="fa-solid fa-money-bill-wave mr-1"></i> Đơn giá ước tính:</span>
+                            <span id="estimated-price" class="font-bold">---</span>
                         </div>
 
                         <div class="grid grid-cols-2 gap-3">
@@ -102,13 +102,12 @@
 
                         <div>
                             <label class="text-xs font-semibold text-gray-500 uppercase mb-2 block">Thứ trong tuần</label>
-                            <div class="flex flex-wrap gap-2" id="weekday-container">
-                                </div>
+                            <div class="flex flex-wrap gap-2" id="weekday-container"></div>
                         </div>
 
                          <div>
                              <label class="text-xs font-semibold text-gray-500 uppercase">Ngày nghỉ (DD/MM/YYYY)</label>
-                             <textarea id="exclude-dates" rows="2" class="w-full px-3 py-1 border rounded text-xs mt-1 font-mono" placeholder="Ví dụ: 14/02/2026&#10;21/02/2026"></textarea>
+                             <textarea id="exclude-dates" rows="2" class="w-full px-3 py-1 border rounded text-xs mt-1 font-mono" placeholder="Ví dụ: 14/02/2026"></textarea>
                          </div>
 
                         <button id="add-to-bill-btn" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded shadow transition flex justify-center items-center">
@@ -120,7 +119,6 @@
 
             <div class="lg:col-span-7 flex flex-col h-full">
                 <div class="bg-white p-6 md:p-8 rounded-lg shadow-lg flex-grow flex flex-col border border-gray-200 relative" id="invoice-area">
-                    
                     <div class="absolute inset-0 flex items-center justify-center opacity-5 pointer-events-none no-print">
                         <i class="fa-solid fa-futbol text-9xl"></i>
                     </div>
@@ -128,8 +126,8 @@
                     <div class="border-b-2 border-gray-800 pb-4 mb-4 flex justify-between items-start">
                         <div>
                             <h1 class="text-2xl md:text-3xl font-bold text-gray-800 uppercase tracking-wide">Phiếu Thanh Toán</h1>
-                            <p class="text-gray-500 text-sm mt-1">Sân Thể Thao HBA Sport Center Minh Khai</p>
-                            <p class="text-xs text-gray-400">ĐC: 28 Ngô Thời Nhiệm, P. Xuân Hòa, TP. Hồ Chí Minh (P. Võ Thị Sáu, Q3 cũ) </p>
+                            <p class="text-gray-500 text-sm mt-1">Sân Thể Thao ABC Sport Center</p>
+                            <p class="text-xs text-gray-400">ĐC: 123 Đường Sân Vận Động, TP.HCM</p>
                         </div>
                         <div class="text-right">
                             <p class="text-sm text-gray-600">Ngày: <span id="inv-date" class="font-medium">--/--/----</span></p>
@@ -159,84 +157,76 @@
                                     <th class="p-3">Dịch vụ / Thời gian</th>
                                     <th class="p-3 text-center">SL</th>
                                     <th class="p-3 text-center">Số giờ</th>
-                                    <th class="p-3 text-right">Đơn giá/h</th>
+                                    <th class="p-3 text-right">Đơn giá</th>
                                     <th class="p-3 text-right">Thành tiền</th>
                                     <th class="p-3 text-center no-print" width="40"></th>
                                 </tr>
                             </thead>
-                            <tbody id="invoice-items">
-                                </tbody>
+                            <tbody id="invoice-items"></tbody>
                         </table>
-                        <div id="empty-cart-msg" class="text-center py-10 text-gray-400 italic">
-                            Chưa có dịch vụ nào.
-                        </div>
+                        <div id="empty-cart-msg" class="text-center py-10 text-gray-400 italic">Chưa có dịch vụ nào.</div>
                     </div>
 
                     <div class="mt-6 border-t pt-4">
-    <div class="flex justify-end">
-        <div class="w-full md:w-1/2 space-y-2">
-            <div class="flex justify-between text-gray-600 text-sm">
-                <span>Tổng tiền hàng:</span>
-                <span class="font-medium" id="sub-total">0 ₫</span>
-            </div>
+                        <div class="flex justify-end">
+                            <div class="w-full md:w-1/2 space-y-2">
+                                <div class="flex justify-between text-gray-600 text-sm">
+                                    <span>Tổng tiền hàng:</span><span class="font-medium" id="sub-total">0 ₫</span>
+                                </div>
+                                <div class="flex justify-between items-center text-gray-600 text-sm no-print">
+                                    <span>Giảm giá:</span>
+                                    <div class="flex items-center space-x-1">
+                                        <select id="discount-type" class="border rounded px-1 py-0.5 text-xs bg-white"><option value="money">VNĐ</option><option value="percent">%</option></select>
+                                        <input type="number" id="discount-val" class="w-20 border rounded text-right px-1 py-0.5 text-xs" placeholder="0">
+                                    </div>
+                                </div>
+                                <div class="flex justify-between text-gray-600 text-sm print-only">
+                                    <span>Giảm giá:</span><span id="print-discount">0 ₫</span>
+                                </div>
+                                <div class="flex justify-between items-center py-1">
+                                    <label class="inline-flex items-center cursor-pointer no-print">
+                                        <input type="checkbox" id="vat-check" class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 h-4 w-4">
+                                        <span class="ml-2 text-sm font-bold text-indigo-700">Lấy hóa đơn VAT (+10%)</span>
+                                    </label>
+                                    <span class="text-sm font-bold text-indigo-700 print-only" id="vat-label-print" style="display:none">Thuế VAT (10%)</span>
+                                    <span class="text-sm font-bold text-indigo-700" id="vat-amount" style="display:none">0 ₫</span>
+                                </div>
+                                <div class="flex justify-between text-xl font-bold text-blue-800 border-t border-dashed pt-2">
+                                    <span>Thanh toán:</span><span id="final-total">0 ₫</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6 pt-4 border-t border-gray-200">
+                             <div>
+                                <p class="text-xs font-bold text-gray-600 uppercase">Hình thức thanh toán</p>
+                                <div class="flex gap-3 mt-1 text-sm no-print">
+                                    <label><input type="radio" name="pay-method" value="Tiền mặt" checked> TM</label>
+                                    <label><input type="radio" name="pay-method" value="Chuyển khoản"> CK</label>
+                                </div>
+                                <p class="text-sm mt-1 print-only" id="print-pay-method">Tiền mặt</p>
+                             </div>
+                             <div>
+                                <p class="text-xs font-bold text-gray-600 uppercase">Ghi chú</p>
+                                <textarea id="inv-note" class="w-full border rounded p-1 text-sm mt-1 h-12 no-print" placeholder="..."></textarea>
+                                <p id="print-note" class="text-sm italic text-gray-600 print-only"></p>
+                             </div>
+                        </div>
 
-            <div class="flex justify-between items-center text-gray-600 text-sm no-print">
-                <span>Giảm giá:</span>
-                <div class="flex items-center space-x-1">
-                    <select id="discount-type" class="border rounded px-1 py-0.5 text-xs bg-white"><option value="money">VNĐ</option><option value="percent">%</option></select>
-                    <input type="number" id="discount-val" class="w-20 border rounded text-right px-1 py-0.5 text-xs" placeholder="0">
+                        <div id="qr-section" class="mt-6 border-2 border-dashed border-indigo-200 bg-indigo-50 p-4 rounded-lg flex items-center justify-between transition-colors duration-300">
+                            <div class="space-y-1">
+                                <p class="text-xs font-bold text-indigo-800 uppercase mb-2">Thông tin chuyển khoản</p>
+                                <p class="text-sm font-bold text-gray-800" id="bank-name">---</p>
+                                <p class="text-sm text-gray-700">Tên TK: <span class="font-bold" id="bank-acc-name">---</span></p>
+                                <p class="text-sm text-gray-700">Số TK: <span class="font-mono font-bold text-indigo-700 text-lg" id="bank-acc-num">---</span></p>
+                                <p class="text-xs text-gray-500 italic mt-1">Nội dung: Tên khách + SĐT</p>
+                            </div>
+                            <div class="bg-white p-2 rounded shadow-sm border">
+                                <img id="qr-image" src="" alt="QR Code" class="w-32 h-32 object-contain">
+                            </div>
+                        </div>
+                    </div>
                 </div>
-            </div>
-            <div class="flex justify-between text-gray-600 text-sm print-only">
-                <span>Giảm giá:</span>
-                <span id="print-discount">0 ₫</span>
-            </div>
-
-            <div class="flex justify-between items-center py-1">
-                <label class="inline-flex items-center cursor-pointer no-print">
-                    <input type="checkbox" id="vat-check" class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 h-4 w-4">
-                    <span class="ml-2 text-sm font-bold text-indigo-700">Lấy hóa đơn VAT (+10%)</span>
-                </label>
-                <span class="text-sm font-bold text-indigo-700 print-only" id="vat-label-print" style="display:none">Thuế VAT (10%)</span>
-                <span class="text-sm font-bold text-indigo-700" id="vat-amount" style="display:none">0 ₫</span>
-            </div>
-
-            <div class="flex justify-between text-xl font-bold text-blue-800 border-t border-dashed pt-2">
-                <span>Thanh toán:</span>
-                <span id="final-total">0 ₫</span>
-            </div>
-        </div>
-    </div>
-    
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6 pt-4 border-t border-gray-200">
-            <div>
-            <p class="text-xs font-bold text-gray-600 uppercase">Hình thức thanh toán</p>
-            <div class="flex gap-3 mt-1 text-sm no-print">
-                <label><input type="radio" name="pay-method" value="Tiền mặt" checked> TM</label>
-                <label><input type="radio" name="pay-method" value="Chuyển khoản"> CK</label>
-            </div>
-            <p class="text-sm mt-1 print-only" id="print-pay-method">Tiền mặt</p>
-            </div>
-            <div>
-            <p class="text-xs font-bold text-gray-600 uppercase">Ghi chú</p>
-            <textarea id="inv-note" class="w-full border rounded p-1 text-sm mt-1 h-12 no-print" placeholder="..."></textarea>
-            <p id="print-note" class="text-sm italic text-gray-600 print-only"></p>
-            </div>
-    </div>
-
-    <div id="qr-section" class="mt-6 border-2 border-dashed border-indigo-200 bg-indigo-50 p-4 rounded-lg flex items-center justify-between transition-colors duration-300">
-        <div class="space-y-1">
-            <p class="text-xs font-bold text-indigo-800 uppercase mb-2">Thông tin chuyển khoản</p>
-            <p class="text-sm font-bold text-gray-800" id="bank-name">MB NGÂN HÀNG QUÂN ĐỘI</p>
-            <p class="text-sm text-gray-700">Tên TK: <span class="font-bold" id="bank-acc-name">NGUYEN THI THU TRANG</span></p>
-            <p class="text-sm text-gray-700">Số TK: <span class="font-mono font-bold text-indigo-700 text-lg" id="bank-acc-num">VQRQ0002k28ju</span></p>
-            <p class="text-xs text-gray-500 italic mt-1">Nội dung: Tên khách + SĐT</p>
-        </div>
-        <div class="bg-white p-2 rounded shadow-sm border">
-            <img id="qr-image" src="" alt="QR Code" class="w-32 h-32 object-contain">
-        </div>
-    </div>
-</div>
 
                 <div class="mt-4 flex justify-end gap-3 no-print">
                     <button onclick="window.location.reload()" class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded text-sm font-medium">Làm mới</button>
@@ -249,39 +239,31 @@
 
         <div id="tab-config" class="hidden">
             <div class="bg-white p-6 rounded-lg shadow-sm">
-                
                 <div class="mb-6 p-4 bg-gray-50 rounded border border-gray-200 flex justify-between items-center">
                     <div>
                         <h3 class="font-bold text-gray-700">Sao lưu dữ liệu</h3>
-                        <p class="text-xs text-gray-500">Tải xuống hoặc khôi phục cấu hình bảng giá từ file.</p>
+                        <p class="text-xs text-gray-500">Tải xuống hoặc khôi phục cấu hình.</p>
                     </div>
                     <div class="flex gap-2">
-                        <button onclick="backupData()" class="bg-indigo-100 text-indigo-700 hover:bg-indigo-200 px-3 py-2 rounded text-sm font-medium border border-indigo-200">
-                            <i class="fa-solid fa-download mr-1"></i> Tải về (.json)
-                        </button>
-                        <button onclick="document.getElementById('restore-input').click()" class="bg-white text-gray-700 hover:bg-gray-100 px-3 py-2 rounded text-sm font-medium border border-gray-300">
-                            <i class="fa-solid fa-upload mr-1"></i> Khôi phục
-                        </button>
+                        <button onclick="backupData()" class="bg-indigo-100 text-indigo-700 hover:bg-indigo-200 px-3 py-2 rounded text-sm font-medium border border-indigo-200"><i class="fa-solid fa-download mr-1"></i> Tải về (.json)</button>
+                        <button onclick="document.getElementById('restore-input').click()" class="bg-white text-gray-700 hover:bg-gray-100 px-3 py-2 rounded text-sm font-medium border border-gray-300"><i class="fa-solid fa-upload mr-1"></i> Khôi phục</button>
                         <input type="file" id="restore-input" accept=".json" class="hidden" onchange="restoreData(this)">
                     </div>
                 </div>
 
                 <div class="flex justify-between items-center mb-6 border-b pb-4">
-                    <h2 class="text-xl font-bold text-gray-800"><i class="fa-solid fa-tags mr-2 text-indigo-600"></i>Cấu Hình Bảng Giá</h2>
-                    <button onclick="addNewRule()" class="bg-green-600 text-white px-4 py-2 rounded text-sm font-medium hover:bg-green-700">
-                        <i class="fa-solid fa-plus mr-1"></i> Thêm Quy Tắc Mới
-                    </button>
+                    <h2 class="text-xl font-bold text-gray-800">Cấu Hình Bảng Giá</h2>
+                    <button onclick="addNewRule()" class="bg-green-600 text-white px-4 py-2 rounded text-sm font-medium hover:bg-green-700"><i class="fa-solid fa-plus mr-1"></i> Thêm Quy Tắc Mới</button>
                 </div>
-
                 <div class="overflow-x-auto">
                     <table class="w-full text-left text-sm border-collapse">
                         <thead>
                             <tr class="bg-gray-100 text-gray-700 border-b">
-                                <th class="p-3 border">Nhóm Dịch Vụ</th>
-                                <th class="p-3 border">Tên Hiển Thị (Trên Phiếu)</th>
-                                <th class="p-3 border">Áp Dụng Thứ</th>
+                                <th class="p-3 border">Môn Thể Thao</th>
+                                <th class="p-3 border">Tên Cấu Hình</th>
+                                <th class="p-3 border">Thứ Áp Dụng</th>
                                 <th class="p-3 border">Khung Giờ</th>
-                                <th class="p-3 border text-right">Đơn Giá / Giờ</th>
+                                <th class="p-3 border text-right">Đơn Giá / h</th>
                                 <th class="p-3 border text-center">Hành động</th>
                             </tr>
                         </thead>
@@ -298,7 +280,7 @@
             <h3 class="text-lg font-bold mb-4" id="modal-title">Thêm/Sửa Quy Tắc</h3>
             <div class="space-y-3">
                 <div>
-                    <label class="block text-xs font-bold text-gray-600">Nhóm (để lọc)</label>
+                    <label class="block text-xs font-bold text-gray-600">Môn Thể Thao (Group)</label>
                     <select id="rule-group" class="w-full border rounded p-2 text-sm">
                         <option value="Bóng đá">Bóng đá</option>
                         <option value="Cầu lông">Cầu lông</option>
@@ -308,8 +290,8 @@
                     </select>
                 </div>
                 <div>
-                    <label class="block text-xs font-bold text-gray-600">Tên hiển thị</label>
-                    <input type="text" id="rule-name" class="w-full border rounded p-2 text-sm" placeholder="VD: Sân Cầu lông (Sáng)">
+                    <label class="block text-xs font-bold text-gray-600">Tên Cấu Hình</label>
+                    <input type="text" id="rule-name" class="w-full border rounded p-2 text-sm" placeholder="VD: Khung giờ vàng">
                 </div>
                 <div>
                     <label class="block text-xs font-bold text-gray-600 mb-1">Thứ áp dụng</label>
@@ -342,5 +324,3 @@
     <script src="script.js"></script>
 </body>
 </html>
-
-
