@@ -2,7 +2,6 @@
 // 1. DATA INITIALIZATION (Cấu hình gốc)
 // ==========================================
 
-// Danh sách sân con (Sub-courts) theo hình ảnh
 const COURT_MAP = {
     'Bóng đá': ['Sân bóng đá'],
     'Cầu lông': ['Sân cầu lông 1', 'Sân cầu lông 2', 'Sân cầu lông 3', 'Sân cầu lông 4'],
@@ -11,33 +10,24 @@ const COURT_MAP = {
     'Khác': ['Sân mặc định']
 };
 
-// Bảng giá mặc định (Đơn vị: VNĐ/Giờ)
 const DEFAULT_RULES = [
-    // --- CẦU LÔNG ---
     { id: 1, group: 'Cầu lông', name: 'Sân Cầu lông (Sáng/Chiều T2-T6)', days: [1,2,3,4,5], start: '06:00', end: '17:30', price: 220000 },
     { id: 2, group: 'Cầu lông', name: 'Sân Cầu lông (Tối T2-T6)', days: [1,2,3,4,5], start: '17:30', end: '22:00', price: 220000 },
     { id: 3, group: 'Cầu lông', name: 'Sân Cầu lông (Cuối tuần)', days: [6,0], start: '06:00', end: '22:00', price: 220000 },
-
-    // --- BÓNG RỔ 1/2 ---
     { id: 4, group: 'Bóng rổ 1/2', name: 'Bóng rổ 1 rổ (T2-T6)', days: [1,2,3,4,5], start: '06:00', end: '22:00', price: 240000 },
     { id: 5, group: 'Bóng rổ 1/2', name: 'Bóng rổ 1 rổ (Cuối tuần)', days: [6,0], start: '06:00', end: '22:00', price: 270000 },
-
-    // --- BÓNG RỔ FULL ---
     { id: 6, group: 'Bóng rổ Full', name: 'Bóng rổ Full (T2-T6)', days: [1,2,3,4,5], start: '06:00', end: '22:00', price: 450000 },
     { id: 7, group: 'Bóng rổ Full', name: 'Bóng rổ Full (Cuối tuần)', days: [6,0], start: '06:00', end: '22:00', price: 500000 },
-
-    // --- BÓNG ĐÁ ---
     { id: 8, group: 'Bóng đá', name: 'Sân Bóng đá (Sáng)', days: [0,1,2,3,4,5,6], start: '06:00', end: '17:00', price: 450000 },
     { id: 9, group: 'Bóng đá', name: 'Sân Bóng đá (Tối)', days: [0,1,2,3,4,5,6], start: '17:00', end: '22:00', price: 550000 },
 ];
 
-// Global State
 let pricingRules = JSON.parse(localStorage.getItem('pricingRules')) || DEFAULT_RULES;
 let billItems = [];
 let currentEditingRuleId = null;
 
 // ==========================================
-// 2. UTILITIES (Hàm tiện ích)
+// 2. UTILITIES
 // ==========================================
 
 function formatVND(amount) {
@@ -55,6 +45,9 @@ function calculateHours(start, end) {
 function formatDate(d) {
     return `${d.getDate()}/${d.getMonth()+1}`;
 }
+function formatDateFull(d) {
+    return `${d.getDate()}/${d.getMonth()+1}/${d.getFullYear()}`;
+}
 
 // ==========================================
 // 3. MAIN LOGIC
@@ -64,16 +57,13 @@ document.addEventListener('DOMContentLoaded', () => {
     populateFieldSelect();
     renderWeekdays('weekday-container', []);
 
-    // Set Default Dates
     const today = new Date();
-    document.getElementById('inv-date').textContent = `${today.getDate()}/${today.getMonth()+1}/${today.getFullYear()}`;
+    document.getElementById('inv-date').textContent = formatDateFull(today);
     document.getElementById('inv-id').textContent = Math.floor(Math.random()*8999 + 1000);
     document.getElementById('start-date').valueAsDate = today;
     document.getElementById('end-date').valueAsDate = today;
 
-    // --- Event Listeners ---
-    
-    // 1. Customer Info Live Update
+    // Listeners
     ['cust-name', 'cust-phone', 'cust-company', 'cust-gender'].forEach(id => {
         document.getElementById(id).addEventListener('input', () => {
             document.getElementById('display-name').textContent = document.getElementById('cust-name').value || '---';
@@ -84,27 +74,22 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    // 2. Field Selection Change -> Update Sub-field & Price
     document.getElementById('field-select').addEventListener('change', function() {
         const subSelect = document.getElementById('sub-field-select');
-        subSelect.innerHTML = ''; // Reset sub-field
-        
+        subSelect.innerHTML = ''; 
         const option = this.options[this.selectedIndex];
 
         if(option.value) {
-            // A. Update Price & Time Info
             const price = parseInt(option.dataset.price);
             document.getElementById('unit-price').value = price;
             document.getElementById('unit-price-display').value = formatVND(price);
             document.getElementById('time-start').value = option.dataset.start;
             document.getElementById('time-end').value = option.dataset.end;
             
-            // B. Auto-check days
             const days = JSON.parse(option.dataset.days);
             renderWeekdays('weekday-container', days);
             updateDuration();
 
-            // C. Populate Sub-fields (Courts) logic
             const ruleId = parseInt(this.value);
             const rule = pricingRules.find(r => r.id === ruleId);
             
@@ -126,16 +111,13 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // 3. Time Change -> Recalculate Duration
     document.getElementById('time-start').addEventListener('change', updateDuration);
     document.getElementById('time-end').addEventListener('change', updateDuration);
 
-    // 4. Buttons
     document.getElementById('add-to-bill-btn').addEventListener('click', addToBill);
     document.getElementById('discount-val').addEventListener('input', renderInvoice);
     document.getElementById('discount-type').addEventListener('change', renderInvoice);
     
-    // 5. Print
     document.getElementById('print-btn').addEventListener('click', () => {
         const note = document.getElementById('inv-note').value;
         document.getElementById('print-note').textContent = note;
@@ -144,8 +126,6 @@ document.addEventListener('DOMContentLoaded', () => {
         window.print();
     });
 });
-
-// --- HELPER FUNCTIONS ---
 
 function updateDuration() {
     const s = document.getElementById('time-start').value;
@@ -163,7 +143,6 @@ function addToBill() {
     const unitPrice = parseFloat(document.getElementById('unit-price').value) || 0;
     const excludeText = document.getElementById('exclude-dates').value;
     
-    // Validate
     const startTime = document.getElementById('time-start').value;
     const endTime = document.getElementById('time-end').value;
     const duration = calculateHours(startTime, endTime);
@@ -171,12 +150,11 @@ function addToBill() {
     if(duration <= 0) { Swal.fire('Lỗi', 'Giờ kết thúc phải lớn hơn giờ bắt đầu', 'error'); return; }
     if(isNaN(startDate) || isNaN(endDate) || endDate < startDate) { Swal.fire('Lỗi', 'Ngày không hợp lệ', 'error'); return; }
 
-    // Get selected days
     const selectedDays = [];
     document.querySelectorAll('input[name="weekday"]:checked').forEach(cb => selectedDays.push(parseInt(cb.value)));
     if(selectedDays.length === 0) { Swal.fire('Lỗi', 'Vui lòng chọn thứ trong tuần', 'error'); return; }
 
-    // Logic: Calculate Count (Excluding dates)
+    // Parse Excludes
     const excludes = new Set();
     excludeText.split('\n').forEach(line => {
         const parts = line.trim().split('/');
@@ -184,27 +162,40 @@ function addToBill() {
     });
 
     let count = 0;
+    let skippedDates = []; // Lưu danh sách ngày bị trừ
     let current = new Date(startDate);
+    
     while(current <= endDate) {
-        if(selectedDays.includes(current.getDay()) && !excludes.has(current.toDateString())) {
-            count++;
+        // Chỉ xét những ngày đúng thứ trong tuần
+        if(selectedDays.includes(current.getDay())) {
+            if(excludes.has(current.toDateString())) {
+                // Nếu nằm trong danh sách loại trừ -> Thêm vào skipped
+                skippedDates.push(formatDate(current));
+            } else {
+                // Nếu không bị loại trừ -> Tính tiền
+                count++;
+            }
         }
         current.setDate(current.getDate() + 1);
     }
 
-    if(count === 0) { Swal.fire('Thông báo', 'Không có ngày nào tính tiền (do bộ lọc hoặc ngày nghỉ)', 'warning'); return; }
+    if(count === 0 && skippedDates.length === 0) { 
+        Swal.fire('Thông báo', 'Không có ngày nào phù hợp bộ lọc thứ', 'warning'); return; 
+    }
+    if(count === 0 && skippedDates.length > 0) { 
+        Swal.fire('Thông báo', 'Tất cả các ngày đều rơi vào ngày nghỉ', 'warning'); return; 
+    }
 
-    // Construct Item Name
     const serviceName = select.options[select.selectedIndex].text;
     const subFieldName = document.getElementById('sub-field-select').value;
     const itemName = subFieldName ? `${serviceName} [${subFieldName}]` : serviceName;
-
     const total = count * duration * unitPrice;
 
     billItems.push({
         id: Date.now(),
         name: itemName,
         desc: `${formatDate(startDate)} - ${formatDate(endDate)} (${startTime}-${endTime})`,
+        skipped: skippedDates, // Lưu mảng ngày nghỉ
         count: count,
         duration: duration,
         price: unitPrice,
@@ -226,12 +217,22 @@ function renderInvoice() {
         document.getElementById('empty-cart-msg').style.display = 'none';
         billItems.forEach(item => {
             subTotal += item.total;
+            
+            // Xử lý hiển thị ngày nghỉ
+            let skippedText = '';
+            if(item.skipped && item.skipped.length > 0) {
+                skippedText = `<br><span class="text-xs text-red-500 italic font-medium">Trừ ngày: ${item.skipped.join(', ')}</span>`;
+            }
+
             const tr = document.createElement('tr');
             tr.className = "border-b border-gray-100";
             tr.innerHTML = `
                 <td class="p-3">
                     <div class="font-bold text-gray-800">${item.name}</div>
-                    <div class="text-xs text-gray-500">${item.desc}</div>
+                    <div class="text-xs text-gray-500">
+                        ${item.desc}
+                        ${skippedText}
+                    </div>
                 </td>
                 <td class="p-3 text-center font-medium">${item.count} buổi</td>
                 <td class="p-3 text-center font-medium">${item.duration}h</td>
@@ -263,7 +264,7 @@ function removeItem(id) {
 }
 
 // ==========================================
-// 4. CONFIGURATION & BACKUP LOGIC
+// 4. CONFIGURATION & BACKUP
 // ==========================================
 
 function switchTab(tabName) {
@@ -387,7 +388,6 @@ function renderWeekdays(containerId, selectedDays = [], isModal = false) {
     });
 }
 
-// Modal CRUD Logic
 function closeModal() { document.getElementById('rule-modal').classList.add('hidden'); }
 function addNewRule() {
     currentEditingRuleId = null;
