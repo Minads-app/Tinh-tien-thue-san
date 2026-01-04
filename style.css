@@ -1,0 +1,32 @@
+body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
+.tab-active { border-bottom: 2px solid #2563eb; color: #2563eb; font-weight: 600; }
+.tab-inactive { color: #6b7280; }
+.tab-inactive:hover { color: #374151; }
+
+/* Custom Checkbox Style for Weekdays */
+.weekday-check:checked + div {
+    background-color: #4f46e5; /* Indigo 600 */
+    color: white;
+    border-color: #4f46e5;
+}
+.weekday-check:checked + div .check-icon {
+    display: inline-block;
+}
+
+/* Print Styles */
+@media print {
+    .no-print { display: none !important; }
+    .print-only { display: block !important; }
+    body, #invoice-area { background-color: white; margin: 0; padding: 0; width: 100%; }
+    .shadow-lg, .shadow-sm { box-shadow: none !important; }
+    .border { border: 1px solid #ddd !important; }
+    #main-nav { display: none; }
+    /* Ensure colors print correctly */
+    * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #f1f1f1; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
