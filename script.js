@@ -1,5 +1,5 @@
 // ==========================================
-// 1. DATA INITIALIZATION
+// 1. DATA INITIALIZATION & CONFIG
 // ==========================================
 
 const BANK_INFO = {
@@ -25,6 +25,22 @@ const COURT_MAP = {
     'Khác': ['Sân mặc định']
 };
 
+// Dữ liệu ngày lễ mẫu (Bạn có thể sửa đổi năm tại đây)
+const CURRENT_YEAR = new Date().getFullYear();
+const NEXT_YEAR = CURRENT_YEAR + 1;
+const HOLIDAYS_DATA = [
+    { date: `01/01/${CURRENT_YEAR}`, name: `Tết Dương Lịch ${CURRENT_YEAR}` },
+    { date: `30/04/${CURRENT_YEAR}`, name: `Giải phóng Miền Nam` },
+    { date: `01/05/${CURRENT_YEAR}`, name: `Quốc tế Lao động` },
+    { date: `02/09/${CURRENT_YEAR}`, name: `Quốc khánh Việt Nam` },
+    // Ví dụ Tết Âm Lịch 2026 (Cần cập nhật theo lịch vạn niên thực tế từng năm)
+    { date: "17/02/2026", name: "Mùng 1 Tết Âm Lịch 2026" },
+    { date: "18/02/2026", name: "Mùng 2 Tết Âm Lịch 2026" },
+    { date: "19/02/2026", name: "Mùng 3 Tết Âm Lịch 2026" },
+    { date: "20/02/2026", name: "Mùng 4 Tết Âm Lịch 2026" },
+    { date: "21/02/2026", name: "Mùng 5 Tết Âm Lịch 2026" }
+];
+
 const DEFAULT_RULES = [
     { id: 1, group: 'Cầu lông', name: 'Sáng/Chiều T2-T6', days: [1,2,3,4,5], start: '06:00', end: '17:30', price: 220000 },
     { id: 2, group: 'Cầu lông', name: 'Tối T2-T6', days: [1,2,3,4,5], start: '17:30', end: '22:00', price: 220000 },
@@ -39,7 +55,7 @@ const DEFAULT_RULES = [
 
 let pricingRules = JSON.parse(localStorage.getItem('pricingRules')) || DEFAULT_RULES;
 let billItems = [];
-let excludeDatePicker; // Instance of Flatpickr
+let excludeDatePicker; // Flatpickr Instance
 
 // ==========================================
 // 2. UTILITIES
@@ -75,7 +91,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initSelectors();
     renderWeekdays('weekday-container', []);
 
-    // INIT FLATPICKR (CALENDAR)
+    // INIT FLATPICKR
     excludeDatePicker = flatpickr("#exclude-dates", {
         mode: "multiple",
         dateFormat: "d/m/Y",
@@ -133,24 +149,58 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 });
 
+// --- NEW FUNCTION: POPUP CHỌN LỄ TẾT ---
 function fillHolidays() {
-    // Tự động thêm các ngày lễ VN mặc định
-    const currentYear = new Date().getFullYear();
-    const holidays = [
-        `01/01/${currentYear}`,
-        `30/04/${currentYear}`,
-        `01/05/${currentYear}`,
-        `02/09/${currentYear}`,
-        // Hardcode Tết (Ví dụ 2026 - Mùng 1,2,3)
-        "17/02/2026", "18/02/2026", "19/02/2026" 
-    ];
-    
-    // Lấy giá trị hiện tại cộng thêm giá trị mới
-    const currentDates = excludeDatePicker.selectedDates.map(d => flatpickr.formatDate(d, "d/m/Y"));
-    const newDates = [...new Set([...currentDates, ...holidays])]; // Unique
-    
-    excludeDatePicker.setDate(newDates);
-    Swal.fire('Đã thêm ngày lễ', 'Đã thêm 30/4, 1/5, 2/9, 1/1 và Tết vào danh sách ngày nghỉ.', 'success');
+    // 1. Tạo HTML cho danh sách checkbox
+    let htmlContent = '<div class="text-left space-y-2 max-h-60 overflow-y-auto p-2 border rounded bg-gray-50">';
+    HOLIDAYS_DATA.forEach((h) => {
+        htmlContent += `
+            <label class="flex items-center space-x-3 p-2 bg-white border border-gray-200 rounded cursor-pointer hover:bg-indigo-50 transition">
+                <input type="checkbox" value="${h.date}" class="holiday-checkbox w-5 h-5 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500">
+                <div class="flex flex-col">
+                    <span class="text-sm font-bold text-gray-800">${h.date}</span>
+                    <span class="text-xs text-indigo-600 font-medium">${h.name}</span>
+                </div>
+            </label>
+        `;
+    });
+    htmlContent += '</div>';
+
+    // 2. Hiển thị Popup
+    Swal.fire({
+        title: 'Gợi ý Ngày Lễ & Tết',
+        html: htmlContent,
+        showCancelButton: true,
+        confirmButtonText: '<i class="fa-solid fa-check mr-1"></i> Thêm ngày đã chọn',
+        cancelButtonText: 'Đóng',
+        confirmButtonColor: '#4f46e5', // Indigo 600
+        focusConfirm: false,
+        preConfirm: () => {
+            // Lấy danh sách user đã tick
+            const checkboxes = document.querySelectorAll('.holiday-checkbox:checked');
+            const selectedDates = Array.from(checkboxes).map(cb => cb.value);
+            return selectedDates;
+        }
+    }).then((result) => {
+        if (result.isConfirmed) {
+            if (result.value.length > 0) {
+                // Merge với ngày đã có trong input (tránh mất ngày user đã nhập tay)
+                const currentDates = excludeDatePicker.selectedDates.map(d => flatpickr.formatDate(d, "d/m/Y"));
+                const newDates = [...new Set([...currentDates, ...result.value])]; // Unique
+                
+                excludeDatePicker.setDate(newDates);
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Đã cập nhật',
+                    text: `Đã thêm ${result.value.length} ngày lễ vào danh sách nghỉ.`,
+                    timer: 1500,
+                    showConfirmButton: false
+                });
+            } else {
+                Swal.fire('Thông báo', 'Bạn chưa chọn ngày nào.', 'info');
+            }
+        }
+    });
 }
 
 function initSelectors() {
