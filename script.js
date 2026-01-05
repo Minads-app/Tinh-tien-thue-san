@@ -39,7 +39,7 @@ const DEFAULT_RULES = [
 
 let pricingRules = JSON.parse(localStorage.getItem('pricingRules')) || DEFAULT_RULES;
 let billItems = [];
-let currentEditingRuleId = null;
+let excludeDatePicker; // Instance of Flatpickr
 
 // ==========================================
 // 2. UTILITIES
@@ -59,17 +59,11 @@ function calculateHours(start, end) {
 
 function formatDate(d) { return `${d.getDate()}/${d.getMonth()+1}`; }
 function formatDateFull(d) { return `${d.getDate()}/${d.getMonth()+1}/${d.getFullYear()}`; }
+function getDayName(d) { return d === 0 ? 'CN' : 'T' + (d + 1); }
 
-// Hàm tìm giá thông minh (Core Logic)
 function findBestPrice(group, dayOfWeek, checkTime) {
-    // 1. Lọc các rule thuộc môn thể thao này và áp dụng cho thứ này
     const candidates = pricingRules.filter(r => r.group === group && r.days.includes(dayOfWeek));
-    
-    // 2. Tìm rule khớp khung giờ nhất
-    // So sánh chuỗi giờ (VD: "17:00" >= "06:00" và "17:00" < "17:30")
     const match = candidates.find(r => checkTime >= r.start && checkTime < r.end);
-    
-    // Trả về giá, hoặc 0 nếu không tìm thấy
     return match ? match.price : 0;
 }
 
@@ -80,6 +74,13 @@ function findBestPrice(group, dayOfWeek, checkTime) {
 document.addEventListener('DOMContentLoaded', () => {
     initSelectors();
     renderWeekdays('weekday-container', []);
+
+    // INIT FLATPICKR (CALENDAR)
+    excludeDatePicker = flatpickr("#exclude-dates", {
+        mode: "multiple",
+        dateFormat: "d/m/Y",
+        locale: "vn"
+    });
 
     const today = new Date();
     document.getElementById('inv-date').textContent = formatDateFull(today);
@@ -98,11 +99,9 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    // Sport Select Change -> Update Courts
     document.getElementById('sport-select').addEventListener('change', function() {
         const courtSelect = document.getElementById('court-select');
         courtSelect.innerHTML = '<option value="">-- Chọn sân --</option>';
-        
         const group = this.value;
         if(group && COURT_MAP[group]) {
             COURT_MAP[group].forEach(court => {
@@ -119,8 +118,6 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('time-end').addEventListener('change', () => { updateDuration(); updateEstimatedPrice(); });
 
     document.getElementById('add-to-bill-btn').addEventListener('click', addToBill);
-    
-    // Live update Payment info
     document.getElementById('discount-val').addEventListener('input', renderInvoice);
     document.getElementById('discount-type').addEventListener('change', renderInvoice);
     document.getElementById('vat-check').addEventListener('change', renderInvoice);
@@ -136,10 +133,29 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 });
 
+function fillHolidays() {
+    // Tự động thêm các ngày lễ VN mặc định
+    const currentYear = new Date().getFullYear();
+    const holidays = [
+        `01/01/${currentYear}`,
+        `30/04/${currentYear}`,
+        `01/05/${currentYear}`,
+        `02/09/${currentYear}`,
+        // Hardcode Tết (Ví dụ 2026 - Mùng 1,2,3)
+        "17/02/2026", "18/02/2026", "19/02/2026" 
+    ];
+    
+    // Lấy giá trị hiện tại cộng thêm giá trị mới
+    const currentDates = excludeDatePicker.selectedDates.map(d => flatpickr.formatDate(d, "d/m/Y"));
+    const newDates = [...new Set([...currentDates, ...holidays])]; // Unique
+    
+    excludeDatePicker.setDate(newDates);
+    Swal.fire('Đã thêm ngày lễ', 'Đã thêm 30/4, 1/5, 2/9, 1/1 và Tết vào danh sách ngày nghỉ.', 'success');
+}
+
 function initSelectors() {
     const sportSelect = document.getElementById('sport-select');
     sportSelect.innerHTML = '<option value="">-- Chọn Môn Thể Thao --</option>';
-    // Lấy danh sách nhóm từ COURT_MAP
     Object.keys(COURT_MAP).forEach(group => {
         const opt = document.createElement('option');
         opt.value = group;
@@ -158,13 +174,10 @@ function updateDuration() {
 function updateEstimatedPrice() {
     const group = document.getElementById('sport-select').value;
     const startTime = document.getElementById('time-start').value;
-    
     if(!group || !startTime) {
         document.getElementById('estimated-price').textContent = "---";
         return;
     }
-    
-    // Dự tính giá dựa trên ngày hôm nay
     const todayDay = new Date().getDay();
     const price = findBestPrice(group, todayDay, startTime);
     document.getElementById('estimated-price').textContent = price > 0 ? formatVND(price) + "/h (Hôm nay)" : "Chưa có giá";
@@ -173,14 +186,15 @@ function updateEstimatedPrice() {
 function addToBill() {
     const group = document.getElementById('sport-select').value;
     const courtName = document.getElementById('court-select').value;
-    
     if(!group || !courtName) { Swal.fire('Lỗi', 'Vui lòng chọn Môn và Sân', 'error'); return; }
 
     const startDate = new Date(document.getElementById('start-date').value);
     const endDate = new Date(document.getElementById('end-date').value);
     const startTime = document.getElementById('time-start').value;
     const endTime = document.getElementById('time-end').value;
-    const excludeText = document.getElementById('exclude-dates').value;
+    
+    // Lấy ngày từ Flatpickr (đã là mảng Date objects)
+    const excludeDates = excludeDatePicker.selectedDates.map(d => d.toDateString());
 
     const duration = calculateHours(startTime, endTime);
     if(duration <= 0) { Swal.fire('Lỗi', 'Giờ kết thúc phải lớn hơn bắt đầu', 'error'); return; }
@@ -189,28 +203,18 @@ function addToBill() {
     document.querySelectorAll('input[name="weekday"]:checked').forEach(cb => selectedDays.push(parseInt(cb.value)));
     if(selectedDays.length === 0) { Swal.fire('Lỗi', 'Chọn thứ trong tuần', 'error'); return; }
 
-    const excludes = new Set();
-    excludeText.split('\n').forEach(line => {
-        const parts = line.trim().split('/');
-        if(parts.length === 3) excludes.add(new Date(parts[2], parts[1]-1, parts[0]).toDateString());
-    });
-
     let count = 0;
     let totalPriceItem = 0;
     let skippedDates = [];
     let current = new Date(startDate);
     
-    // LOGIC TÍNH TIỀN THÔNG MINH (Iterate days)
     while(current <= endDate) {
         const currentDayOfWeek = current.getDay();
-        
         if(selectedDays.includes(currentDayOfWeek)) {
-            if(excludes.has(current.toDateString())) {
+            if(excludeDates.includes(current.toDateString())) {
                 skippedDates.push(formatDate(current));
             } else {
-                // Tự động tìm giá cho ngày này
                 const priceToday = findBestPrice(group, currentDayOfWeek, startTime);
-                
                 if(priceToday > 0) {
                     count++;
                     totalPriceItem += (priceToday * duration);
@@ -223,21 +227,19 @@ function addToBill() {
     if(count === 0 && skippedDates.length === 0) { Swal.fire('Thông báo', 'Không có ngày phù hợp', 'warning'); return; }
     if(totalPriceItem === 0 && count > 0) { Swal.fire('Cảnh báo', 'Không tìm thấy cấu hình giá cho khung giờ này!', 'warning'); return; }
 
-    // Tạo tên hiển thị
     const itemName = `${group} [${courtName}]`;
-    
-    // Tính đơn giá trung bình (để hiển thị cho đẹp, dù tính toán là dùng tổng)
     const avgPrice = totalPriceItem / (count * duration);
 
     billItems.push({
         id: Date.now(),
         name: itemName,
+        weekdays: selectedDays, // Lưu lại thứ đã chọn
         desc: `${formatDate(startDate)} - ${formatDate(endDate)} (${startTime}-${endTime})`,
         skipped: skippedDates,
         count: count,
         duration: duration,
-        price: avgPrice, // Hiển thị giá trung bình
-        total: totalPriceItem // Tổng tiền chính xác
+        price: avgPrice,
+        total: totalPriceItem
     });
 
     renderInvoice();
@@ -256,8 +258,11 @@ function renderInvoice() {
         billItems.forEach(item => {
             subTotal += item.total;
             let skippedText = item.skipped && item.skipped.length > 0 ? `<br><span class="text-xs text-red-500 italic font-medium">Trừ ngày: ${item.skipped.join(', ')}</span>` : '';
+            
+            // Format weekdays: "Thứ: T2, T4, CN"
+            const daysText = item.weekdays.map(d => getDayName(d)).join(', ');
+            const weekdayDisplay = `<div class="text-xs text-indigo-600 font-semibold mt-0.5">Thứ: ${daysText}</div>`;
 
-            // Hiển thị đơn giá: Nếu là số lẻ (do trung bình cộng) thì làm tròn
             const displayPrice = Math.round(item.price);
 
             const tr = document.createElement('tr');
@@ -265,7 +270,11 @@ function renderInvoice() {
             tr.innerHTML = `
                 <td class="p-3">
                     <div class="font-bold text-gray-800">${item.name}</div>
-                    <div class="text-xs text-gray-500">${item.desc}${skippedText}</div>
+                    <div class="text-xs text-gray-500">
+                        ${item.desc}
+                        ${weekdayDisplay}
+                        ${skippedText}
+                    </div>
                 </td>
                 <td class="p-3 text-center font-medium">${item.count} buổi</td>
                 <td class="p-3 text-center font-medium">${item.duration}h</td>
@@ -279,7 +288,6 @@ function renderInvoice() {
         });
     }
 
-    // Calc Discount & VAT
     let discount = 0;
     const discVal = parseFloat(document.getElementById('discount-val').value) || 0;
     const discType = document.getElementById('discount-type').value;
@@ -301,7 +309,6 @@ function renderInvoice() {
 
     const finalTotal = preTaxTotal + vatAmount;
 
-    // Update UI
     document.getElementById('sub-total').textContent = formatVND(subTotal);
     document.getElementById('print-discount').textContent = formatVND(discount);
     document.getElementById('vat-amount').textContent = formatVND(vatAmount);
@@ -339,9 +346,6 @@ function removeItem(id) {
     renderInvoice();
 }
 
-// ==========================================
-// 4. CONFIG & BACKUP (Standard)
-// ==========================================
 function switchTab(tabName) {
     document.querySelectorAll('[id^="tab-booking"], [id^="tab-config"]').forEach(el => el.classList.add('hidden'));
     document.getElementById(`tab-${tabName}`).classList.remove('hidden');
