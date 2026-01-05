@@ -32,7 +32,6 @@ const HOLIDAYS_DATA = [
     { date: `30/04/${CURRENT_YEAR}`, name: `Giải phóng Miền Nam` },
     { date: `01/05/${CURRENT_YEAR}`, name: `Quốc tế Lao động` },
     { date: `02/09/${CURRENT_YEAR}`, name: `Quốc khánh Việt Nam` },
-    // Cập nhật Tết Âm Lịch 2026 (Ví dụ)
     { date: "17/02/2026", name: "Mùng 1 Tết Âm Lịch 2026" },
     { date: "18/02/2026", name: "Mùng 2 Tết Âm Lịch 2026" },
     { date: "19/02/2026", name: "Mùng 3 Tết Âm Lịch 2026" },
@@ -76,7 +75,6 @@ function formatDate(d) { return `${d.getDate()}/${d.getMonth()+1}`; }
 function formatDateFull(d) { return `${d.getDate()}/${d.getMonth()+1}/${d.getFullYear()}`; }
 function getDayName(d) { return d === 0 ? 'CN' : 'T' + (d + 1); }
 
-// Hàm mới: Tính thứ từ chuỗi ngày "dd/mm/yyyy"
 function getDayOfWeekString(dateStr) {
     const [d, m, y] = dateStr.split('/').map(Number);
     const date = new Date(y, m - 1, d);
@@ -156,15 +154,11 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 });
 
-// --- UPDATED POPUP LOGIC ---
 function fillHolidays() {
     let htmlContent = '<div class="text-left space-y-2 max-h-60 overflow-y-auto p-2 border rounded bg-gray-50">';
     
     HOLIDAYS_DATA.forEach((h) => {
-        // Tự động tính thứ
         const dayOfWeek = getDayOfWeekString(h.date); 
-        
-        // Style màu sắc cho thứ: T7, CN màu đỏ, ngày thường màu xanh
         const dayClass = (dayOfWeek === 'CN' || dayOfWeek === 'Thứ 7') ? 'text-red-500 font-bold' : 'text-gray-600 font-medium';
 
         htmlContent += `
@@ -215,3 +209,324 @@ function initSelectors() {
         const opt = document.createElement('option');
         opt.value = group;
         opt.textContent = group;
+        sportSelect.appendChild(opt);
+    });
+}
+
+function updateDuration() {
+    const s = document.getElementById('time-start').value;
+    const e = document.getElementById('time-end').value;
+    const hours = calculateHours(s, e);
+    document.getElementById('calculated-duration').textContent = hours + " giờ";
+}
+
+function updateEstimatedPrice() {
+    const group = document.getElementById('sport-select').value;
+    const startTime = document.getElementById('time-start').value;
+    if(!group || !startTime) {
+        document.getElementById('estimated-price').textContent = "---";
+        return;
+    }
+    const todayDay = new Date().getDay();
+    const price = findBestPrice(group, todayDay, startTime);
+    document.getElementById('estimated-price').textContent = price > 0 ? formatVND(price) + "/h (Hôm nay)" : "Chưa có giá";
+}
+
+function addToBill() {
+    const group = document.getElementById('sport-select').value;
+    const courtName = document.getElementById('court-select').value;
+    if(!group || !courtName) { Swal.fire('Lỗi', 'Vui lòng chọn Môn và Sân', 'error'); return; }
+
+    const startDate = new Date(document.getElementById('start-date').value);
+    const endDate = new Date(document.getElementById('end-date').value);
+    const startTime = document.getElementById('time-start').value;
+    const endTime = document.getElementById('time-end').value;
+    
+    const excludeDates = excludeDatePicker.selectedDates.map(d => d.toDateString());
+
+    const duration = calculateHours(startTime, endTime);
+    if(duration <= 0) { Swal.fire('Lỗi', 'Giờ kết thúc phải lớn hơn bắt đầu', 'error'); return; }
+
+    const selectedDays = [];
+    document.querySelectorAll('input[name="weekday"]:checked').forEach(cb => selectedDays.push(parseInt(cb.value)));
+    if(selectedDays.length === 0) { Swal.fire('Lỗi', 'Chọn thứ trong tuần', 'error'); return; }
+
+    let count = 0;
+    let totalPriceItem = 0;
+    let skippedDates = [];
+    let current = new Date(startDate);
+    
+    while(current <= endDate) {
+        const currentDayOfWeek = current.getDay();
+        if(selectedDays.includes(currentDayOfWeek)) {
+            if(excludeDates.includes(current.toDateString())) {
+                skippedDates.push(formatDate(current));
+            } else {
+                const priceToday = findBestPrice(group, currentDayOfWeek, startTime);
+                if(priceToday > 0) {
+                    count++;
+                    totalPriceItem += (priceToday * duration);
+                }
+            }
+        }
+        current.setDate(current.getDate() + 1);
+    }
+
+    if(count === 0 && skippedDates.length === 0) { Swal.fire('Thông báo', 'Không có ngày phù hợp', 'warning'); return; }
+    if(totalPriceItem === 0 && count > 0) { Swal.fire('Cảnh báo', 'Không tìm thấy cấu hình giá cho khung giờ này!', 'warning'); return; }
+
+    const itemName = `${group} [${courtName}]`;
+    const avgPrice = totalPriceItem / (count * duration);
+
+    billItems.push({
+        id: Date.now(),
+        name: itemName,
+        weekdays: selectedDays,
+        desc: `${formatDate(startDate)} - ${formatDate(endDate)} (${startTime}-${endTime})`,
+        skipped: skippedDates,
+        count: count,
+        duration: duration,
+        price: avgPrice,
+        total: totalPriceItem
+    });
+
+    renderInvoice();
+    Swal.fire({ icon: 'success', title: 'Đã thêm', toast: true, position: 'top-end', showConfirmButton: false, timer: 1500 });
+}
+
+function renderInvoice() {
+    const tbody = document.getElementById('invoice-items');
+    tbody.innerHTML = '';
+    let subTotal = 0;
+
+    if(billItems.length === 0) {
+        document.getElementById('empty-cart-msg').style.display = 'block';
+    } else {
+        document.getElementById('empty-cart-msg').style.display = 'none';
+        billItems.forEach(item => {
+            subTotal += item.total;
+            let skippedText = item.skipped && item.skipped.length > 0 ? `<br><span class="text-xs text-red-500 italic font-medium">Trừ ngày: ${item.skipped.join(', ')}</span>` : '';
+            
+            const daysText = item.weekdays.map(d => getDayName(d)).join(', ');
+            const weekdayDisplay = `<div class="text-xs text-indigo-600 font-semibold mt-0.5">Thứ: ${daysText}</div>`;
+
+            const displayPrice = Math.round(item.price);
+
+            const tr = document.createElement('tr');
+            tr.className = "border-b border-gray-100";
+            tr.innerHTML = `
+                <td class="p-3">
+                    <div class="font-bold text-gray-800">${item.name}</div>
+                    <div class="text-xs text-gray-500">
+                        ${item.desc}
+                        ${weekdayDisplay}
+                        ${skippedText}
+                    </div>
+                </td>
+                <td class="p-3 text-center font-medium">${item.count} buổi</td>
+                <td class="p-3 text-center font-medium">${item.duration}h</td>
+                <td class="p-3 text-right text-gray-600">~${formatVND(displayPrice)}</td>
+                <td class="p-3 text-right font-bold text-gray-800">${formatVND(item.total)}</td>
+                <td class="p-3 text-center no-print">
+                    <button onclick="removeItem(${item.id})" class="text-red-400 hover:text-red-600"><i class="fa-solid fa-xmark"></i></button>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    let discount = 0;
+    const discVal = parseFloat(document.getElementById('discount-val').value) || 0;
+    const discType = document.getElementById('discount-type').value;
+    if(discType === 'percent') discount = subTotal * (discVal / 100);
+    else discount = discVal;
+
+    const isVatChecked = document.getElementById('vat-check').checked;
+    const preTaxTotal = subTotal - discount;
+    let vatAmount = 0;
+    
+    if(isVatChecked) {
+        vatAmount = preTaxTotal * 0.10;
+        document.getElementById('vat-amount').style.display = 'block';
+        document.getElementById('vat-label-print').style.display = 'block';
+    } else {
+        document.getElementById('vat-amount').style.display = 'none';
+        document.getElementById('vat-label-print').style.display = 'none';
+    }
+
+    const finalTotal = preTaxTotal + vatAmount;
+
+    document.getElementById('sub-total').textContent = formatVND(subTotal);
+    document.getElementById('print-discount').textContent = formatVND(discount);
+    document.getElementById('vat-amount').textContent = formatVND(vatAmount);
+    document.getElementById('final-total').textContent = formatVND(finalTotal);
+
+    updatePaymentInfo(finalTotal, isVatChecked);
+}
+
+function updatePaymentInfo(finalTotal, isVatChecked) {
+    const bankNameEl = document.getElementById('bank-name');
+    const accNameEl = document.getElementById('bank-acc-name');
+    const accNumEl = document.getElementById('bank-acc-num');
+    const qrImageEl = document.getElementById('qr-image');
+    const qrSection = document.getElementById('qr-section');
+
+    let selectedBank;
+    if(isVatChecked && finalTotal >= 5000000) {
+        selectedBank = BANK_INFO.COMPANY;
+        qrSection.classList.remove('bg-indigo-50', 'border-indigo-200');
+        qrSection.classList.add('bg-blue-50', 'border-blue-300');
+    } else {
+        selectedBank = BANK_INFO.PERSONAL;
+        qrSection.classList.add('bg-indigo-50', 'border-indigo-200');
+        qrSection.classList.remove('bg-blue-50', 'border-blue-300');
+    }
+
+    bankNameEl.textContent = selectedBank.name;
+    accNameEl.textContent = selectedBank.accName;
+    accNumEl.textContent = selectedBank.accNum;
+    qrImageEl.src = `https://img.vietqr.io/image/${selectedBank.qrString}-compact.png`;
+}
+
+function removeItem(id) {
+    billItems = billItems.filter(i => i.id !== id);
+    renderInvoice();
+}
+
+function switchTab(tabName) {
+    document.querySelectorAll('[id^="tab-booking"], [id^="tab-config"]').forEach(el => el.classList.add('hidden'));
+    document.getElementById(`tab-${tabName}`).classList.remove('hidden');
+    
+    const btnBooking = document.getElementById('tab-btn-booking');
+    const btnConfig = document.getElementById('tab-btn-config');
+    
+    if(tabName === 'booking') {
+        btnBooking.className = "tab-active py-4 px-1 inline-flex items-center text-sm border-b-2 font-medium cursor-pointer";
+        btnConfig.className = "tab-inactive py-4 px-1 inline-flex items-center text-sm border-b-2 border-transparent font-medium cursor-pointer";
+    } else {
+        btnConfig.className = "tab-active py-4 px-1 inline-flex items-center text-sm border-b-2 font-medium cursor-pointer";
+        btnBooking.className = "tab-inactive py-4 px-1 inline-flex items-center text-sm border-b-2 border-transparent font-medium cursor-pointer";
+        renderConfigTable();
+    }
+}
+function backupData() {
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(pricingRules));
+    const dlAnchorElem = document.createElement('a');
+    dlAnchorElem.setAttribute("href", dataStr);
+    dlAnchorElem.setAttribute("download", "bang_gia_san_" + new Date().toISOString().slice(0,10) + ".json");
+    document.body.appendChild(dlAnchorElem);
+    dlAnchorElem.click();
+    dlAnchorElem.remove();
+}
+function restoreData(input) {
+    const file = input.files[0];
+    if(!file) return;
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        try {
+            const data = JSON.parse(e.target.result);
+            if(Array.isArray(data)) {
+                pricingRules = data;
+                localStorage.setItem('pricingRules', JSON.stringify(pricingRules));
+                renderConfigTable();
+                Swal.fire('Thành công', 'Đã khôi phục dữ liệu!', 'success');
+            } else throw new Error("Format lỗi");
+        } catch(err) { Swal.fire('Lỗi', 'File không hợp lệ', 'error'); }
+    };
+    reader.readAsText(file);
+    input.value = '';
+}
+function renderConfigTable() {
+    const tbody = document.getElementById('config-table-body');
+    tbody.innerHTML = '';
+    pricingRules.forEach(rule => {
+        const daysText = rule.days.length === 7 ? 'Tất cả các ngày' : rule.days.map(d => d === 0 ? 'CN' : 'T'+(d+1)).join(', ');
+        const tr = document.createElement('tr');
+        tr.className = "border-b hover:bg-gray-50";
+        tr.innerHTML = `
+            <td class="p-3 border font-medium text-gray-600">${rule.group}</td>
+            <td class="p-3 border font-bold text-gray-800">${rule.name}</td>
+            <td class="p-3 border text-xs text-gray-500 break-words max-w-xs">${daysText}</td>
+            <td class="p-3 border text-center font-mono text-xs">${rule.start} - ${rule.end}</td>
+            <td class="p-3 border text-right font-bold text-indigo-600">${formatVND(rule.price)} /h</td>
+            <td class="p-3 border text-center">
+                <button onclick="editRule(${rule.id})" class="text-blue-600 hover:text-blue-800 mr-2"><i class="fa-solid fa-pen"></i></button>
+                <button onclick="deleteRule(${rule.id})" class="text-red-500 hover:text-red-700"><i class="fa-solid fa-trash"></i></button>
+            </td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+function renderWeekdays(containerId, selectedDays = [], isModal = false) {
+    const container = document.getElementById(containerId);
+    container.innerHTML = '';
+    const daysMap = [
+        {val: 1, label: 'Thứ 2'}, {val: 2, label: 'Thứ 3'}, {val: 3, label: 'Thứ 4'},
+        {val: 4, label: 'Thứ 5'}, {val: 5, label: 'Thứ 6'}, {val: 6, label: 'Thứ 7'},
+        {val: 0, label: 'CN'}
+    ];
+    daysMap.forEach(d => {
+        const isChecked = selectedDays.includes(d.val);
+        const nameAttr = isModal ? 'modal-weekday' : 'weekday';
+        container.innerHTML += `
+            <label class="cursor-pointer select-none">
+                <input type="checkbox" name="${nameAttr}" value="${d.val}" class="hidden peer weekday-check" ${isChecked ? 'checked' : ''}>
+                <div class="px-3 py-1.5 rounded border border-gray-200 bg-white text-gray-500 text-xs font-medium transition-all hover:bg-gray-50 flex items-center gap-1">
+                    <i class="fa-solid fa-check check-icon hidden text-[10px]"></i>
+                    ${d.label}
+                </div>
+            </label>
+        `;
+    });
+}
+function closeModal() { document.getElementById('rule-modal').classList.add('hidden'); }
+function addNewRule() {
+    currentEditingRuleId = null;
+    document.getElementById('modal-title').textContent = "Thêm Quy Tắc Mới";
+    document.getElementById('rule-name').value = "";
+    document.getElementById('rule-price').value = "";
+    document.getElementById('rule-start').value = "06:00";
+    document.getElementById('rule-end').value = "22:00";
+    renderWeekdays('rule-days-container', [], true);
+    document.getElementById('rule-modal').classList.remove('hidden');
+}
+function editRule(id) {
+    currentEditingRuleId = id;
+    const rule = pricingRules.find(r => r.id === id);
+    if(!rule) return;
+    document.getElementById('modal-title').textContent = "Sửa Quy Tắc";
+    document.getElementById('rule-group').value = rule.group;
+    document.getElementById('rule-name').value = rule.name;
+    document.getElementById('rule-price').value = rule.price;
+    document.getElementById('rule-start').value = rule.start;
+    document.getElementById('rule-end').value = rule.end;
+    renderWeekdays('rule-days-container', rule.days, true);
+    document.getElementById('rule-modal').classList.remove('hidden');
+}
+function saveRule() {
+    const group = document.getElementById('rule-group').value;
+    const name = document.getElementById('rule-name').value;
+    const price = parseInt(document.getElementById('rule-price').value) || 0;
+    const start = document.getElementById('rule-start').value;
+    const end = document.getElementById('rule-end').value;
+    const days = [];
+    document.querySelectorAll('input[name="modal-weekday"]:checked').forEach(cb => days.push(parseInt(cb.value)));
+    if(!name || days.length === 0) { Swal.fire('Lỗi', 'Nhập tên và chọn ngày!', 'error'); return; }
+    if(currentEditingRuleId) {
+        const idx = pricingRules.findIndex(r => r.id === currentEditingRuleId);
+        if(idx !== -1) pricingRules[idx] = { id: currentEditingRuleId, group, name, days, start, end, price };
+    } else {
+        const newId = Date.now();
+        pricingRules.push({ id: newId, group, name, days, start, end, price });
+    }
+    localStorage.setItem('pricingRules', JSON.stringify(pricingRules));
+    renderConfigTable();
+    closeModal();
+}
+function deleteRule(id) {
+    if(confirm("Xóa quy tắc này?")) {
+        pricingRules = pricingRules.filter(r => r.id !== id);
+        localStorage.setItem('pricingRules', JSON.stringify(pricingRules));
+        renderConfigTable();
+    }
+}
