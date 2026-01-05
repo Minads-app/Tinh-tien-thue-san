@@ -3,10 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Quản Lý Sân & Tính Tiền - V4.1 (Calendar & Weekdays)</title>
+    <title>Quản Lý Sân & Tính Tiền - V4.3 (Final Stable)</title>
+    
     <script src="https://cdn.tailwindcss.com"></script>
+    
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
@@ -136,8 +139,8 @@
                     <div class="border-b-2 border-gray-800 pb-4 mb-4 flex justify-between items-start">
                         <div>
                             <h1 class="text-2xl md:text-3xl font-bold text-gray-800 uppercase tracking-wide">Phiếu Thanh Toán</h1>
-                            <p class="text-gray-500 text-sm mt-1">Sân Thể Thao HBA Sport Center MINH KHAI</p>
-                            <p class="text-xs text-gray-400">ĐC: 28 Ngô Thời Nhiệm, P. Xuân Hòa, TP.HCM (P. Võ Thị Sáu, Q.3 cũ)</p>
+                            <p class="text-gray-500 text-sm mt-1">Sân Thể Thao ABC Sport Center</p>
+                            <p class="text-xs text-gray-400">ĐC: 123 Đường Sân Vận Động, TP.HCM</p>
                         </div>
                         <div class="text-right">
                             <p class="text-sm text-gray-600">Ngày: <span id="inv-date" class="font-medium">--/--/----</span></p>
@@ -255,16 +258,23 @@
                         <p class="text-xs text-gray-500">Tải xuống hoặc khôi phục cấu hình.</p>
                     </div>
                     <div class="flex gap-2">
-                        <button onclick="backupData()" class="bg-indigo-100 text-indigo-700 hover:bg-indigo-200 px-3 py-2 rounded text-sm font-medium border border-indigo-200"><i class="fa-solid fa-download mr-1"></i> Tải về (.json)</button>
-                        <button onclick="document.getElementById('restore-input').click()" class="bg-white text-gray-700 hover:bg-gray-100 px-3 py-2 rounded text-sm font-medium border border-gray-300"><i class="fa-solid fa-upload mr-1"></i> Khôi phục</button>
+                        <button onclick="backupData()" class="bg-indigo-100 text-indigo-700 hover:bg-indigo-200 px-3 py-2 rounded text-sm font-medium border border-indigo-200">
+                            <i class="fa-solid fa-download mr-1"></i> Tải về (.json)
+                        </button>
+                        <button onclick="document.getElementById('restore-input').click()" class="bg-white text-gray-700 hover:bg-gray-100 px-3 py-2 rounded text-sm font-medium border border-gray-300">
+                            <i class="fa-solid fa-upload mr-1"></i> Khôi phục
+                        </button>
                         <input type="file" id="restore-input" accept=".json" class="hidden" onchange="restoreData(this)">
                     </div>
                 </div>
 
                 <div class="flex justify-between items-center mb-6 border-b pb-4">
                     <h2 class="text-xl font-bold text-gray-800">Cấu Hình Bảng Giá</h2>
-                    <button onclick="addNewRule()" class="bg-green-600 text-white px-4 py-2 rounded text-sm font-medium hover:bg-green-700"><i class="fa-solid fa-plus mr-1"></i> Thêm Quy Tắc Mới</button>
+                    <button onclick="addNewRule()" class="bg-green-600 text-white px-4 py-2 rounded text-sm font-medium hover:bg-green-700">
+                        <i class="fa-solid fa-plus mr-1"></i> Thêm Quy Tắc Mới
+                    </button>
                 </div>
+
                 <div class="overflow-x-auto">
                     <table class="w-full text-left text-sm border-collapse">
                         <thead>
