@@ -3,11 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Quản Lý Sân & Tính Tiền - V4.0 (Smart Auto-Pricing)</title>
+    <title>Quản Lý Sân & Tính Tiền - V4.1 (Calendar & Weekdays)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script src="https://npmcdn.com/flatpickr/dist/l10n/vn.js"></script>
+
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -105,9 +110,14 @@
                             <div class="flex flex-wrap gap-2" id="weekday-container"></div>
                         </div>
 
-                         <div>
-                             <label class="text-xs font-semibold text-gray-500 uppercase">Ngày nghỉ (DD/MM/YYYY)</label>
-                             <textarea id="exclude-dates" rows="2" class="w-full px-3 py-1 border rounded text-xs mt-1 font-mono" placeholder="Ví dụ: 14/02/2026"></textarea>
+                         <div class="relative">
+                             <div class="flex justify-between items-end mb-1">
+                                 <label class="text-xs font-semibold text-gray-500 uppercase">Ngày nghỉ (Chọn từ lịch)</label>
+                                 <button onclick="fillHolidays()" class="text-[10px] text-blue-600 hover:text-blue-800 underline font-medium cursor-pointer">
+                                     <i class="fa-solid fa-wand-magic-sparkles mr-1"></i>Gợi ý Lễ/Tết
+                                 </button>
+                             </div>
+                             <input type="text" id="exclude-dates" class="w-full px-3 py-2 border rounded text-sm font-mono bg-white" placeholder="Bấm để chọn nhiều ngày...">
                          </div>
 
                         <button id="add-to-bill-btn" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded shadow transition flex justify-center items-center">
@@ -324,4 +334,3 @@
     <script src="script.js"></script>
 </body>
 </html>
-
