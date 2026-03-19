@@ -150,6 +150,9 @@ document.addEventListener('DOMContentLoaded', () => {
     initSelectors();
     renderWeekdays('weekday-container', []);
 
+    // Tải danh sách ngân hàng trước
+    fetchBankList();
+
     // Tải dữ liệu từ Firebase
     fetchPricingRules();
     fetchReports();
@@ -161,6 +164,18 @@ document.addEventListener('DOMContentLoaded', () => {
         dateFormat: "d/m/Y",
         locale: "vn"
     });
+
+    const datePresetSelect = document.getElementById('filter-date-preset');
+    if(datePresetSelect) {
+        datePresetSelect.addEventListener('change', (e) => {
+            const customDates = document.getElementById('filter-custom-dates');
+            if(e.target.value === 'custom') {
+                customDates.classList.remove('hidden');
+            } else {
+                customDates.classList.add('hidden');
+            }
+        });
+    }
 
     const today = new Date();
     document.getElementById('inv-date').textContent = formatDateFull(today);
@@ -229,8 +244,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const startDateVal = document.getElementById('start-date').value || '';
         const endDateVal = document.getElementById('end-date').value || '';
+        
+        // Generate random invoice ID: HBA-YYYYMMDD-XXXX
+        const d = new Date();
+        const dateStr = `${d.getFullYear()}${(d.getMonth()+1).toString().padStart(2,'0')}${d.getDate().toString().padStart(2,'0')}`;
+        const randomStr = Math.floor(1000 + Math.random() * 9000);
+        const invoiceId = `HBA-${dateStr}-${randomStr}`;
 
         const transactionData = {
+            id: invoiceId,
+            status: 'unpaid',
             createdAt: firebase.firestore.FieldValue.serverTimestamp(),
             customerName: customerName,
             customerPhone: customerPhone,
@@ -666,46 +689,80 @@ function deleteRule(id) {
 async function fetchReports() {
     const tbody = document.getElementById('report-table-body');
     const emptyMsg = document.getElementById('empty-report-msg');
+    const totalRevEl = document.getElementById('total-revenue-report');
+    const totalDebtEl = document.getElementById('total-debt-report');
     
     if(!tbody || !db) return;
-    tbody.innerHTML = '<tr><td colspan="10" class="text-center py-8 text-gray-500"><i class="fa-solid fa-spinner fa-spin text-2xl mb-2 block"></i> Đang đồng bộ dữ liệu...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="10" class="text-center py-8 text-gray-500"><i class="fa-solid fa-spinner fa-spin text-2xl mb-2 block"></i> Đang tính toán dữ liệu...</td></tr>';
     
+    // Get filter values
+    const filterPreset = document.getElementById('filter-date-preset') ? document.getElementById('filter-date-preset').value : 'this_month';
+    const filterStatus = document.getElementById('filter-status') ? document.getElementById('filter-status').value : 'all';
+    const filterStart = document.getElementById('filter-start') ? document.getElementById('filter-start').value : '';
+    const filterEnd = document.getElementById('filter-end') ? document.getElementById('filter-end').value : '';
+
+    const today = new Date();
+    today.setHours(0,0,0,0);
+
+    let startLimit = null;
+    let endLimit = null;
+
+    if (filterPreset === 'today') {
+        startLimit = new Date(); startLimit.setHours(0,0,0,0);
+        endLimit = new Date(); endLimit.setHours(23,59,59,999);
+    } else if (filterPreset === 'this_month') {
+        startLimit = new Date(today.getFullYear(), today.getMonth(), 1);
+        endLimit = new Date(today.getFullYear(), today.getMonth() + 1, 0, 23, 59, 59, 999);
+    } else if (filterPreset === 'last_month') {
+        startLimit = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+        endLimit = new Date(today.getFullYear(), today.getMonth(), 0, 23, 59, 59, 999);
+    } else if (filterPreset === 'custom' && filterStart) {
+        startLimit = new Date(filterStart); startLimit.setHours(0,0,0,0);
+        if (filterEnd) {
+            endLimit = new Date(filterEnd); endLimit.setHours(23,59,59,999);
+        } else {
+            endLimit = new Date(); endLimit.setHours(23,59,59,999);
+        }
+    }
+
     try {
-        const snapshot = await db.collection('transactions').orderBy('createdAt', 'desc').limit(150).get();
+        const snapshot = await db.collection('transactions').orderBy('createdAt', 'desc').get();
         tbody.innerHTML = '';
         let totalRev = 0;
-        
-        if (snapshot.empty) {
-            if(emptyMsg) emptyMsg.classList.remove('hidden');
-            document.getElementById('total-revenue-report').textContent = "0 ₫";
-            return;
-        }
-        
-        if(emptyMsg) emptyMsg.classList.add('hidden');
+        let totalDebt = 0;
+        let count = 0;
 
         snapshot.forEach(doc => {
             const data = doc.data();
-            totalRev += (data.totalAmount || 0);
+            const docId = doc.id;
             
-            let timeStr = 'N/A';
-            if(data.createdAt && data.createdAt.toDate) {
-                const d = data.createdAt.toDate();
-                timeStr = `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')} - ${d.getDate()}/${d.getMonth()+1}/${d.getFullYear()}`;
+            // Lọc theo thời gian
+            let createdAtDate = null;
+            if (data.createdAt && data.createdAt.toDate) {
+                createdAtDate = data.createdAt.toDate();
+            } else {
+                createdAtDate = new Date(); // Fallback for pending writes
             }
 
-            // Format start/end date
+            if (startLimit && createdAtDate < startLimit) return;
+            if (endLimit && createdAtDate > endLimit) return;
+
+            // Lọc theo trạng thái. (Cũ chưa có trường status thì ngầm định là 'paid' nếu tùy ý, ở đây set mặc định là 'paid' nếu null)
+            const status = data.status || 'paid';
+            if (filterStatus !== 'all' && filterStatus !== status) return;
+
+            count++;
+            const amount = data.totalAmount || 0;
+            totalRev += amount;
+            if (status === 'unpaid') totalDebt += amount;
+            
+            let timeStr = `${createdAtDate.getHours().toString().padStart(2, '0')}:${createdAtDate.getMinutes().toString().padStart(2, '0')} - ${createdAtDate.getDate()}/${createdAtDate.getMonth()+1}/${createdAtDate.getFullYear()}`;
+
             let startDateStr = data.startDate || '---';
             let endDateStr = data.endDate || '---';
-            if(startDateStr && startDateStr.includes('-')) {
-                const [y, m, d2] = startDateStr.split('-');
-                startDateStr = `${d2}/${m}/${y}`;
-            }
-            if(endDateStr && endDateStr.includes('-')) {
-                const [y, m, d2] = endDateStr.split('-');
-                endDateStr = `${d2}/${m}/${y}`;
-            }
+            if(startDateStr && startDateStr.includes('-')) { const [y,m,d] = startDateStr.split('-'); startDateStr = `${d}/${m}/${y}`; }
+            if(endDateStr && endDateStr.includes('-')) { const [y,m,d] = endDateStr.split('-'); endDateStr = `${d}/${m}/${y}`; }
 
-            // Chi tiết đặt sân kèm thứ trong tuần và ngày loại trừ
             const itemsDesc = (data.items || []).map(i => {
                 const daysText = (i.weekdays || []).map(d => d === 0 ? 'CN' : 'T'+(d+1)).join(', ');
                 const skippedText = (i.skipped && i.skipped.length > 0) ? `<div class="text-[10px] text-red-500 italic">Trừ: ${i.skipped.join(', ')}</div>` : '';
@@ -714,11 +771,21 @@ async function fetchReports() {
 
             const subTotal = data.subTotal || 0;
             const vatAmount = data.vatAmount || 0;
+            const invId = data.id || `CŨ-${docId.slice(0,6).toUpperCase()}`;
+
+            const statusHtml = status === 'unpaid' 
+                ? `<span class="px-2 py-1 bg-red-100 text-red-700 rounded-full text-[10px] font-bold">Chưa TT</span>`
+                : `<span class="px-2 py-1 bg-green-100 text-green-700 rounded-full text-[10px] font-bold">Đã TT</span>`;
+
+            // Lưu dữ liệu vào data attribute để dùng cho modal
+            const dataStr = encodeURIComponent(JSON.stringify({...data, docId: docId}));
 
             const tr = document.createElement('tr');
             tr.className = "border-b hover:bg-indigo-50 transition";
             tr.innerHTML = `
+                <td class="p-3 border text-xs font-bold text-indigo-600 whitespace-nowrap cursor-pointer hover:underline" onclick="viewReceipt('${dataStr}')">${invId} <i class="fa-solid fa-up-right-from-square text-[10px] ml-1"></i></td>
                 <td class="p-3 border text-xs text-gray-500 whitespace-nowrap"><i class="fa-regular fa-clock mr-1"></i> ${timeStr}</td>
+                <td class="p-3 border text-center whitespace-nowrap">${statusHtml}</td>
                 <td class="p-3 border font-bold text-gray-800 text-sm">${data.customerName || 'Vãng lai'}</td>
                 <td class="p-3 border text-gray-600 text-xs">${data.customerPhone || '---'}</td>
                 <td class="p-3 border font-bold text-xs ${data.paymentMethod === 'Tiền mặt' ? 'text-green-600' : 'text-blue-600'}">${data.paymentMethod || '---'}</td>
@@ -732,17 +799,49 @@ async function fetchReports() {
             tbody.appendChild(tr);
         });
 
-        document.getElementById('total-revenue-report').textContent = formatVND(totalRev);
+        if (count === 0) {
+            tbody.innerHTML = '';
+            if(emptyMsg) emptyMsg.classList.remove('hidden');
+        } else {
+            if(emptyMsg) emptyMsg.classList.add('hidden');
+        }
+
+        if(totalRevEl) totalRevEl.textContent = formatVND(totalRev);
+        if(totalDebtEl) totalDebtEl.textContent = formatVND(totalDebt);
 
     } catch (e) {
         console.error("Error fetching reports:", e);
-        tbody.innerHTML = '<tr><td colspan="10" class="text-center py-6 text-red-500 font-bold"><i class="fa-solid fa-triangle-exclamation mr-2"></i> Lỗi kết nối đám mây, vui lòng tải lại trang.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="12" class="text-center py-6 text-red-500 font-bold"><i class="fa-solid fa-triangle-exclamation mr-2"></i> Lỗi kết nối đám mây, vui lòng tải lại trang.</td></tr>';
     }
 }
 
 // ==========================================
 // SETTINGS: Fetch / Save / Apply
 // ==========================================
+
+let bankList = [];
+
+async function fetchBankList() {
+    try {
+        const res = await fetch('https://api.vietqr.io/v2/banks');
+        const data = await res.json();
+        if(data.code === '00') {
+            bankList = data.data;
+            const optionsHtml = '<option value="">-- Chọn ngân hàng --</option>' + 
+                bankList.map(b => `<option value="${b.bin}">${b.shortName} (${b.name})</option>`).join('');
+            
+            const pSelect = document.getElementById('s-bank-personal-name');
+            const cSelect = document.getElementById('s-bank-company-name');
+            if(pSelect) pSelect.innerHTML = optionsHtml;
+            if(cSelect) cSelect.innerHTML = optionsHtml;
+            
+            // Populate lại nếu setting đã load xong trước cả bank
+            populateSettingsForm();
+        }
+    } catch(e) {
+        console.error("Lỗi lấy danh sách ngân hàng:", e);
+    }
+}
 
 function applySettingsToUI() {
     const el = (id) => document.getElementById(id);
@@ -754,17 +853,22 @@ function applySettingsToUI() {
 
 function populateSettingsForm() {
     const el = (id) => document.getElementById(id);
+    if(!el('s-venue-name')) return;
+    
     el('s-venue-name').value = siteSettings.venueName || '';
     el('s-venue-sub').value = siteSettings.venueSub || '';
     el('s-venue-address').value = siteSettings.venueAddress || '';
-    el('s-bank-personal-name').value = siteSettings.bankPersonal.name || '';
+    
+    const personalBin = siteSettings.bankPersonal.qrString ? siteSettings.bankPersonal.qrString.split('-')[0] : '';
+    const companyBin = siteSettings.bankCompany.qrString ? siteSettings.bankCompany.qrString.split('-')[0] : '';
+
+    el('s-bank-personal-name').value = personalBin;
     el('s-bank-personal-accname').value = siteSettings.bankPersonal.accName || '';
     el('s-bank-personal-accnum').value = siteSettings.bankPersonal.accNum || '';
-    el('s-bank-personal-qr').value = siteSettings.bankPersonal.qrString || '';
-    el('s-bank-company-name').value = siteSettings.bankCompany.name || '';
+
+    el('s-bank-company-name').value = companyBin;
     el('s-bank-company-accname').value = siteSettings.bankCompany.accName || '';
     el('s-bank-company-accnum').value = siteSettings.bankCompany.accNum || '';
-    el('s-bank-company-qr').value = siteSettings.bankCompany.qrString || '';
 }
 
 async function fetchSettings() {
@@ -788,22 +892,33 @@ async function fetchSettings() {
 async function saveSettings() {
     if (!db) { Swal.fire('Lỗi', 'Không kết nối được với Firebase!', 'error'); return; }
 
-    const el = (id) => document.getElementById(id).value.trim();
+    const elVal = (id) => document.getElementById(id).value.trim();
+    
+    const pBin = elVal('s-bank-personal-name');
+    const cBin = elVal('s-bank-company-name');
+    
+    // Tìm tên ngân hàng rút gọn (shortName) từ danh sách
+    const pBankObj = bankList.find(b => b.bin === pBin);
+    const cBankObj = bankList.find(b => b.bin === cBin);
 
-    siteSettings.venueName = el('s-venue-name');
-    siteSettings.venueSub = el('s-venue-sub');
-    siteSettings.venueAddress = el('s-venue-address');
+    siteSettings.venueName = elVal('s-venue-name');
+    siteSettings.venueSub = elVal('s-venue-sub');
+    siteSettings.venueAddress = elVal('s-venue-address');
+    
+    const pAccNum = elVal('s-bank-personal-accnum');
     siteSettings.bankPersonal = {
-        name: el('s-bank-personal-name'),
-        accName: el('s-bank-personal-accname'),
-        accNum: el('s-bank-personal-accnum'),
-        qrString: el('s-bank-personal-qr')
+        name: pBankObj ? pBankObj.shortName : '',
+        accName: elVal('s-bank-personal-accname').toUpperCase(),
+        accNum: pAccNum,
+        qrString: pBin && pAccNum ? `${pBin}-${pAccNum}` : ''
     };
+    
+    const cAccNum = elVal('s-bank-company-accnum');
     siteSettings.bankCompany = {
-        name: el('s-bank-company-name'),
-        accName: el('s-bank-company-accname'),
-        accNum: el('s-bank-company-accnum'),
-        qrString: el('s-bank-company-qr')
+        name: cBankObj ? cBankObj.shortName : '',
+        accName: elVal('s-bank-company-accname').toUpperCase(),
+        accNum: cAccNum,
+        qrString: cBin && cAccNum ? `${cBin}-${cAccNum}` : ''
     };
 
     try {
@@ -816,3 +931,80 @@ async function saveSettings() {
         Swal.fire('Lỗi', 'Không thể lưu cài đặt. Vui lòng thử lại!', 'error');
     }
 }
+
+// ==========================================
+// RECEIPT MODAL & STATUS UPDATES
+// ==========================================
+
+function viewReceipt(dataStrEncoded) {
+    const data = JSON.parse(decodeURIComponent(dataStrEncoded));
+    const invId = data.id || `CŨ-${data.docId.slice(0,6).toUpperCase()}`;
+    const status = data.status || 'paid';
+    
+    document.getElementById('rm-id').textContent = invId;
+    
+    // Xây dựng nội dung chi tiết
+    const itemsHtml = (data.items || []).map(i => {
+        const daysText = (i.weekdays || []).map(d => d === 0 ? 'CN' : 'T'+(d+1)).join(', ');
+        return `<div class="border-b py-2 flex justify-between text-sm">
+            <div>
+                <p class="font-bold text-gray-800">${i.name}</p>
+                <p class="text-xs text-gray-500">Thứ: ${daysText} | Giờ: ${i.start} - ${i.end}</p>
+                ${i.skipped && i.skipped.length > 0 ? `<p class="text-[10px] text-red-500 mt-1">Nghỉ bù: ${i.skipped.join(', ')}</p>` : ''}
+            </div>
+            <div class="text-right">
+                <p class="text-gray-600">${i.count} buổi x ${formatVND(i.price)}</p>
+                <p class="font-bold text-indigo-700">${formatVND(i.total)}</p>
+            </div>
+        </div>`;
+    }).join('');
+
+    const html = `
+        <div class="grid grid-cols-2 gap-4 mb-4 text-sm bg-gray-50 p-3 rounded">
+            <div><span class="text-gray-500 font-medium">Khách hàng:</span> <br><b>${data.customerName || 'Vãng lai'}</b></div>
+            <div><span class="text-gray-500 font-medium">SĐT:</span> <br><b>${data.customerPhone || '---'}</b></div>
+            <div><span class="text-gray-500 font-medium">Chi nhánh:</span> <br><b>${data.note || '---'}</b></div>
+            <div><span class="text-gray-500 font-medium">Thanh toán:</span> <br><b>${data.paymentMethod || '---'}</b></div>
+        </div>
+        <div class="mb-4">
+            <h3 class="font-bold text-gray-700 mb-2 border-b pb-1">DỊCH VỤ ĐÃ ĐẶT</h3>
+            ${itemsHtml}
+        </div>
+        <div class="bg-indigo-50 p-3 rounded text-right space-y-1">
+            <p class="text-sm text-gray-600">Tiền hàng: ${formatVND(data.subTotal || 0)}</p>
+            <p class="text-sm text-gray-600">Thuế VAT: ${formatVND(data.vatAmount || 0)}</p>
+            <p class="font-bold text-lg text-indigo-700 mt-2 pt-2 border-t border-indigo-100">Tổng V/A: ${formatVND(data.totalAmount || 0)}</p>
+        </div>
+    `;
+
+    document.getElementById('rm-content').innerHTML = html;
+
+    const btn = document.getElementById('rm-status-btn');
+    if (status === 'unpaid') {
+        btn.style.display = 'block';
+        btn.onclick = () => confirmPayment(data.docId);
+    } else {
+        btn.style.display = 'none';
+    }
+
+    document.getElementById('receipt-modal').classList.remove('hidden');
+}
+
+function closeReceiptModal() {
+    document.getElementById('receipt-modal').classList.add('hidden');
+}
+
+async function confirmPayment(docId) {
+    if (!db) return;
+    try {
+        Swal.fire({ title: 'Đang cập nhật...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+        await db.collection('transactions').doc(docId).update({ status: 'paid' });
+        closeReceiptModal();
+        Swal.fire({ icon: 'success', title: 'Thành công', text: 'Đã cập nhật trạng thái đã thanh toán!', timer: 1500, showConfirmButton: false });
+        fetchReports(); // Refresh table
+    } catch (e) {
+        console.error("Error updating payment:", e);
+        Swal.fire('Lỗi', 'Không gạch nợ được. Hãy kiểm tra mạng!', 'error');
+    }
+}
+
