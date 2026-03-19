@@ -178,6 +178,8 @@ document.addEventListener('DOMContentLoaded', () => {
     fetchPricingRules();
     fetchReports();
     fetchSettings();
+    fetchCustomers();
+    setupAutocomplete();
 
     // INIT FLATPICKR
     excludeDatePicker = flatpickr("#exclude-dates", {
@@ -268,6 +270,37 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Dùng mã phiếu hiện tại đã cấp
         const invoiceId = currentInvoiceId;
+
+        // Cập nhật tự động thông tin Khách hàng vào kho dữ liệu mới
+        if (customerPhone && db) {
+            const cRef = db.collection('customers').doc(customerPhone);
+            cRef.get().then(docSnap => {
+                const gender = document.getElementById('cust-gender') ? document.getElementById('cust-gender').value : 'Anh';
+                const comp = document.getElementById('cust-company') ? document.getElementById('cust-company').value : '';
+                if (docSnap.exists) {
+                    cRef.update({
+                        name: customerName,
+                        gender: gender,
+                        company: comp,
+                        totalSpent: firebase.firestore.FieldValue.increment(finalTotalNum),
+                        ticketCount: firebase.firestore.FieldValue.increment(1),
+                        lastVisit: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                } else {
+                    const code = 'KH' + Math.floor(1000 + Math.random() * 9000);
+                    cRef.set({
+                        customerCode: code,
+                        name: customerName,
+                        gender: gender,
+                        company: comp,
+                        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                        lastVisit: firebase.firestore.FieldValue.serverTimestamp(),
+                        totalSpent: finalTotalNum,
+                        ticketCount: 1
+                    });
+                }
+            }).catch(e => console.error(e));
+        }
 
         const transactionData = {
             id: invoiceId,
@@ -564,7 +597,7 @@ function removeItem(id) {
 }
 
 function switchTab(tabName) {
-    document.querySelectorAll('[id^="tab-booking"], [id^="tab-config"], [id^="tab-reports"], [id^="tab-settings"]').forEach(el => el.classList.add('hidden'));
+    document.querySelectorAll('[id^="tab-booking"], [id^="tab-config"], [id^="tab-reports"], [id^="tab-settings"], [id^="tab-customers"]').forEach(el => el.classList.add('hidden'));
     document.getElementById(`tab-${tabName}`).classList.remove('hidden');
     
     const btnBooking = document.getElementById('tab-btn-booking');
@@ -1047,4 +1080,186 @@ async function confirmPayment(docId) {
         Swal.fire('Lỗi', 'Không gạch nợ được. Hãy kiểm tra mạng!', 'error');
     }
 }
+
+// ==========================================
+// CUSTOMER MANAGEMENT
+// ==========================================
+
+let customersList = [];
+let unsubscribeCustomers = null;
+
+function fetchCustomers() {
+    if (!db) return;
+    if (unsubscribeCustomers) unsubscribeCustomers();
+    
+    unsubscribeCustomers = db.collection('customers').orderBy('lastVisit', 'desc').onSnapshot(snapshot => {
+        customersList = [];
+        snapshot.forEach(doc => {
+            const data = doc.data();
+            customersList.push({ phoneId: doc.id, ...data });
+        });
+        renderCustomerTable();
+    }, e => {
+        console.error("Lỗi lấy danh bạ khách:", e);
+    });
+}
+
+function renderCustomerTable() {
+    const tbody = document.getElementById('customer-table-body');
+    const emptyMsg = document.getElementById('empty-customer-msg');
+    const searchVal = (document.getElementById('customer-search') ? document.getElementById('customer-search').value.toLowerCase().trim() : '');
+
+    if (!tbody) return;
+
+    let filtered = customersList;
+    if (searchVal) {
+        filtered = customersList.filter(c => 
+            (c.name || '').toLowerCase().includes(searchVal) || 
+            (c.phoneId || '').includes(searchVal)
+        );
+    }
+
+    tbody.innerHTML = '';
+    
+    if (filtered.length === 0) {
+        if(emptyMsg) emptyMsg.classList.remove('hidden');
+    } else {
+        if(emptyMsg) emptyMsg.classList.add('hidden');
+        filtered.forEach(c => {
+            let lastVisitStr = '---';
+            if (c.lastVisit && c.lastVisit.toDate) {
+                const d = c.lastVisit.toDate();
+                lastVisitStr = `${d.getDate().toString().padStart(2,'0')}/${(d.getMonth()+1).toString().padStart(2,'0')}/${d.getFullYear()}`;
+            }
+
+            const tr = document.createElement('tr');
+            tr.className = "border-b hover:bg-blue-50 transition text-sm text-gray-700";
+            tr.innerHTML = `
+                <td class="p-3 border-r font-mono text-xs font-bold text-gray-500">${c.customerCode || '---'}</td>
+                <td class="p-3 border-r font-bold text-blue-700">${c.name || '---'}</td>
+                <td class="p-3 border-r font-mono font-bold">${c.phoneId || '---'}</td>
+                <td class="p-3 border-r text-gray-600">${c.gender || '---'}</td>
+                <td class="p-3 border-r text-gray-600">${c.company || '---'}</td>
+                <td class="p-3 border-r text-center font-bold text-gray-800">${c.ticketCount || 0}</td>
+                <td class="p-3 border-r text-right font-bold text-green-700 text-base">${formatVND(c.totalSpent || 0)}</td>
+                <td class="p-3 text-gray-500 whitespace-nowrap"><i class="fa-regular fa-calendar mr-1"></i> ${lastVisitStr}</td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+}
+
+if(document.getElementById('customer-search')) {
+    document.getElementById('customer-search').addEventListener('input', renderCustomerTable);
+}
+
+function openAddCustomerModal() {
+    document.getElementById('c-phone').value = '';
+    document.getElementById('c-name').value = '';
+    document.getElementById('c-company').value = '';
+    document.getElementById('c-gender').value = 'Anh';
+    document.getElementById('customer-modal').classList.remove('hidden');
+}
+
+function closeCustomerModal() {
+    document.getElementById('customer-modal').classList.add('hidden');
+}
+
+async function saveCustomerModal() {
+    const phone = document.getElementById('c-phone').value.trim();
+    const name = document.getElementById('c-name').value.trim();
+    const gender = document.getElementById('c-gender').value;
+    const company = document.getElementById('c-company').value.trim();
+
+    if(!phone || !name) {
+        Swal.fire('Lỗi', 'Vui lòng nhập đủ SĐT và Họ Tên!', 'error');
+        return;
+    }
+
+    if (!db) return;
+
+    try {
+        Swal.fire({ title: 'Đang lưu...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+        const docRef = await db.collection('customers').doc(phone).get();
+        if (docRef.exists) {
+            Swal.fire('Cảnh báo', 'Khách hàng với Số điện thoại này đã tồn tại trong danh bạ!', 'warning');
+            return;
+        }
+
+        const code = 'KH' + Math.floor(1000 + Math.random() * 9000);
+
+        await db.collection('customers').doc(phone).set({
+            customerCode: code,
+            name: name,
+            gender: gender,
+            company: company,
+            createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+            lastVisit: firebase.firestore.FieldValue.serverTimestamp(),
+            totalSpent: 0,
+            ticketCount: 0
+        });
+
+        closeCustomerModal();
+        Swal.fire({ icon: 'success', title: 'Thành công', text: 'Đã thêm khách hàng mới!', timer: 1500, showConfirmButton: false });
+    } catch (e) {
+        console.error("Lỗi lưu khách hàng:", e);
+        Swal.fire('Lỗi', 'Không thể lưu. Vui lòng kiểm tra mạng!', 'error');
+    }
+}
+
+// ==========================================
+// CUSTOMER AUTOCOMPLETE
+// ==========================================
+
+function setupAutocomplete() {
+    const phoneInput = document.getElementById('cust-phone');
+    const nameInput = document.getElementById('cust-name');
+    const phoneList = document.getElementById('autocomplete-phone');
+    const nameList = document.getElementById('autocomplete-name');
+
+    if(!phoneInput || !nameInput || !phoneList || !nameList) return;
+
+    function renderList(inputEl, listEl, keyField) {
+        const val = inputEl.value.toLowerCase().trim();
+        listEl.innerHTML = '';
+        if (val.length < 2) {
+            listEl.classList.add('hidden');
+            return;
+        }
+
+        let matches = customersList.filter(c => (c[keyField] || '').toLowerCase().includes(val)).slice(0, 5);
+        if (matches.length === 0) {
+            listEl.classList.add('hidden');
+            return;
+        }
+
+        matches.forEach(m => {
+            const li = document.createElement('li');
+            li.className = "p-3 border-b cursor-pointer hover:bg-blue-50 transition text-sm flex justify-between items-center";
+            li.innerHTML = `<div><span class="font-bold text-blue-700">${m.name}</span> <span class="text-xs text-gray-500 ml-1">(${m.gender})</span></div> <div class="font-mono text-gray-600 font-bold bg-gray-100 px-2 py-1 rounded">${m.phoneId}</div>`;
+            li.onclick = () => {
+                document.getElementById('cust-name').value = m.name || '';
+                document.getElementById('cust-phone').value = m.phoneId || '';
+                document.getElementById('cust-company').value = m.company || '';
+                if(m.gender) document.getElementById('cust-gender').value = m.gender;
+                
+                document.getElementById('cust-name').dispatchEvent(new Event('input'));
+                document.getElementById('cust-phone').dispatchEvent(new Event('input'));
+                
+                listEl.classList.add('hidden');
+            };
+            listEl.appendChild(li);
+        });
+        listEl.classList.remove('hidden');
+    }
+
+    phoneInput.addEventListener('input', () => { renderList(phoneInput, phoneList, 'phoneId'); nameList.classList.add('hidden'); });
+    nameInput.addEventListener('input', () => { renderList(nameInput, nameList, 'name'); phoneList.classList.add('hidden'); });
+
+    document.addEventListener('click', (e) => {
+        if (e.target !== phoneInput && e.target !== phoneList) phoneList.classList.add('hidden');
+        if (e.target !== nameInput && e.target !== nameList) nameList.classList.add('hidden');
+    });
+}
+
 

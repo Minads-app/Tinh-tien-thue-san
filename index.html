@@ -36,6 +36,9 @@
                 <button onclick="switchTab('reports')" id="tab-btn-reports" class="tab-inactive py-4 px-1 inline-flex items-center text-sm border-b-2 border-transparent font-medium text-gray-500 hover:text-gray-800 transition">
                     <i class="fa-solid fa-chart-pie mr-2 text-indigo-500"></i> Báo Cáo Thu / Chi
                 </button>
+                <button onclick="switchTab('customers')" id="tab-btn-customers" class="tab-inactive py-4 px-1 inline-flex items-center text-sm border-b-2 border-transparent font-medium text-gray-500 hover:text-gray-800 transition">
+                    <i class="fa-solid fa-users mr-2 text-blue-500"></i> Khách Hàng
+                </button>
                 <button onclick="switchTab('settings')" id="tab-btn-settings" class="tab-inactive py-4 px-1 inline-flex items-center text-sm border-b-2 border-transparent font-medium text-gray-500 hover:text-gray-800 transition">
                     <i class="fa-solid fa-gear mr-2"></i> Cài Đặt
                 </button>
@@ -53,9 +56,15 @@
                         <i class="fa-solid fa-user-tag mr-2"></i> Thông tin Khách hàng
                     </h2>
                     <div class="grid grid-cols-1 gap-3">
-                        <input type="text" id="cust-name" class="w-full px-3 py-2 border rounded text-sm focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Họ tên khách (*)">
+                        <div class="relative">
+                            <input type="text" id="cust-name" class="w-full px-3 py-2 border rounded text-sm focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Họ tên khách (*)" autocomplete="off">
+                            <ul id="autocomplete-name" class="absolute z-50 w-full bg-white border border-gray-200 shadow-lg rounded mt-1 max-h-48 overflow-y-auto hidden"></ul>
+                        </div>
                         <div class="grid grid-cols-2 gap-3">
-                            <input type="tel" id="cust-phone" class="w-full px-3 py-2 border rounded text-sm outline-none" placeholder="SĐT (*)">
+                            <div class="relative">
+                                <input type="tel" id="cust-phone" class="w-full px-3 py-2 border rounded text-sm outline-none focus:ring-2 focus:ring-blue-500" placeholder="SĐT (*)" autocomplete="off">
+                                <ul id="autocomplete-phone" class="absolute z-50 w-full bg-white border border-gray-200 shadow-lg rounded mt-1 max-h-48 overflow-y-auto hidden"></ul>
+                            </div>
                             <select id="cust-gender" class="w-full px-3 py-2 border rounded text-sm outline-none">
                                 <option value="Anh">Anh</option>
                                 <option value="Chị">Chị</option>
@@ -381,6 +390,50 @@
             </div>
         </div>
 
+        <div id="tab-customers" class="hidden">
+            <div class="bg-white p-6 rounded-lg shadow-sm">
+                <div class="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
+                    <h2 class="text-xl font-bold text-gray-800 uppercase border-l-4 border-blue-600 pl-3"><i class="fa-solid fa-users-viewfinder text-blue-600 mr-2"></i> Quản Lý Danh Bạ Khách</h2>
+                    <div class="flex gap-2 w-full md:w-auto">
+                        <div class="relative w-full md:w-64">
+                            <i class="fa-solid fa-magnifying-glass absolute left-3 top-3 text-gray-400"></i>
+                            <input type="text" id="customer-search" class="pl-9 pr-3 py-2 border rounded text-sm w-full outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="Tìm tên hoặc SĐT...">
+                        </div>
+                        <button onclick="openAddCustomerModal()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded text-sm font-bold shadow transition whitespace-nowrap hidden lg:flex items-center">
+                            <i class="fa-solid fa-user-plus mr-2"></i> Khách Mới
+                        </button>
+                    </div>
+                </div>
+                <!-- Bút thêm trên mobile -->
+                <button onclick="openAddCustomerModal()" class="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded text-sm font-bold shadow transition lg:hidden mb-4 flex justify-center items-center">
+                    <i class="fa-solid fa-user-plus mr-2"></i> Thêm Khách Hàng Mới
+                </button>
+                <div class="overflow-x-auto border rounded-xl">
+                    <table class="w-full text-left text-sm border-collapse">
+                        <thead>
+                            <tr class="bg-blue-50 text-blue-800 border-b text-xs uppercase">
+                                <th class="p-3 border-r font-bold">Mã KH</th>
+                                <th class="p-3 border-r font-bold">Họ & Tên</th>
+                                <th class="p-3 border-r font-bold">Điện Thoại</th>
+                                <th class="p-3 border-r font-bold">Giới Tính</th>
+                                <th class="p-3 border-r font-bold">Đội Bóng/Cty</th>
+                                <th class="p-3 border-r text-center font-bold">Lượt Thuê</th>
+                                <th class="p-3 border-r text-right font-bold w-32 py-4">Tổng Doanh Thu</th>
+                                <th class="p-3 font-bold">Ngày Chơi Cuối</th>
+                            </tr>
+                        </thead>
+                        <tbody id="customer-table-body" class="bg-white">
+                            <!-- JS populate form FireBase -->
+                        </tbody>
+                    </table>
+                    <div id="empty-customer-msg" class="text-center py-12 text-gray-400 font-medium hidden">
+                        <i class="fa-solid fa-box-open text-4xl mb-3 text-gray-300 block"></i>
+                        Danh bạ khách hàng trống.
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <div id="tab-settings" class="hidden">
             <div class="bg-white p-6 rounded-lg shadow-sm max-w-3xl mx-auto">
                 <h2 class="text-xl font-bold text-gray-800 mb-6 border-b pb-4"><i class="fa-solid fa-gear text-indigo-600 mr-2"></i> Cài Đặt Thông Tin Sân</h2>
@@ -498,6 +551,42 @@
             <div class="flex justify-end gap-2 mt-6">
                 <button onclick="closeModal()" class="px-4 py-2 bg-gray-300 rounded text-sm font-medium hover:bg-gray-400">Hủy</button>
                 <button onclick="saveRule()" class="px-4 py-2 bg-blue-600 text-white rounded text-sm font-bold hover:bg-blue-700">Lưu</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Thêm Khách Hàng -->
+    <div id="customer-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex flex-col items-center justify-center p-4 z-[60]">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-sm overflow-hidden">
+            <div class="bg-blue-600 p-4 flex justify-between items-center text-white">
+                <h2 class="text-lg font-bold"><i class="fa-solid fa-user-plus mr-2"></i> Thông Tin Khách Hàng</h2>
+                <button onclick="closeCustomerModal()" class="text-blue-200 hover:text-white transition group"><i class="fa-solid fa-xmark text-xl group-hover:scale-110"></i></button>
+            </div>
+            <div class="p-6 space-y-4 relative">
+                <div>
+                    <label class="block text-xs font-semibold text-gray-500 mb-1">Số điện thoại (*)</label>
+                    <input type="tel" id="c-phone" class="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500 outline-none text-sm font-mono text-blue-700 font-bold" placeholder="Bắt buộc">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-500 mb-1">Họ tên (*)</label>
+                    <input type="text" id="c-name" class="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500 outline-none text-sm" placeholder="Nguyễn Văn A">
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-500 mb-1">Danh xưng</label>
+                        <select id="c-gender" class="w-full px-3 py-2 border rounded text-sm bg-white">
+                            <option value="Anh">Anh</option>
+                            <option value="Chị">Chị</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-500 mb-1">Đội bóng/Tổ chức</label>
+                        <input type="text" id="c-company" class="w-full px-3 py-2 border rounded text-sm" placeholder="Tùy chọn">
+                    </div>
+                </div>
+            </div>
+            <div class="bg-gray-50 border-t p-4 flex justify-end">
+                <button onclick="saveCustomerModal()" class="px-5 py-2 bg-blue-600 text-white rounded text-sm font-bold hover:bg-blue-700 shadow flex items-center transition"><i class="fa-solid fa-save mr-2"></i> Lưu Lại</button>
             </div>
         </div>
     </div>
