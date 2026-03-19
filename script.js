@@ -4,6 +4,7 @@
 
 // BANK_INFO is now dynamic, loaded from Firebase settings
 let unsubscribeReports = null;
+let knownTransactions = {};
 
 let siteSettings = {
     venueName: '',
@@ -791,6 +792,26 @@ async function fetchReports() {
 
     try {
         unsubscribeReports = db.collection('transactions').orderBy('createdAt', 'desc').onSnapshot(snapshot => {
+            
+            // Xử lý chuông thông báo Realtime
+            snapshot.docChanges().forEach(change => {
+                const docId = change.doc.id;
+                const data = change.doc.data();
+                const newStatus = data.status || 'paid';
+                
+                if (change.type === 'added') {
+                    knownTransactions[docId] = newStatus;
+                } else if (change.type === 'modified') {
+                    if (knownTransactions[docId] === 'unpaid' && newStatus === 'paid') {
+                        // Kích hoạt chuông thông báo tiền về
+                        showPaymentNotification(data.customerName, data.totalAmount, data.id || docId.slice(0,6).toUpperCase());
+                    }
+                    knownTransactions[docId] = newStatus;
+                } else if (change.type === 'removed') {
+                    delete knownTransactions[docId];
+                }
+            });
+
             tbody.innerHTML = '';
             let totalRev = 0;
             let totalDebt = 0;
@@ -1259,6 +1280,36 @@ function setupAutocomplete() {
     document.addEventListener('click', (e) => {
         if (e.target !== phoneInput && e.target !== phoneList) phoneList.classList.add('hidden');
         if (e.target !== nameInput && e.target !== nameList) nameList.classList.add('hidden');
+    });
+}
+
+// ==========================================
+// PAYMENT NOTIFICATIONS
+// ==========================================
+function showPaymentNotification(name, amount, invId) {
+    // Thử phát tiếng "Ting" (trình duyệt có thể chặn nếu user chưa từng click vào web)
+    try {
+        // Âm thanh máy tính tiền (Cash Register)
+        const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3'); 
+        audio.play().catch(e => console.warn('Trình duyệt ẩn âm thanh tự động:', e));
+    } catch(e) {}
+
+    const custName = name || 'Khách vãng lai';
+    Swal.fire({
+        toast: true,
+        position: 'top-end',
+        icon: 'success',
+        title: 'Ting Ting! Tiền Về!',
+        html: `Phiếu <b>${invId}</b> của <b>${custName}</b> vừa được thanh toán xong!<br><span class="text-green-600 font-bold text-lg">${formatVND(amount)}</span>`,
+        showConfirmButton: false,
+        timer: 6000,
+        timerProgressBar: true,
+        background: '#f0fdf4', // Xanh nhạt
+        color: '#166534',
+        iconColor: '#22c55e',
+        customClass: {
+            title: 'font-bold text-green-800'
+        }
     });
 }
 
