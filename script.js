@@ -3,6 +3,8 @@
 // ==========================================
 
 // BANK_INFO is now dynamic, loaded from Firebase settings
+let unsubscribeReports = null;
+
 let siteSettings = {
     venueName: '',
     venueSub: '',
@@ -80,6 +82,7 @@ try {
     console.error("Firebase Init Error:", e);
 }
 
+let unsubscribeRules = null;
 async function fetchPricingRules() {
     // 1. Luôn load từ máy tính (localStorage) trước để có dữ liệu dùng ngay
     const localData = localStorage.getItem('pricingRules');
@@ -89,22 +92,29 @@ async function fetchPricingRules() {
         pricingRules = DEFAULT_RULES;
     }
 
-    // 2. Nếu có mạng và Firebase, tải dữ liệu mới nhất đè lên (Đồng bộ đám mây)
+    // 2. Nếu có mạng và Firebase, Lắng nghe dữ liệu mới nhất (Realtime)
     if (db) {
+        if (unsubscribeRules) {
+            unsubscribeRules();
+        }
         try {
-            const docRef = await db.collection('config').doc('pricing').get();
-            if (docRef.exists) {
-                pricingRules = docRef.data().rules || pricingRules;
-                localStorage.setItem('pricingRules', JSON.stringify(pricingRules)); 
-            } else {
-                // Nếu trên mạng chưa có, đẩy dữ liệu hiện tại lên
-                await db.collection('config').doc('pricing').set({ rules: pricingRules });
-            }
+            unsubscribeRules = db.collection('config').doc('pricing').onSnapshot(docRef => {
+                if (docRef.exists) {
+                    pricingRules = docRef.data().rules || pricingRules;
+                    localStorage.setItem('pricingRules', JSON.stringify(pricingRules)); 
+                    renderConfigTable();
+                } else {
+                    // Nếu trên mạng chưa có, đẩy dữ liệu hiện tại lên
+                    db.collection('config').doc('pricing').set({ rules: pricingRules });
+                }
+            });
         } catch (e) {
             console.warn("Lỗi mạng, đang dùng dữ liệu lưu trong máy:", e);
+            renderConfigTable();
         }
+    } else {
+        renderConfigTable();
     }
-    renderConfigTable();
 }
 
 async function syncRulesToFirebase() {
@@ -741,93 +751,101 @@ async function fetchReports() {
         }
     }
 
-    try {
-        const snapshot = await db.collection('transactions').orderBy('createdAt', 'desc').get();
-        tbody.innerHTML = '';
-        let totalRev = 0;
-        let totalDebt = 0;
-        let count = 0;
+    if(unsubscribeReports) {
+        unsubscribeReports();
+        unsubscribeReports = null;
+    }
 
-        snapshot.forEach(doc => {
-            const data = doc.data();
-            const docId = doc.id;
-            
-            // Lọc theo thời gian
-            let createdAtDate = null;
-            if (data.createdAt && data.createdAt.toDate) {
-                createdAtDate = data.createdAt.toDate();
+    try {
+        unsubscribeReports = db.collection('transactions').orderBy('createdAt', 'desc').onSnapshot(snapshot => {
+            tbody.innerHTML = '';
+            let totalRev = 0;
+            let totalDebt = 0;
+            let count = 0;
+
+            snapshot.forEach(doc => {
+                const data = doc.data();
+                const docId = doc.id;
+                
+                // Lọc theo thời gian
+                let createdAtDate = null;
+                if (data.createdAt && data.createdAt.toDate) {
+                    createdAtDate = data.createdAt.toDate();
+                } else {
+                    createdAtDate = new Date(); // Fallback for pending writes
+                }
+
+                if (startLimit && createdAtDate < startLimit) return;
+                if (endLimit && createdAtDate > endLimit) return;
+
+                // Lọc theo trạng thái. (Cũ chưa có trường status thì ngầm định là 'paid' nếu tùy ý, ở đây set mặc định là 'paid' nếu null)
+                const status = data.status || 'paid';
+                if (filterStatus !== 'all' && filterStatus !== status) return;
+
+                count++;
+                const amount = data.totalAmount || 0;
+                totalRev += amount;
+                if (status === 'unpaid') totalDebt += amount;
+                
+                let timeStr = `${createdAtDate.getHours().toString().padStart(2, '0')}:${createdAtDate.getMinutes().toString().padStart(2, '0')} - ${createdAtDate.getDate()}/${createdAtDate.getMonth()+1}/${createdAtDate.getFullYear()}`;
+
+                let startDateStr = data.startDate || '---';
+                let endDateStr = data.endDate || '---';
+                if(startDateStr && startDateStr.includes('-')) { const [y,m,d] = startDateStr.split('-'); startDateStr = `${d}/${m}/${y}`; }
+                if(endDateStr && endDateStr.includes('-')) { const [y,m,d] = endDateStr.split('-'); endDateStr = `${d}/${m}/${y}`; }
+
+                const itemsDesc = (data.items || []).map(i => {
+                    const daysText = (i.weekdays || []).map(d => d === 0 ? 'CN' : 'T'+(d+1)).join(', ');
+                    const skippedText = (i.skipped && i.skipped.length > 0) ? `<div class="text-[10px] text-red-500 italic">Trừ: ${i.skipped.join(', ')}</div>` : '';
+                    return `<div class="text-xs text-gray-700 font-medium mb-1">• ${i.name} - ${i.count} buổi (${i.duration}h)<div class="text-[10px] text-indigo-600">Thứ: ${daysText}</div>${skippedText}</div>`;
+                }).join('');
+
+                const subTotal = data.subTotal || 0;
+                const vatAmount = data.vatAmount || 0;
+                const invId = data.id || `CŨ-${docId.slice(0,6).toUpperCase()}`;
+
+                const statusHtml = status === 'unpaid' 
+                    ? `<span class="px-2 py-1 bg-red-100 text-red-700 rounded-full text-[10px] font-bold">Chưa TT</span>`
+                    : `<span class="px-2 py-1 bg-green-100 text-green-700 rounded-full text-[10px] font-bold">Đã TT</span>`;
+
+                // Lưu dữ liệu vào data attribute để dùng cho modal
+                const dataStr = encodeURIComponent(JSON.stringify({...data, docId: docId}));
+
+                const tr = document.createElement('tr');
+                tr.className = "border-b hover:bg-indigo-50 transition";
+                tr.innerHTML = `
+                    <td class="p-3 border text-xs font-bold text-indigo-600 whitespace-nowrap cursor-pointer hover:underline" onclick="viewReceipt('${dataStr}')">${invId} <i class="fa-solid fa-up-right-from-square text-[10px] ml-1"></i></td>
+                    <td class="p-3 border text-xs text-gray-500 whitespace-nowrap"><i class="fa-regular fa-clock mr-1"></i> ${timeStr}</td>
+                    <td class="p-3 border text-center whitespace-nowrap">${statusHtml}</td>
+                    <td class="p-3 border font-bold text-gray-800 text-sm">${data.customerName || 'Vãng lai'}</td>
+                    <td class="p-3 border text-gray-600 text-xs">${data.customerPhone || '---'}</td>
+                    <td class="p-3 border font-bold text-xs ${data.paymentMethod === 'Tiền mặt' ? 'text-green-600' : 'text-blue-600'}">${data.paymentMethod || '---'}</td>
+                    <td class="p-3 border text-xs text-gray-500 whitespace-nowrap">${startDateStr}</td>
+                    <td class="p-3 border text-xs text-gray-500 whitespace-nowrap">${endDateStr}</td>
+                    <td class="p-3 border">${itemsDesc}</td>
+                    <td class="p-3 border text-right font-medium text-gray-700">${formatVND(subTotal)}</td>
+                    <td class="p-3 border text-right text-sm ${vatAmount > 0 ? 'text-orange-600 font-bold' : 'text-gray-400'}">${vatAmount > 0 ? formatVND(vatAmount) : '---'}</td>
+                    <td class="p-3 border text-right font-bold text-indigo-700 text-base">${formatVND(data.totalAmount || 0)}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+            if (count === 0) {
+                tbody.innerHTML = '';
+                if(emptyMsg) emptyMsg.classList.remove('hidden');
             } else {
-                createdAtDate = new Date(); // Fallback for pending writes
+                if(emptyMsg) emptyMsg.classList.add('hidden');
             }
 
-            if (startLimit && createdAtDate < startLimit) return;
-            if (endLimit && createdAtDate > endLimit) return;
+            if(totalRevEl) totalRevEl.textContent = formatVND(totalRev);
+            if(totalDebtEl) totalDebtEl.textContent = formatVND(totalDebt);
 
-            // Lọc theo trạng thái. (Cũ chưa có trường status thì ngầm định là 'paid' nếu tùy ý, ở đây set mặc định là 'paid' nếu null)
-            const status = data.status || 'paid';
-            if (filterStatus !== 'all' && filterStatus !== status) return;
-
-            count++;
-            const amount = data.totalAmount || 0;
-            totalRev += amount;
-            if (status === 'unpaid') totalDebt += amount;
-            
-            let timeStr = `${createdAtDate.getHours().toString().padStart(2, '0')}:${createdAtDate.getMinutes().toString().padStart(2, '0')} - ${createdAtDate.getDate()}/${createdAtDate.getMonth()+1}/${createdAtDate.getFullYear()}`;
-
-            let startDateStr = data.startDate || '---';
-            let endDateStr = data.endDate || '---';
-            if(startDateStr && startDateStr.includes('-')) { const [y,m,d] = startDateStr.split('-'); startDateStr = `${d}/${m}/${y}`; }
-            if(endDateStr && endDateStr.includes('-')) { const [y,m,d] = endDateStr.split('-'); endDateStr = `${d}/${m}/${y}`; }
-
-            const itemsDesc = (data.items || []).map(i => {
-                const daysText = (i.weekdays || []).map(d => d === 0 ? 'CN' : 'T'+(d+1)).join(', ');
-                const skippedText = (i.skipped && i.skipped.length > 0) ? `<div class="text-[10px] text-red-500 italic">Trừ: ${i.skipped.join(', ')}</div>` : '';
-                return `<div class="text-xs text-gray-700 font-medium mb-1">• ${i.name} - ${i.count} buổi (${i.duration}h)<div class="text-[10px] text-indigo-600">Thứ: ${daysText}</div>${skippedText}</div>`;
-            }).join('');
-
-            const subTotal = data.subTotal || 0;
-            const vatAmount = data.vatAmount || 0;
-            const invId = data.id || `CŨ-${docId.slice(0,6).toUpperCase()}`;
-
-            const statusHtml = status === 'unpaid' 
-                ? `<span class="px-2 py-1 bg-red-100 text-red-700 rounded-full text-[10px] font-bold">Chưa TT</span>`
-                : `<span class="px-2 py-1 bg-green-100 text-green-700 rounded-full text-[10px] font-bold">Đã TT</span>`;
-
-            // Lưu dữ liệu vào data attribute để dùng cho modal
-            const dataStr = encodeURIComponent(JSON.stringify({...data, docId: docId}));
-
-            const tr = document.createElement('tr');
-            tr.className = "border-b hover:bg-indigo-50 transition";
-            tr.innerHTML = `
-                <td class="p-3 border text-xs font-bold text-indigo-600 whitespace-nowrap cursor-pointer hover:underline" onclick="viewReceipt('${dataStr}')">${invId} <i class="fa-solid fa-up-right-from-square text-[10px] ml-1"></i></td>
-                <td class="p-3 border text-xs text-gray-500 whitespace-nowrap"><i class="fa-regular fa-clock mr-1"></i> ${timeStr}</td>
-                <td class="p-3 border text-center whitespace-nowrap">${statusHtml}</td>
-                <td class="p-3 border font-bold text-gray-800 text-sm">${data.customerName || 'Vãng lai'}</td>
-                <td class="p-3 border text-gray-600 text-xs">${data.customerPhone || '---'}</td>
-                <td class="p-3 border font-bold text-xs ${data.paymentMethod === 'Tiền mặt' ? 'text-green-600' : 'text-blue-600'}">${data.paymentMethod || '---'}</td>
-                <td class="p-3 border text-xs text-gray-500 whitespace-nowrap">${startDateStr}</td>
-                <td class="p-3 border text-xs text-gray-500 whitespace-nowrap">${endDateStr}</td>
-                <td class="p-3 border">${itemsDesc}</td>
-                <td class="p-3 border text-right font-medium text-gray-700">${formatVND(subTotal)}</td>
-                <td class="p-3 border text-right text-sm ${vatAmount > 0 ? 'text-orange-600 font-bold' : 'text-gray-400'}">${vatAmount > 0 ? formatVND(vatAmount) : '---'}</td>
-                <td class="p-3 border text-right font-bold text-indigo-700 text-base">${formatVND(data.totalAmount || 0)}</td>
-            `;
-            tbody.appendChild(tr);
+        }, e => {
+            console.error("Error fetching reports realtime:", e);
+            tbody.innerHTML = '<tr><td colspan="12" class="text-center py-6 text-red-500 font-bold"><i class="fa-solid fa-triangle-exclamation mr-2"></i> Lỗi kết nối dữ liệu realtime.</td></tr>';
         });
-
-        if (count === 0) {
-            tbody.innerHTML = '';
-            if(emptyMsg) emptyMsg.classList.remove('hidden');
-        } else {
-            if(emptyMsg) emptyMsg.classList.add('hidden');
-        }
-
-        if(totalRevEl) totalRevEl.textContent = formatVND(totalRev);
-        if(totalDebtEl) totalDebtEl.textContent = formatVND(totalDebt);
-
     } catch (e) {
-        console.error("Error fetching reports:", e);
-        tbody.innerHTML = '<tr><td colspan="12" class="text-center py-6 text-red-500 font-bold"><i class="fa-solid fa-triangle-exclamation mr-2"></i> Lỗi kết nối đám mây, vui lòng tải lại trang.</td></tr>';
+        console.error("Error setting up snapshot:", e);
     }
 }
 
@@ -887,22 +905,28 @@ function populateSettingsForm() {
     el('s-bank-company-accnum').value = siteSettings.bankCompany.accNum || '';
 }
 
+let unsubscribeSettings = null;
 async function fetchSettings() {
     if (!db) return;
-    try {
-        const docRef = await db.collection('config').doc('settings').get();
-        if (docRef.exists) {
-            const d = docRef.data();
-            siteSettings.venueName = d.venueName || '';
-            siteSettings.venueSub = d.venueSub || '';
-            siteSettings.venueAddress = d.venueAddress || '';
-            siteSettings.bankPersonal = d.bankPersonal || { name: '', accName: '', accNum: '', qrString: '' };
-            siteSettings.bankCompany = d.bankCompany || { name: '', accName: '', accNum: '', qrString: '' };
-        }
-    } catch (e) {
-        console.warn("Error fetching settings:", e);
+    if (unsubscribeSettings) {
+        unsubscribeSettings();
     }
-    applySettingsToUI();
+    try {
+        unsubscribeSettings = db.collection('config').doc('settings').onSnapshot(docRef => {
+            if (docRef.exists) {
+                const d = docRef.data();
+                siteSettings.venueName = d.venueName || '';
+                siteSettings.venueSub = d.venueSub || '';
+                siteSettings.venueAddress = d.venueAddress || '';
+                siteSettings.bankPersonal = d.bankPersonal || { name: '', accName: '', accNum: '', qrString: '' };
+                siteSettings.bankCompany = d.bankCompany || { name: '', accName: '', accNum: '', qrString: '' };
+                applySettingsToUI();
+                populateSettingsForm();
+            }
+        });
+    } catch (e) {
+        console.warn("Error fetching settings realtime:", e);
+    }
 }
 
 async function saveSettings() {
