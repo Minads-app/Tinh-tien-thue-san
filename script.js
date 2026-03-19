@@ -539,7 +539,10 @@ function updatePaymentInfo(finalTotal, isVatChecked) {
     accNameEl.textContent = selectedBank.accName || '---';
     accNumEl.textContent = selectedBank.accNum || '---';
     if(selectedBank.qrString) {
-        qrImageEl.src = `https://img.vietqr.io/image/${selectedBank.qrString}-compact.png?amount=${finalTotal}&addInfo=${currentInvoiceId}&accountName=${encodeURIComponent(selectedBank.accName || '')}`;
+        // Chuẩn hóa mã phiếu: Xóa dấu gạch ngang (VD: HBA-20260320-1966 -> HBA202603201966)
+        // Thêm tiền tố SEVQR để Vietinbank đẩy thông báo cho SePay
+        const cleanInvoiceId = currentInvoiceId.replace(/-/g, '');
+        qrImageEl.src = `https://img.vietqr.io/image/${selectedBank.qrString}-compact.png?amount=${finalTotal}&addInfo=SEVQR%20${cleanInvoiceId}&accountName=${encodeURIComponent(selectedBank.accName || '')}`;
     } else {
         qrImageEl.src = '';
     }
