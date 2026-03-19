@@ -19,12 +19,17 @@ exports.handler = async (event, context) => {
     }
 
     try {
-        // SePay cấu hình Header chứng thực (Nâng cao: Có thể kiểm tra thêm ở đây)
-        // Hiện tại chỉ parsing nội dung gửi tới
+        // Kiểm tra Chữ ký bảo mật do SePay gửi (chống Hacker)
+        const authHeader = event.headers.authorization || event.headers.Authorization;
+        const sepayApiKey = process.env.SEPAY_API_KEY; // Lấy từ Biến môi trường Netlify
+
+        if (sepayApiKey && authHeader !== `Apikey ${sepayApiKey}`) {
+            return { statusCode: 401, body: JSON.stringify({ success: false, message: 'Sai thong tin xac thuc' }) };
+        }
+
         const body = JSON.parse(event.body);
 
-        // SePay gửi payload có dạng:
-        // { gateway: 'MoMo', transactionDate: '...', accountNum: '...', content: 'HBA-XXX...', transferAmount: 100000, referenceCode: '...' }
+        // Nơi SePay lưu Nội dung (HBA-XXX) và Số tiền
         const { content, transferAmount } = body;
 
         if (!content) {
