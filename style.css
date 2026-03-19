@@ -43,10 +43,16 @@ body {
     /* Ẩn tất cả các phần không cần thiết */
     .no-print, 
     #main-nav, 
-    #tab-config, 
-    button, 
+    #tab-config,
+    #tab-reports,
+    #tab-settings,
     .swal2-container { 
         display: none !important; 
+    }
+
+    /* Bắt buộc hiển thị tab booking khi in */
+    #tab-booking {
+        display: grid !important;
     }
 
     /* Hiển thị phần cần in */

@@ -2,19 +2,13 @@
 // 1. DATA INITIALIZATION & CONFIG
 // ==========================================
 
-const BANK_INFO = {
-    PERSONAL: {
-        name: 'MB NGÂN HÀNG QUÂN ĐỘI',
-        accName: 'NGUYEN THI THU TRANG',
-        accNum: 'VQRQ0002k28ju',
-        qrString: 'MB-VQRQ0002k28ju' 
-    },
-    COMPANY: {
-        name: 'NGÂN HÀNG ACB',
-        accName: 'CÔNG TY TNHH DÁNG TIÊN',
-        accNum: '80808668',
-        qrString: 'ACB-80808668'
-    }
+// BANK_INFO is now dynamic, loaded from Firebase settings
+let siteSettings = {
+    venueName: '',
+    venueSub: '',
+    venueAddress: '',
+    bankPersonal: { name: '', accName: '', accNum: '', qrString: '' },
+    bankCompany: { name: '', accName: '', accNum: '', qrString: '' }
 };
 
 const COURT_MAP = {
@@ -76,29 +70,42 @@ try {
 }
 
 async function fetchPricingRules() {
-    if (!db) return;
-    try {
-        const docRef = await db.collection('config').doc('pricing').get();
-        if (docRef.exists) {
-            pricingRules = docRef.data().rules || DEFAULT_RULES;
-            localStorage.setItem('pricingRules', JSON.stringify(pricingRules)); 
-        } else {
-            await db.collection('config').doc('pricing').set({ rules: DEFAULT_RULES });
-            pricingRules = DEFAULT_RULES;
+    // 1. Luôn load từ máy tính (localStorage) trước để có dữ liệu dùng ngay
+    const localData = localStorage.getItem('pricingRules');
+    if (localData) {
+        try { pricingRules = JSON.parse(localData); } catch(e) {}
+    } else {
+        pricingRules = DEFAULT_RULES;
+    }
+
+    // 2. Nếu có mạng và Firebase, tải dữ liệu mới nhất đè lên (Đồng bộ đám mây)
+    if (db) {
+        try {
+            const docRef = await db.collection('config').doc('pricing').get();
+            if (docRef.exists) {
+                pricingRules = docRef.data().rules || pricingRules;
+                localStorage.setItem('pricingRules', JSON.stringify(pricingRules)); 
+            } else {
+                // Nếu trên mạng chưa có, đẩy dữ liệu hiện tại lên
+                await db.collection('config').doc('pricing').set({ rules: pricingRules });
+            }
+        } catch (e) {
+            console.warn("Lỗi mạng, đang dùng dữ liệu lưu trong máy:", e);
         }
-    } catch (e) {
-        console.warn("Offline or Error fetching rules - using local data", e);
     }
     renderConfigTable();
 }
 
 async function syncRulesToFirebase() {
+    // 1. LUÔN LUÔN lưu vào máy tính (localStorage) trước để đảm bảo an toàn
+    localStorage.setItem('pricingRules', JSON.stringify(pricingRules)); 
+
+    // 2. Chạy ngầm đẩy lên Firebase nếu có mạng
     if (!db) return;
     try {
         await db.collection('config').doc('pricing').set({ rules: pricingRules });
-        localStorage.setItem('pricingRules', JSON.stringify(pricingRules)); 
     } catch (e) {
-        console.error("Error saving rules to Firebase:", e);
+        console.error("Lỗi đồng bộ lên Firebase (có thể do rớt mạng):", e);
     }
 }
 
@@ -146,6 +153,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Tải dữ liệu từ Firebase
     fetchPricingRules();
     fetchReports();
+    fetchSettings();
 
     // INIT FLATPICKR
     excludeDatePicker = flatpickr("#exclude-dates", {
@@ -213,13 +221,26 @@ document.addEventListener('DOMContentLoaded', () => {
         const finalTotalStr = document.getElementById('final-total').textContent.replace(/[^0-9]/g, '');
         const finalTotalNum = parseInt(finalTotalStr) || 0;
 
+        const subTotalStr = document.getElementById('sub-total').textContent.replace(/[^0-9]/g, '');
+        const subTotalNum = parseInt(subTotalStr) || 0;
+
+        const vatAmountStr = document.getElementById('vat-amount').textContent.replace(/[^0-9]/g, '');
+        const vatAmountNum = document.getElementById('vat-check').checked ? (parseInt(vatAmountStr) || 0) : 0;
+
+        const startDateVal = document.getElementById('start-date').value || '';
+        const endDateVal = document.getElementById('end-date').value || '';
+
         const transactionData = {
             createdAt: firebase.firestore.FieldValue.serverTimestamp(),
             customerName: customerName,
             customerPhone: customerPhone,
             paymentMethod: payMethod,
             note: note,
+            subTotal: subTotalNum,
+            vatAmount: vatAmountNum,
             totalAmount: finalTotalNum,
+            startDate: startDateVal,
+            endDate: endDateVal,
             items: billItems
         };
 
@@ -236,7 +257,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 Swal.close();
                 fetchReports(); // Refresh báo cáo
                 
-                window.print();
+                // Chờ Swal đóng hoàn toàn trước khi in
+                setTimeout(() => { window.print(); }, 300);
             } catch (error) {
                 console.error("Lỗi khi lưu Firebase:", error);
                 Swal.fire('Cảnh báo Mạng', 'Lưu dữ liệu thất bại, phiếu này có thể bị mất sau khi in!', 'warning').then(() => {
@@ -468,19 +490,23 @@ function updatePaymentInfo(finalTotal, isVatChecked) {
 
     let selectedBank;
     if(isVatChecked && finalTotal >= 5000000) {
-        selectedBank = BANK_INFO.COMPANY;
+        selectedBank = siteSettings.bankCompany;
         qrSection.classList.remove('bg-indigo-50', 'border-indigo-200');
         qrSection.classList.add('bg-blue-50', 'border-blue-300');
     } else {
-        selectedBank = BANK_INFO.PERSONAL;
+        selectedBank = siteSettings.bankPersonal;
         qrSection.classList.add('bg-indigo-50', 'border-indigo-200');
         qrSection.classList.remove('bg-blue-50', 'border-blue-300');
     }
 
-    bankNameEl.textContent = selectedBank.name;
-    accNameEl.textContent = selectedBank.accName;
-    accNumEl.textContent = selectedBank.accNum;
-    qrImageEl.src = `https://img.vietqr.io/image/${selectedBank.qrString}-compact.png`;
+    bankNameEl.textContent = selectedBank.name || '---';
+    accNameEl.textContent = selectedBank.accName || '---';
+    accNumEl.textContent = selectedBank.accNum || '---';
+    if(selectedBank.qrString) {
+        qrImageEl.src = `https://img.vietqr.io/image/${selectedBank.qrString}-compact.png`;
+    } else {
+        qrImageEl.src = '';
+    }
 }
 
 function removeItem(id) {
@@ -489,17 +515,18 @@ function removeItem(id) {
 }
 
 function switchTab(tabName) {
-    document.querySelectorAll('[id^="tab-booking"], [id^="tab-config"], [id^="tab-reports"]').forEach(el => el.classList.add('hidden'));
+    document.querySelectorAll('[id^="tab-booking"], [id^="tab-config"], [id^="tab-reports"], [id^="tab-settings"]').forEach(el => el.classList.add('hidden'));
     document.getElementById(`tab-${tabName}`).classList.remove('hidden');
     
     const btnBooking = document.getElementById('tab-btn-booking');
     const btnConfig = document.getElementById('tab-btn-config');
     const btnReports = document.getElementById('tab-btn-reports');
+    const btnSettings = document.getElementById('tab-btn-settings');
     
     const activeClass = "tab-active py-4 px-1 inline-flex items-center text-sm border-b-2 border-indigo-600 font-bold text-indigo-700 cursor-pointer";
     const inactiveClass = "tab-inactive py-4 px-1 inline-flex items-center text-sm border-b-2 border-transparent font-medium text-gray-500 hover:text-gray-800 transition cursor-pointer";
 
-    [btnBooking, btnConfig, btnReports].forEach(btn => { if(btn) btn.className = inactiveClass; });
+    [btnBooking, btnConfig, btnReports, btnSettings].forEach(btn => { if(btn) btn.className = inactiveClass; });
 
     if(tabName === 'booking') {
         if(btnBooking) btnBooking.className = activeClass;
@@ -509,6 +536,9 @@ function switchTab(tabName) {
     } else if(tabName === 'reports') {
         if(btnReports) btnReports.className = activeClass;
         fetchReports();
+    } else if(tabName === 'settings') {
+        if(btnSettings) btnSettings.className = activeClass;
+        populateSettingsForm();
     }
 }
 function backupData() {
@@ -638,7 +668,7 @@ async function fetchReports() {
     const emptyMsg = document.getElementById('empty-report-msg');
     
     if(!tbody || !db) return;
-    tbody.innerHTML = '<tr><td colspan="6" class="text-center py-8 text-gray-500"><i class="fa-solid fa-spinner fa-spin text-2xl mb-2 block"></i> Đang đồng bộ dữ liệu...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="10" class="text-center py-8 text-gray-500"><i class="fa-solid fa-spinner fa-spin text-2xl mb-2 block"></i> Đang đồng bộ dữ liệu...</td></tr>';
     
     try {
         const snapshot = await db.collection('transactions').orderBy('createdAt', 'desc').limit(150).get();
@@ -663,17 +693,41 @@ async function fetchReports() {
                 timeStr = `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')} - ${d.getDate()}/${d.getMonth()+1}/${d.getFullYear()}`;
             }
 
-            const itemsDesc = (data.items || []).map(i => `<div class="text-xs text-gray-700 font-medium">• ${i.name} - ${i.count} buổi (${i.duration}h)</div>`).join('');
+            // Format start/end date
+            let startDateStr = data.startDate || '---';
+            let endDateStr = data.endDate || '---';
+            if(startDateStr && startDateStr.includes('-')) {
+                const [y, m, d2] = startDateStr.split('-');
+                startDateStr = `${d2}/${m}/${y}`;
+            }
+            if(endDateStr && endDateStr.includes('-')) {
+                const [y, m, d2] = endDateStr.split('-');
+                endDateStr = `${d2}/${m}/${y}`;
+            }
+
+            // Chi tiết đặt sân kèm thứ trong tuần và ngày loại trừ
+            const itemsDesc = (data.items || []).map(i => {
+                const daysText = (i.weekdays || []).map(d => d === 0 ? 'CN' : 'T'+(d+1)).join(', ');
+                const skippedText = (i.skipped && i.skipped.length > 0) ? `<div class="text-[10px] text-red-500 italic">Trừ: ${i.skipped.join(', ')}</div>` : '';
+                return `<div class="text-xs text-gray-700 font-medium mb-1">• ${i.name} - ${i.count} buổi (${i.duration}h)<div class="text-[10px] text-indigo-600">Thứ: ${daysText}</div>${skippedText}</div>`;
+            }).join('');
+
+            const subTotal = data.subTotal || 0;
+            const vatAmount = data.vatAmount || 0;
 
             const tr = document.createElement('tr');
             tr.className = "border-b hover:bg-indigo-50 transition";
             tr.innerHTML = `
-                <td class="p-4 border text-sm text-gray-500 whitespace-nowrap"><i class="fa-regular fa-clock mr-1"></i> ${timeStr}</td>
-                <td class="p-4 border font-bold text-gray-800">${data.customerName || 'Vãng lai'}</td>
-                <td class="p-4 border text-gray-600 text-sm">${data.customerPhone || '---'}</td>
-                <td class="p-4 border font-bold text-sm ${data.paymentMethod === 'Tiền mặt' ? 'text-green-600' : 'text-blue-600'}">${data.paymentMethod}</td>
-                <td class="p-4 border">${itemsDesc}</td>
-                <td class="p-4 border text-right font-bold text-indigo-700 text-lg">${formatVND(data.totalAmount || 0)}</td>
+                <td class="p-3 border text-xs text-gray-500 whitespace-nowrap"><i class="fa-regular fa-clock mr-1"></i> ${timeStr}</td>
+                <td class="p-3 border font-bold text-gray-800 text-sm">${data.customerName || 'Vãng lai'}</td>
+                <td class="p-3 border text-gray-600 text-xs">${data.customerPhone || '---'}</td>
+                <td class="p-3 border font-bold text-xs ${data.paymentMethod === 'Tiền mặt' ? 'text-green-600' : 'text-blue-600'}">${data.paymentMethod || '---'}</td>
+                <td class="p-3 border text-xs text-gray-500 whitespace-nowrap">${startDateStr}</td>
+                <td class="p-3 border text-xs text-gray-500 whitespace-nowrap">${endDateStr}</td>
+                <td class="p-3 border">${itemsDesc}</td>
+                <td class="p-3 border text-right font-medium text-gray-700">${formatVND(subTotal)}</td>
+                <td class="p-3 border text-right text-sm ${vatAmount > 0 ? 'text-orange-600 font-bold' : 'text-gray-400'}">${vatAmount > 0 ? formatVND(vatAmount) : '---'}</td>
+                <td class="p-3 border text-right font-bold text-indigo-700 text-base">${formatVND(data.totalAmount || 0)}</td>
             `;
             tbody.appendChild(tr);
         });
@@ -682,6 +736,83 @@ async function fetchReports() {
 
     } catch (e) {
         console.error("Error fetching reports:", e);
-        tbody.innerHTML = '<tr><td colspan="6" class="text-center py-6 text-red-500 font-bold"><i class="fa-solid fa-triangle-exclamation mr-2"></i> Lỗi kết nối đám mây, vui lòng tải lại trang.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="10" class="text-center py-6 text-red-500 font-bold"><i class="fa-solid fa-triangle-exclamation mr-2"></i> Lỗi kết nối đám mây, vui lòng tải lại trang.</td></tr>';
+    }
+}
+
+// ==========================================
+// SETTINGS: Fetch / Save / Apply
+// ==========================================
+
+function applySettingsToUI() {
+    const el = (id) => document.getElementById(id);
+    if(el('inv-venue-name')) el('inv-venue-name').textContent = siteSettings.venueName ? (siteSettings.venueName + ' - Phiếu Thanh Toán') : '--- Phiếu Thanh Toán ---';
+    if(el('inv-venue-sub')) el('inv-venue-sub').textContent = siteSettings.venueSub || '';
+    if(el('inv-venue-address')) el('inv-venue-address').textContent = siteSettings.venueAddress ? ('ĐC: ' + siteSettings.venueAddress) : '';
+    renderInvoice();
+}
+
+function populateSettingsForm() {
+    const el = (id) => document.getElementById(id);
+    el('s-venue-name').value = siteSettings.venueName || '';
+    el('s-venue-sub').value = siteSettings.venueSub || '';
+    el('s-venue-address').value = siteSettings.venueAddress || '';
+    el('s-bank-personal-name').value = siteSettings.bankPersonal.name || '';
+    el('s-bank-personal-accname').value = siteSettings.bankPersonal.accName || '';
+    el('s-bank-personal-accnum').value = siteSettings.bankPersonal.accNum || '';
+    el('s-bank-personal-qr').value = siteSettings.bankPersonal.qrString || '';
+    el('s-bank-company-name').value = siteSettings.bankCompany.name || '';
+    el('s-bank-company-accname').value = siteSettings.bankCompany.accName || '';
+    el('s-bank-company-accnum').value = siteSettings.bankCompany.accNum || '';
+    el('s-bank-company-qr').value = siteSettings.bankCompany.qrString || '';
+}
+
+async function fetchSettings() {
+    if (!db) return;
+    try {
+        const docRef = await db.collection('config').doc('settings').get();
+        if (docRef.exists) {
+            const d = docRef.data();
+            siteSettings.venueName = d.venueName || '';
+            siteSettings.venueSub = d.venueSub || '';
+            siteSettings.venueAddress = d.venueAddress || '';
+            siteSettings.bankPersonal = d.bankPersonal || { name: '', accName: '', accNum: '', qrString: '' };
+            siteSettings.bankCompany = d.bankCompany || { name: '', accName: '', accNum: '', qrString: '' };
+        }
+    } catch (e) {
+        console.warn("Error fetching settings:", e);
+    }
+    applySettingsToUI();
+}
+
+async function saveSettings() {
+    if (!db) { Swal.fire('Lỗi', 'Không kết nối được với Firebase!', 'error'); return; }
+
+    const el = (id) => document.getElementById(id).value.trim();
+
+    siteSettings.venueName = el('s-venue-name');
+    siteSettings.venueSub = el('s-venue-sub');
+    siteSettings.venueAddress = el('s-venue-address');
+    siteSettings.bankPersonal = {
+        name: el('s-bank-personal-name'),
+        accName: el('s-bank-personal-accname'),
+        accNum: el('s-bank-personal-accnum'),
+        qrString: el('s-bank-personal-qr')
+    };
+    siteSettings.bankCompany = {
+        name: el('s-bank-company-name'),
+        accName: el('s-bank-company-accname'),
+        accNum: el('s-bank-company-accnum'),
+        qrString: el('s-bank-company-qr')
+    };
+
+    try {
+        Swal.fire({ title: 'Đang lưu...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+        await db.collection('config').doc('settings').set(siteSettings);
+        applySettingsToUI();
+        Swal.fire({ icon: 'success', title: 'Đã lưu cài đặt thành công!', text: 'Thông tin sân và tài khoản đã được cập nhật.', timer: 2000, showConfirmButton: false });
+    } catch (e) {
+        console.error("Error saving settings:", e);
+        Swal.fire('Lỗi', 'Không thể lưu cài đặt. Vui lòng thử lại!', 'error');
     }
 }
