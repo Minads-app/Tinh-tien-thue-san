@@ -37,14 +37,17 @@ exports.handler = async (event, context) => {
         }
 
         // Tìm Mã Phiếu (Ví dụ: HBA-20231024-1234) trong dãy nội dung CK
-        const regex = /HBA\-\d{8}\-\d{4}/i;
+        // Lưu ý: Hệ thống mã VietQR tự động xóa dấu gạch ngang (-) nên cần Regex hỗ trợ cả 2 chuẩn
+        const regex = /HBA\-?\d{8}\-?\d{4}/i;
         const match = content.match(regex);
         
         if (!match) {
             return { statusCode: 200, body: JSON.stringify({ success: false, message: 'Khong tim thay ma phieu trong tin nhan' }) };
         }
 
-        const invoiceId = match[0].toUpperCase();
+        // Tái tạo lại đúng định dạng gốc HBA-YYYYMMDD-XXXX đang lưu trên Firebase
+        let rawId = match[0].toUpperCase().replace(/-/g, ''); 
+        const invoiceId = `HBA-${rawId.slice(3, 11)}-${rawId.slice(11, 15)}`;
 
         const db = admin.firestore();
         // Tìm transaction dựa vào trường id
