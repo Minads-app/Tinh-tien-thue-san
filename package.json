@@ -1,0 +1,8 @@
+{
+  "name": "thue-san",
+  "version": "1.0.0",
+  "description": "Quản lý thuê sân Firebase",
+  "dependencies": {
+    "firebase-admin": "^11.11.0"
+  }
+}

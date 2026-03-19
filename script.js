@@ -48,6 +48,17 @@ const DEFAULT_RULES = [
 let pricingRules = JSON.parse(localStorage.getItem('pricingRules')) || DEFAULT_RULES;
 let billItems = [];
 let excludeDatePicker; // Flatpickr Instance
+let currentInvoiceId = ''; // Biến toàn cục lưu trữ mã phiếu hiện tại
+
+function generateNewInvoiceId() {
+    const d = new Date();
+    const dateStr = `${d.getFullYear()}${(d.getMonth()+1).toString().padStart(2,'0')}${d.getDate().toString().padStart(2,'0')}`;
+    const randomStr = Math.floor(1000 + Math.random() * 9000);
+    currentInvoiceId = `HBA-${dateStr}-${randomStr}`;
+    if (document.getElementById('inv-id')) {
+        document.getElementById('inv-id').textContent = currentInvoiceId;
+    }
+}
 
 // ==========================================
 // FIREBASE FIRESTORE CONFIG & INIT
@@ -179,7 +190,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const today = new Date();
     document.getElementById('inv-date').textContent = formatDateFull(today);
-    document.getElementById('inv-id').textContent = Math.floor(Math.random()*8999 + 1000);
+    generateNewInvoiceId();
     document.getElementById('start-date').valueAsDate = today;
     document.getElementById('end-date').valueAsDate = today;
 
@@ -245,11 +256,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const startDateVal = document.getElementById('start-date').value || '';
         const endDateVal = document.getElementById('end-date').value || '';
         
-        // Generate random invoice ID: HBA-YYYYMMDD-XXXX
-        const d = new Date();
-        const dateStr = `${d.getFullYear()}${(d.getMonth()+1).toString().padStart(2,'0')}${d.getDate().toString().padStart(2,'0')}`;
-        const randomStr = Math.floor(1000 + Math.random() * 9000);
-        const invoiceId = `HBA-${dateStr}-${randomStr}`;
+        // Dùng mã phiếu hiện tại đã cấp
+        const invoiceId = currentInvoiceId;
 
         const transactionData = {
             id: invoiceId,
@@ -276,12 +284,17 @@ document.addEventListener('DOMContentLoaded', () => {
                     didOpen: () => { Swal.showLoading(); }
                 });
                 
-                await db.collection('transactions').add(transactionData);
+                await db.collection('transactions').doc(invoiceId).set(transactionData);
                 Swal.close();
                 fetchReports(); // Refresh báo cáo
                 
                 // Chờ Swal đóng hoàn toàn trước khi in
-                setTimeout(() => { window.print(); }, 300);
+                setTimeout(() => { 
+                    window.print(); 
+                    // Cấp mã phiếu mới sau khi in xong (chuẩn bị cho khách tiếp theo)
+                    generateNewInvoiceId();
+                    renderInvoice(); // Cập nhật lại ảnh QR
+                }, 300);
             } catch (error) {
                 console.error("Lỗi khi lưu Firebase:", error);
                 Swal.fire('Cảnh báo Mạng', 'Lưu dữ liệu thất bại, phiếu này có thể bị mất sau khi in!', 'warning').then(() => {
@@ -526,7 +539,7 @@ function updatePaymentInfo(finalTotal, isVatChecked) {
     accNameEl.textContent = selectedBank.accName || '---';
     accNumEl.textContent = selectedBank.accNum || '---';
     if(selectedBank.qrString) {
-        qrImageEl.src = `https://img.vietqr.io/image/${selectedBank.qrString}-compact.png`;
+        qrImageEl.src = `https://img.vietqr.io/image/${selectedBank.qrString}-compact.png?amount=${finalTotal}&addInfo=${currentInvoiceId}&accountName=${encodeURIComponent(selectedBank.accName || '')}`;
     } else {
         qrImageEl.src = '';
     }
