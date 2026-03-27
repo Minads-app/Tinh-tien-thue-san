@@ -880,6 +880,14 @@ async function fetchReports() {
                     <td class="p-3 border text-right font-medium text-gray-700">${formatVND(subTotal)}</td>
                     <td class="p-3 border text-right text-sm ${vatAmount > 0 ? 'text-orange-600 font-bold' : 'text-gray-400'}">${vatAmount > 0 ? formatVND(vatAmount) : '---'}</td>
                     <td class="p-3 border text-right font-bold text-indigo-700 text-base">${formatVND(data.totalAmount || 0)}</td>
+                    <td class="p-3 border text-center whitespace-nowrap">
+                        <button onclick="editBill('${dataStr}')" title="Sửa phiếu" class="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 hover:text-blue-800 transition mr-1">
+                            <i class="fa-solid fa-pen text-xs"></i>
+                        </button>
+                        <button onclick="deleteBill('${docId}', '${invId}')" title="Xóa phiếu" class="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-red-50 text-red-500 hover:bg-red-100 hover:text-red-700 transition">
+                            <i class="fa-solid fa-trash text-xs"></i>
+                        </button>
+                    </td>
                 `;
                 tbody.appendChild(tr);
             });
@@ -1073,13 +1081,19 @@ function viewReceipt(dataStrEncoded) {
 
     document.getElementById('rm-content').innerHTML = html;
 
-    const btn = document.getElementById('rm-status-btn');
+    const statusBtn = document.getElementById('rm-status-btn');
     if (status === 'unpaid') {
-        btn.style.display = 'block';
-        btn.onclick = () => confirmPayment(data.docId);
+        statusBtn.style.display = 'block';
+        statusBtn.onclick = () => confirmPayment(data.docId);
     } else {
-        btn.style.display = 'none';
+        statusBtn.style.display = 'none';
     }
+
+    // Gán sự kiện cho nút Sửa và Xóa trong modal xem chi tiết
+    const editBtn = document.getElementById('rm-edit-btn');
+    const deleteBtn = document.getElementById('rm-delete-btn');
+    editBtn.onclick = () => { closeReceiptModal(); editBill(dataStrEncoded); };
+    deleteBtn.onclick = () => { closeReceiptModal(); deleteBill(data.docId, invId); };
 
     document.getElementById('receipt-modal').classList.remove('hidden');
 }
@@ -1099,6 +1113,89 @@ async function confirmPayment(docId) {
     } catch (e) {
         console.error("Error updating payment:", e);
         Swal.fire('Lỗi', 'Không gạch nợ được. Hãy kiểm tra mạng!', 'error');
+    }
+}
+
+// ==========================================
+// EDIT & DELETE BILL
+// ==========================================
+
+function editBill(dataStrEncoded) {
+    const data = JSON.parse(decodeURIComponent(dataStrEncoded));
+    const invId = data.id || `CŨ-${data.docId.slice(0,6).toUpperCase()}`;
+
+    document.getElementById('ebm-docid').value = data.docId;
+    document.getElementById('ebm-id').textContent = invId;
+    document.getElementById('ebm-name').value = data.customerName || '';
+    document.getElementById('ebm-phone').value = data.customerPhone || '';
+    document.getElementById('ebm-payment').value = data.paymentMethod || 'Tiền mặt';
+    document.getElementById('ebm-status').value = data.status || 'paid';
+    document.getElementById('ebm-total').value = data.totalAmount || 0;
+    document.getElementById('ebm-note').value = data.note || '';
+
+    document.getElementById('edit-bill-modal').classList.remove('hidden');
+}
+
+function closeEditBillModal() {
+    document.getElementById('edit-bill-modal').classList.add('hidden');
+}
+
+async function saveBillEdit() {
+    if (!db) return;
+    const docId = document.getElementById('ebm-docid').value;
+    const customerName = document.getElementById('ebm-name').value.trim();
+    const customerPhone = document.getElementById('ebm-phone').value.trim();
+    const paymentMethod = document.getElementById('ebm-payment').value;
+    const status = document.getElementById('ebm-status').value;
+    const totalAmount = parseInt(document.getElementById('ebm-total').value) || 0;
+    const note = document.getElementById('ebm-note').value.trim();
+
+    if (!customerName) {
+        Swal.fire('Lỗi', 'Vui lòng nhập tên khách hàng!', 'error');
+        return;
+    }
+
+    try {
+        Swal.fire({ title: 'Đang lưu...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+        await db.collection('transactions').doc(docId).update({
+            customerName,
+            customerPhone,
+            paymentMethod,
+            status,
+            totalAmount,
+            note
+        });
+        closeEditBillModal();
+        Swal.fire({ icon: 'success', title: 'Đã cập nhật phiếu!', timer: 1500, showConfirmButton: false });
+    } catch (e) {
+        console.error('Lỗi sửa bill:', e);
+        Swal.fire('Lỗi', 'Không thể cập nhật. Kiểm tra kết nối mạng!', 'error');
+    }
+}
+
+async function deleteBill(docId, invId) {
+    const result = await Swal.fire({
+        title: 'Xác nhận xóa phiếu?',
+        html: `Phiếu <b class="text-red-600">${invId}</b> sẽ bị xóa vĩnh viễn và không thể khôi phục!`,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#ef4444',
+        cancelButtonColor: '#6b7280',
+        confirmButtonText: '<i class="fa-solid fa-trash mr-1"></i> Xóa ngay',
+        cancelButtonText: 'Hủy bỏ',
+        reverseButtons: true
+    });
+
+    if (!result.isConfirmed) return;
+
+    if (!db) return;
+    try {
+        Swal.fire({ title: 'Đang xóa...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+        await db.collection('transactions').doc(docId).delete();
+        Swal.fire({ icon: 'success', title: 'Đã xóa phiếu!', text: `Phiếu ${invId} đã được xóa khỏi hệ thống.`, timer: 2000, showConfirmButton: false });
+    } catch (e) {
+        console.error('Lỗi xóa bill:', e);
+        Swal.fire('Lỗi', 'Không thể xóa phiếu. Kiểm tra kết nối mạng!', 'error');
     }
 }
 

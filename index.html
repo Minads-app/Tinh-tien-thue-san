@@ -379,6 +379,7 @@
                                 <th class="p-3 border text-right">Tổng Tiền Hàng</th>
                                 <th class="p-3 border text-right">Thuế VAT</th>
                                 <th class="p-3 border text-right">Thành Tiền</th>
+                                <th class="p-3 border text-center" width="80">Thao Tác</th>
                             </tr>
                         </thead>
                         <tbody id="report-table-body">
@@ -603,12 +604,75 @@
                 <!-- Nội dung phiếu đổ vào đây -->
             </div>
             
-            <div class="bg-gray-50 border-t p-4 flex justify-end space-x-3">
-                <button id="rm-status-btn" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded transition text-sm">
-                    <i class="fa-solid fa-check mr-1"></i> Xác Nhận Đã Thanh Toán
-                </button>
-                <button onclick="closeReceiptModal()" class="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded transition text-sm">
-                    Đóng
+            <div class="bg-gray-50 border-t p-4 flex justify-between items-center">
+                <div class="flex space-x-2">
+                    <button id="rm-edit-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded transition text-sm flex items-center">
+                        <i class="fa-solid fa-pen mr-1"></i> Sửa
+                    </button>
+                    <button id="rm-delete-btn" class="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded transition text-sm flex items-center">
+                        <i class="fa-solid fa-trash mr-1"></i> Xóa
+                    </button>
+                </div>
+                <div class="flex space-x-2">
+                    <button id="rm-status-btn" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded transition text-sm">
+                        <i class="fa-solid fa-check mr-1"></i> Xác Nhận Đã Thanh Toán
+                    </button>
+                    <button onclick="closeReceiptModal()" class="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded transition text-sm">
+                        Đóng
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Sửa Bill -->
+    <div id="edit-bill-modal" class="fixed inset-0 bg-black bg-opacity-60 hidden flex items-center justify-center z-[70] p-4">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden">
+            <div class="bg-gradient-to-r from-blue-600 to-indigo-600 p-4 flex justify-between items-center text-white">
+                <h2 class="text-lg font-bold"><i class="fa-solid fa-pen-to-square mr-2"></i>Sửa Phiếu: <span id="ebm-id" class="font-mono"></span></h2>
+                <button onclick="closeEditBillModal()" class="text-blue-200 hover:text-white transition"><i class="fa-solid fa-xmark text-xl"></i></button>
+            </div>
+            <div class="p-6 space-y-4">
+                <input type="hidden" id="ebm-docid">
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-500 mb-1">Tên Khách Hàng</label>
+                        <input type="text" id="ebm-name" class="w-full px-3 py-2 border rounded text-sm focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Tên khách">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-500 mb-1">Số Điện Thoại</label>
+                        <input type="tel" id="ebm-phone" class="w-full px-3 py-2 border rounded text-sm font-mono focus:ring-2 focus:ring-blue-500 outline-none" placeholder="SĐT">
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-500 mb-1">Hình Thức Thanh Toán</label>
+                        <select id="ebm-payment" class="w-full px-3 py-2 border rounded text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none">
+                            <option value="Tiền mặt">Tiền mặt</option>
+                            <option value="Chuyển khoản">Chuyển khoản</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-500 mb-1">Trạng Thái</label>
+                        <select id="ebm-status" class="w-full px-3 py-2 border rounded text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none">
+                            <option value="unpaid">Chưa Thanh Toán</option>
+                            <option value="paid">Đã Thanh Toán</option>
+                        </select>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-500 mb-1">Tổng Tiền (VNĐ)</label>
+                    <input type="number" id="ebm-total" class="w-full px-3 py-2 border rounded text-sm font-bold text-indigo-700 focus:ring-2 focus:ring-indigo-500 outline-none">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-500 mb-1">Ghi Chú</label>
+                    <textarea id="ebm-note" class="w-full px-3 py-2 border rounded text-sm focus:ring-2 focus:ring-blue-500 outline-none h-16 resize-none" placeholder="Ghi chú..."></textarea>
+                </div>
+            </div>
+            <div class="bg-gray-50 border-t p-4 flex justify-end space-x-2">
+                <button onclick="closeEditBillModal()" class="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded text-sm font-medium transition">Hủy</button>
+                <button onclick="saveBillEdit()" class="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm font-bold shadow transition flex items-center">
+                    <i class="fa-solid fa-floppy-disk mr-2"></i>Lưu Thay Đổi
                 </button>
             </div>
         </div>
