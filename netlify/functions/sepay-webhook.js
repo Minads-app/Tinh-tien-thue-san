@@ -30,10 +30,11 @@ exports.handler = async (event, context) => {
         const body = JSON.parse(event.body);
 
         // Nơi SePay lưu Nội dung (HBA-XXX) và Số tiền
-        const { content, transferAmount } = body;
+        const content = body.content || body.transactionContent || body.description || '';
+        const transferAmount = body.transferAmount || body.amountIn || body.amount || 0;
 
         if (!content) {
-            return { statusCode: 400, body: 'Missing content field' };
+            return { statusCode: 200, body: 'Missing content field but ignored to prevent retry' };
         }
 
         // Tìm Mã Phiếu (Ví dụ: HBA-20231024-1234) trong dãy nội dung CK
@@ -42,7 +43,7 @@ exports.handler = async (event, context) => {
         const match = content.match(regex);
         
         if (!match) {
-            return { statusCode: 200, body: JSON.stringify({ success: false, message: 'Khong tim thay ma phieu trong tin nhan' }) };
+            return { statusCode: 200, body: JSON.stringify({ success: false, message: 'Khong tim thay ma phieu trong tin nhan, content: ' + content }) };
         }
 
         // Tái tạo lại đúng định dạng gốc HBA-YYYYMMDD-XXXX đang lưu trên Firebase
