@@ -54,7 +54,21 @@ exports.handler = async (event, context) => {
         const snapshot = await db.collection('transactions').where('id', '==', invoiceId).get();
 
         if (snapshot.empty) {
-            return { statusCode: 200, body: JSON.stringify({ success: false, message: 'Ma phieu khong ton tai tren he thong' }) };
+            // Document chưa được tạo do thu ngân chưa bấm "In Phiếu"
+            // Ta tạo trước một record nháp trạng thái 'paid'
+            const docRef = db.collection('transactions').doc(invoiceId);
+            await docRef.set({
+                id: invoiceId,
+                status: 'paid',
+                prePaid: true,
+                paidAt: admin.firestore.FieldValue.serverTimestamp(),
+                createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                transferAmount: transferAmount,
+                paymentMethod: 'Chuyển khoản SePay',
+                customerName: 'Khách (Thanh toán QR)'
+            });
+            
+            return { statusCode: 200, body: JSON.stringify({ success: true, message: 'Da tao phieu tra truoc cho phieu ' + invoiceId }) };
         }
 
         // Cập nhật trạng thái thành paid cho toàn bộ result (đề phòng)

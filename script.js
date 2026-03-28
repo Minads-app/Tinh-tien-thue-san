@@ -303,9 +303,12 @@ document.addEventListener('DOMContentLoaded', () => {
             }).catch(e => console.error(e));
         }
 
+        // Giữ trạng thái 'paid' nếu webhook đã gọi trước đó
+        const currentStatus = knownTransactions[invoiceId] === 'paid' ? 'paid' : 'unpaid';
+
         const transactionData = {
             id: invoiceId,
-            status: 'unpaid',
+            status: currentStatus,
             createdAt: firebase.firestore.FieldValue.serverTimestamp(),
             customerName: customerName,
             customerPhone: customerPhone,
@@ -328,7 +331,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     didOpen: () => { Swal.showLoading(); }
                 });
                 
-                await db.collection('transactions').doc(invoiceId).set(transactionData);
+                // merge: true để không ghi đè mất thông tin từ SePay Webhook (ví dụ: prePaid, paidAt)
+                await db.collection('transactions').doc(invoiceId).set(transactionData, { merge: true });
                 Swal.close();
                 fetchReports(); // Refresh báo cáo
                 
@@ -801,6 +805,10 @@ async function fetchReports() {
                 
                 if (change.type === 'added') {
                     knownTransactions[docId] = newStatus;
+                    // Kích hoạt chuông thông báo nếu là giao dịch trả trước mới được tạo từ webhook
+                    if (newStatus === 'paid' && (docId === currentInvoiceId || data.prePaid)) {
+                        showPaymentNotification(data.customerName || 'Khách', data.transferAmount || data.totalAmount, data.id || docId.slice(0,6).toUpperCase());
+                    }
                 } else if (change.type === 'modified') {
                     if (knownTransactions[docId] === 'unpaid' && newStatus === 'paid') {
                         // Kích hoạt chuông thông báo tiền về
