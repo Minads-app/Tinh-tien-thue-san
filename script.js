@@ -1164,8 +1164,11 @@ function viewReceipt(dataStrEncoded) {
     }
 
     const statusBtn = document.getElementById('rm-status-btn');
-    if (status === 'unpaid') {
+    if (status === 'unpaid' || status === 'partial') {
         statusBtn.style.display = 'block';
+        statusBtn.innerHTML = status === 'partial' 
+            ? `<i class="fa-solid fa-check-double mr-1"></i> Thu phần nợ còn lại (Tiền mặt)`
+            : `<i class="fa-solid fa-check mr-1"></i> Xác Nhận Đã Thanh Toán (Tiền mặt)`;
         statusBtn.onclick = () => confirmPayment(data.docId);
     } else {
         statusBtn.style.display = 'none';
