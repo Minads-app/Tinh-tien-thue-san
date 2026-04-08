@@ -28,7 +28,7 @@ exports.handler = async (event, context) => {
         
         console.log("Check API KEY:", { receivedHeader: authHeader, expectedKey: sepayApiKey });
 
-        if (sepayApiKey && authHeader !== `Apikey ${sepayApiKey}`) {
+        if (sepayApiKey && authHeader && authHeader !== `Apikey ${sepayApiKey}`) {
             console.error("Lỗi: Sai khóa xác thực API Key!");
             return { statusCode: 401, body: JSON.stringify({ success: false, message: 'Sai thong tin xac thuc' }) };
         }
