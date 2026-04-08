@@ -344,9 +344,25 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (transactionData.paidAmount === 0 && data.transferAmount && data.status === 'paid') {
                         transactionData.paidAmount = parseInt(data.transferAmount) || 0;
                     }
+                    
+                    if (transactionData.paidAmount > 0 && finalTotalNum !== (data.totalAmount || 0)) {
+                         Swal.close();
+                         const warnResult = await Swal.fire({
+                             title: 'Cảnh báo tính toán lại',
+                             html: `Phiếu này đã ghi nhận khách trả <b>${formatVND(transactionData.paidAmount)}</b>.<br>Tổng tiền mới (<b>${formatVND(finalTotalNum)}</b>) khác với cũ.<br>Hệ thống sẽ giữ số tiền trả và cập nhật lại công nợ. Tiếp tục?`,
+                             icon: 'warning',
+                             showCancelButton: true,
+                             confirmButtonColor: '#ef4444',
+                             cancelButtonText: 'Xem lại',
+                             confirmButtonText: 'Đồng ý Lưu đè'
+                         });
+                         if (!warnResult.isConfirmed) return;
+                         Swal.fire({ title: 'Đang ghi đè...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); } });
+                    }
+
                     transactionData.remainingAmount = finalTotalNum - transactionData.paidAmount;
                     
-                    if (transactionData.remainingAmount === 0) {
+                    if (transactionData.remainingAmount === 0 && transactionData.paidAmount > 0) {
                         transactionData.status = 'paid';
                     } else if (transactionData.remainingAmount > 0 && transactionData.paidAmount > 0) {
                         transactionData.status = 'partial';
@@ -365,9 +381,28 @@ document.addEventListener('DOMContentLoaded', () => {
                 // Chờ Swal đóng hoàn toàn trước khi in
                 setTimeout(() => { 
                     window.print(); 
-                    // Cấp mã phiếu mới sau khi in xong (chuẩn bị cho khách tiếp theo)
+                    
+                    // Xóa giao diện Edit Mode (nếu đang bật)
+                    if (document.getElementById('cancel-edit-btn')) {
+                        document.getElementById('inv-id').parentElement.classList.remove('text-orange-600', 'bg-orange-100', 'p-1', 'rounded');
+                        document.getElementById('cancel-edit-btn').classList.add('hidden');
+                        document.getElementById('print-btn-text').textContent = 'Lưu & Xuất Phiếu';
+                        document.getElementById('print-btn').classList.replace('bg-orange-600', 'bg-blue-600');
+                        document.getElementById('print-btn').classList.replace('hover:bg-orange-700', 'hover:bg-blue-700');
+                    }
+
+                    // Xóa form chuẩn bị cho khách tiếp
+                    if(document.getElementById('cust-name')) document.getElementById('cust-name').value = '';
+                    if(document.getElementById('cust-phone')) document.getElementById('cust-phone').value = '';
+                    if(document.getElementById('cust-company')) document.getElementById('cust-company').value = '';
+                    if(document.getElementById('inv-note')) document.getElementById('inv-note').value = '';
+                    if(document.getElementById('discount-val')) document.getElementById('discount-val').value = '';
+                    if(document.getElementById('vat-check')) document.getElementById('vat-check').checked = false;
+                    
+                    billItems = [];
+                    // Cấp mã phiếu mới sau khi in xong
                     generateNewInvoiceId();
-                    renderInvoice(); // Cập nhật lại ảnh QR
+                    renderInvoice(); // Cập nhật lại ảnh QR và xoá Items hiện tại
                 }, 300);
             } catch (error) {
                 console.error("Lỗi khi lưu Firebase:", error);
@@ -1096,7 +1131,7 @@ function viewReceipt(dataStrEncoded) {
         return `<div class="border-b py-2 flex justify-between text-sm">
             <div>
                 <p class="font-bold text-gray-800">${i.name}</p>
-                <p class="text-xs text-gray-500">Thứ: ${daysText} | Giờ: ${i.start} - ${i.end}</p>
+                <p class="text-xs text-gray-500">Thứ: ${daysText} | ${i.desc || ''}</p>
                 ${i.skipped && i.skipped.length > 0 ? `<p class="text-[10px] text-red-500 mt-1">Nghỉ bù: ${i.skipped.join(', ')}</p>` : ''}
             </div>
             <div class="text-right">
@@ -1176,8 +1211,11 @@ function viewReceipt(dataStrEncoded) {
 
     // Gán sự kiện cho nút Sửa và Xóa trong modal xem chi tiết
     const editBtn = document.getElementById('rm-edit-btn');
+    const editFullBtn = document.getElementById('rm-edit-full-btn');
     const deleteBtn = document.getElementById('rm-delete-btn');
+    
     editBtn.onclick = () => { closeReceiptModal(); editBill(dataStrEncoded); };
+    if (editFullBtn) editFullBtn.onclick = () => { editFullBill(data.docId, dataStrEncoded); };
     deleteBtn.onclick = () => { closeReceiptModal(); deleteBill(data.docId, invId); };
 
     document.getElementById('receipt-modal').classList.remove('hidden');
@@ -1220,7 +1258,133 @@ async function confirmPayment(docId) {
 }
 
 // ==========================================
-// EDIT & DELETE BILL
+// EDIT FULL BILL
+// ==========================================
+
+function editFullBill(docId, dataStrEncoded) {
+    const data = JSON.parse(decodeURIComponent(dataStrEncoded));
+    closeReceiptModal();
+    
+    Swal.fire({
+        title: 'Chuyển sang chế độ Sửa Lịch Đặt?',
+        html: "Hệ thống sẽ kéo toàn bộ dữ liệu của hoá đơn hiện tại vào bảng Tính Tiền (thay thế bản nháp đang có).<br><br><b>Bạn có thể tùy ý sửa khách, xóa/thêm sân, giảm giá... Khi bấm Lưu Phiếu, tiền CÔNG NỢ sẽ được hệ thống phân bổ lại hoàn toàn tự động!</b>",
+        icon: 'info',
+        showCancelButton: true,
+        confirmButtonColor: '#4f46e5',
+        cancelButtonColor: '#6b7280',
+        confirmButtonText: '<i class="fa-solid fa-pen-to-square mr-1"></i> Bắt đầu Sửa',
+        cancelButtonText: 'Hủy'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            // Chuyển sang Tab Booking
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                if (btn.dataset.tab === 'booking') {
+                    btn.classList.add('bg-blue-800');
+                    btn.classList.remove('bg-blue-600', 'hover:bg-blue-700');
+                } else {
+                    btn.classList.remove('bg-blue-800');
+                    btn.classList.add('bg-blue-600', 'hover:bg-blue-700');
+                }
+            });
+            document.querySelectorAll('.tab-content').forEach(content => {
+                if (content.id === 'tab-booking') content.classList.remove('hidden');
+                else content.classList.add('hidden');
+            });
+
+            // Set currentInvoiceId
+            currentInvoiceId = data.id || `CŨ-${docId.slice(0,6).toUpperCase()}`;
+            if (document.getElementById('inv-id')) document.getElementById('inv-id').textContent = currentInvoiceId;
+            
+            // Đổi giao diện để User biết đang sửa
+            document.getElementById('inv-id').parentElement.classList.add('text-orange-600', 'bg-orange-100', 'p-1', 'rounded');
+            document.getElementById('cancel-edit-btn').classList.remove('hidden');
+            document.getElementById('print-btn-text').textContent = 'Lưu Phiếu (Ghi đè)';
+            document.getElementById('print-btn').classList.replace('bg-blue-600', 'bg-orange-600');
+            document.getElementById('print-btn').classList.replace('hover:bg-blue-700', 'hover:bg-orange-700');
+
+            // Điền Khách hàng
+            if(document.getElementById('cust-name')) document.getElementById('cust-name').value = data.customerName || '';
+            if(document.getElementById('cust-phone')) document.getElementById('cust-phone').value = data.customerPhone || '';
+            if(document.getElementById('cust-company')) document.getElementById('cust-company').value = data.company || '';
+            
+            // Chọn giới tính nếu có (hoặc để nguyên)
+            // Điền Ghi chú
+            if(document.getElementById('inv-note')) document.getElementById('inv-note').value = data.note || '';
+
+            // Gọi event để render right panel
+            if(document.getElementById('cust-name')) document.getElementById('cust-name').dispatchEvent(new Event('input'));
+
+            // Phân bổ billItems
+            billItems = data.items ? JSON.parse(JSON.stringify(data.items)) : [];
+            
+            // Hình thức thanh toán
+            if (data.paymentMethod) {
+                const rbs = document.querySelectorAll('input[name="pay-method"]');
+                for (const rb of rbs) {
+                    if (rb.value === data.paymentMethod) rb.checked = true;
+                }
+            }
+            
+            // VAT & Discount logic
+            const vatChecked = (data.vatAmount && data.vatAmount > 0);
+            if(document.getElementById('vat-check')) document.getElementById('vat-check').checked = vatChecked;
+            
+            // Calculate discount backward:
+            // subTotal = data.subTotal
+            // totalAmount = data.totalAmount
+            // vatAmount = data.vatAmount
+            // PreTax = totalAmount - vatAmount
+            // discount = subTotal - PreTax
+            if(data.subTotal) {
+                const discount = data.subTotal - (data.totalAmount - (data.vatAmount || 0));
+                if (discount > 0) {
+                    document.getElementById('discount-type').value = 'money';
+                    document.getElementById('discount-val').value = discount;
+                } else {
+                    document.getElementById('discount-type').value = 'money';
+                    document.getElementById('discount-val').value = '';
+                }
+            }
+
+            renderInvoice();
+            
+            Swal.fire({
+                icon: 'success',
+                title: 'Đã sẵn sàng!',
+                text: 'Hãy sửa đổi trên bảng Tính Tiền. Xóa sân cũ và bấm Thêm sân mới nếu cần thiết!',
+                timer: 4000,
+                showConfirmButton: true,
+                confirmButtonText: 'Đã hiểu'
+            });
+        }
+    });
+}
+
+function cancelEditMode() {
+    generateNewInvoiceId();
+    document.getElementById('inv-id').parentElement.classList.remove('text-orange-600', 'bg-orange-100', 'p-1', 'rounded');
+    document.getElementById('cancel-edit-btn').classList.add('hidden');
+    document.getElementById('print-btn-text').textContent = 'Lưu & Xuất Phiếu';
+    document.getElementById('print-btn').classList.replace('bg-orange-600', 'bg-blue-600');
+    document.getElementById('print-btn').classList.replace('hover:bg-orange-700', 'hover:bg-blue-700');
+    
+    // Clear data
+    document.getElementById('cust-name').value = '';
+    document.getElementById('cust-phone').value = '';
+    document.getElementById('cust-company').value = '';
+    document.getElementById('inv-note').value = '';
+    document.getElementById('cust-name').dispatchEvent(new Event('input'));
+    
+    document.getElementById('discount-val').value = '';
+    document.getElementById('vat-check').checked = false;
+    
+    billItems = [];
+    renderInvoice();
+    Swal.fire('Đã Hủy', 'Trở lại chế độ tạo phiếu mới!', 'info');
+}
+
+// ==========================================
+// EDIT & DELETE BILL (SỬA NHANH)
 // ==========================================
 
 function editBill(dataStrEncoded) {

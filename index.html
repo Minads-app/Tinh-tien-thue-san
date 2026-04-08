@@ -261,9 +261,10 @@
                 </div>
 
                 <div class="mt-4 flex justify-end gap-3 no-print">
-                    <button onclick="window.location.reload()" class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded text-sm font-medium">Làm mới</button>
-                    <button id="print-btn" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded text-sm font-bold shadow-lg flex items-center">
-                        <i class="fa-solid fa-cloud-arrow-up mr-2 text-yellow-300"></i> Lưu & Xuất Phiếu
+                    <button id="cancel-edit-btn" onclick="cancelEditMode()" class="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded text-sm font-medium hidden flex items-center animate-pulse"><i class="fa-solid fa-xmark mr-1"></i>Hủy Sửa</button>
+                    <button onclick="window.location.reload()" class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded text-sm font-medium transition">Làm mới</button>
+                    <button id="print-btn" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded text-sm font-bold shadow-lg flex items-center transition">
+                        <i class="fa-solid fa-cloud-arrow-up mr-2 text-yellow-300"></i> <span id="print-btn-text">Lưu & Xuất Phiếu</span>
                     </button>
                 </div>
             </div>
@@ -617,8 +618,11 @@
             
             <div class="bg-gray-50 border-t p-4 flex justify-between items-center">
                 <div class="flex space-x-2">
-                    <button id="rm-edit-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded transition text-sm flex items-center">
-                        <i class="fa-solid fa-pen mr-1"></i> Sửa
+                    <button id="rm-edit-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded transition text-sm flex items-center" title="Sửa Tổng tiền / Khách hàng / Trạng thái">
+                        <i class="fa-solid fa-pen mr-1"></i> Sửa Nhanh
+                    </button>
+                    <button id="rm-edit-full-btn" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded transition text-sm flex items-center" title="Sửa sân chơi, thời gian, thuộc tính vé">
+                        <i class="fa-solid fa-pen-to-square mr-1"></i> Sửa Lịch Đặt
                     </button>
                     <button id="rm-delete-btn" class="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded transition text-sm flex items-center">
                         <i class="fa-solid fa-trash mr-1"></i> Xóa
