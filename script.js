@@ -331,8 +331,34 @@ document.addEventListener('DOMContentLoaded', () => {
                     didOpen: () => { Swal.showLoading(); }
                 });
                 
-                // merge: true để không ghi đè mất thông tin từ SePay Webhook (ví dụ: prePaid, paidAt)
-                await db.collection('transactions').doc(invoiceId).set(transactionData, { merge: true });
+                const docRef = db.collection('transactions').doc(invoiceId);
+                const docSnap = await docRef.get();
+                
+                if (!docSnap.exists) {
+                    transactionData.paidAmount = 0;
+                    transactionData.remainingAmount = finalTotalNum;
+                    transactionData.status = 'unpaid';
+                } else {
+                    const data = docSnap.data();
+                    transactionData.paidAmount = data.paidAmount || 0;
+                    if (transactionData.paidAmount === 0 && data.transferAmount && data.status === 'paid') {
+                        transactionData.paidAmount = parseInt(data.transferAmount) || 0;
+                    }
+                    transactionData.remainingAmount = finalTotalNum - transactionData.paidAmount;
+                    
+                    if (transactionData.remainingAmount === 0) {
+                        transactionData.status = 'paid';
+                    } else if (transactionData.remainingAmount > 0 && transactionData.paidAmount > 0) {
+                        transactionData.status = 'partial';
+                    } else if (transactionData.remainingAmount < 0) {
+                        transactionData.status = 'overpaid';
+                    } else {
+                        transactionData.status = 'unpaid';
+                    }
+                }
+                
+                // merge: true để không ghi đè mất thông tin từ SePay Webhook
+                await docRef.set(transactionData, { merge: true });
                 Swal.close();
                 fetchReports(); // Refresh báo cáo
                 
@@ -846,8 +872,12 @@ async function fetchReports() {
 
                 count++;
                 const amount = data.totalAmount || 0;
-                totalRev += amount;
-                if (status === 'unpaid') totalDebt += amount;
+                
+                const currentPaidAmount = data.paidAmount !== undefined ? data.paidAmount : (status === 'paid' ? amount : 0);
+                const currentRemainingAmount = data.remainingAmount !== undefined ? data.remainingAmount : (status === 'paid' ? 0 : amount);
+                
+                totalRev += currentPaidAmount;
+                if (status !== 'paid') totalDebt += currentRemainingAmount;
                 
                 let timeStr = `${createdAtDate.getHours().toString().padStart(2, '0')}:${createdAtDate.getMinutes().toString().padStart(2, '0')} - ${createdAtDate.getDate()}/${createdAtDate.getMonth()+1}/${createdAtDate.getFullYear()}`;
 
@@ -866,9 +896,16 @@ async function fetchReports() {
                 const vatAmount = data.vatAmount || 0;
                 const invId = data.id || `CŨ-${docId.slice(0,6).toUpperCase()}`;
 
-                const statusHtml = status === 'unpaid' 
-                    ? `<span class="px-2 py-1 bg-red-100 text-red-700 rounded-full text-[10px] font-bold">Chưa TT</span>`
-                    : `<span class="px-2 py-1 bg-green-100 text-green-700 rounded-full text-[10px] font-bold">Đã TT</span>`;
+                let statusHtml = '';
+                if (status === 'unpaid') {
+                    statusHtml = `<span class="px-2 py-1 bg-red-100 text-red-700 rounded-full text-[10px] font-bold">Chưa TT</span>`;
+                } else if (status === 'partial') {
+                    statusHtml = `<span class="px-2 py-1 bg-orange-100 text-orange-700 rounded-full text-[10px] font-bold">TT 1 Phần</span>`;
+                } else if (status === 'overpaid') {
+                    statusHtml = `<span class="px-2 py-1 bg-purple-100 text-purple-700 rounded-full text-[10px] font-bold">Trả Thừa</span>`;
+                } else {
+                    statusHtml = `<span class="px-2 py-1 bg-green-100 text-green-700 rounded-full text-[10px] font-bold">Đã TT</span>`;
+                }
 
                 // Lưu dữ liệu vào data attribute để dùng cho modal
                 const dataStr = encodeURIComponent(JSON.stringify({...data, docId: docId}));
@@ -1084,10 +1121,47 @@ function viewReceipt(dataStrEncoded) {
             <p class="text-sm text-gray-600">Tiền hàng: ${formatVND(data.subTotal || 0)}</p>
             <p class="text-sm text-gray-600">Thuế VAT: ${formatVND(data.vatAmount || 0)}</p>
             <p class="font-bold text-lg text-indigo-700 mt-2 pt-2 border-t border-indigo-100">Tổng V/A: ${formatVND(data.totalAmount || 0)}</p>
+            <p class="text-sm font-bold text-green-700">Đã thanh toán: ${formatVND(data.paidAmount !== undefined ? data.paidAmount : (status==='paid' ? data.totalAmount : 0))}</p>
+            <p class="text-sm font-bold ${data.remainingAmount > 0 ? "text-red-600" : (data.remainingAmount < 0 ? "text-purple-600" : "text-gray-600")}">Còn nợ: ${formatVND(data.remainingAmount !== undefined ? data.remainingAmount : (status==='paid' ? 0 : (data.totalAmount||0)))}</p>
         </div>
     `;
 
     document.getElementById('rm-content').innerHTML = html;
+
+    const historyTableBody = document.getElementById('payment-history-table');
+    const historyEmpty = document.getElementById('payment-history-empty');
+    if (historyTableBody && historyEmpty && db) {
+        historyTableBody.innerHTML = '';
+        historyEmpty.classList.remove('hidden');
+        historyEmpty.textContent = 'Đang tải lịch sử thanh toán...';
+
+        db.collection('transactions').doc(data.docId).collection('payments').orderBy('paidAt', 'desc').get().then(snap => {
+            if (snap.empty) {
+                historyEmpty.textContent = 'Chưa có giao dịch thanh toán nào.';
+            } else {
+                historyEmpty.classList.add('hidden');
+                snap.forEach(doc => {
+                    const payData = doc.data();
+                    let dateStr = '---';
+                    if (payData.paidAt && payData.paidAt.toDate) {
+                        const d = payData.paidAt.toDate();
+                        dateStr = `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')} ${d.getDate()}/${d.getMonth()+1}/${d.getFullYear()}`;
+                    }
+                    const tr = document.createElement('tr');
+                    tr.className = "border-b text-gray-700 hover:bg-gray-50";
+                    tr.innerHTML = `
+                        <td class="p-2 border text-[11px] font-medium">${dateStr}</td>
+                        <td class="p-2 border font-bold text-green-700 text-xs text-right">${formatVND(payData.amount)}</td>
+                        <td class="p-2 border font-mono text-[10px] text-gray-500">${payData.sepayTransactionId || '---'}</td>
+                    `;
+                    historyTableBody.appendChild(tr);
+                });
+            }
+        }).catch(err => {
+            console.error("Lỗi lấy lịch sử thanh toán:", err);
+            historyEmpty.textContent = 'Lỗi kết nối khi tải lịch sử thanh toán.';
+        });
+    }
 
     const statusBtn = document.getElementById('rm-status-btn');
     if (status === 'unpaid') {
@@ -1114,7 +1188,25 @@ async function confirmPayment(docId) {
     if (!db) return;
     try {
         Swal.fire({ title: 'Đang cập nhật...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
-        await db.collection('transactions').doc(docId).update({ status: 'paid' });
+        const docRef = db.collection('transactions').doc(docId);
+        const docSnap = await docRef.get();
+        if (docSnap.exists) {
+            const data = docSnap.data();
+            const amountToPay = data.remainingAmount !== undefined ? data.remainingAmount : (data.totalAmount || 0);
+            
+            const batch = db.batch();
+            batch.update(docRef, { 
+                status: 'paid', 
+                paidAmount: data.totalAmount || 0, 
+                remainingAmount: 0 
+            });
+            batch.set(docRef.collection('payments').doc(), {
+                amount: amountToPay,
+                paidAt: firebase.firestore.FieldValue.serverTimestamp(),
+                sepayTransactionId: 'Thanh toán trực tiếp'
+            });
+            await batch.commit();
+        }
         closeReceiptModal();
         Swal.fire({ icon: 'success', title: 'Thành công', text: 'Đã cập nhật trạng thái đã thanh toán!', timer: 1500, showConfirmButton: false });
         fetchReports(); // Refresh table
@@ -1132,7 +1224,10 @@ function editBill(dataStrEncoded) {
     const data = JSON.parse(decodeURIComponent(dataStrEncoded));
     const invId = data.id || `CŨ-${data.docId.slice(0,6).toUpperCase()}`;
 
+    // Lưu trạng thái và số tiền đã trả để kiểm tra cảnh báo và tính lại
     document.getElementById('ebm-docid').value = data.docId;
+    document.getElementById('ebm-docid').dataset.currentStatus = data.status || 'paid';
+    document.getElementById('ebm-docid').dataset.currentPaid = data.paidAmount !== undefined ? data.paidAmount : (data.status === 'paid' ? data.totalAmount : 0);
     document.getElementById('ebm-id').textContent = invId;
     document.getElementById('ebm-name').value = data.customerName || '';
     document.getElementById('ebm-phone').value = data.customerPhone || '';
@@ -1150,11 +1245,15 @@ function closeEditBillModal() {
 
 async function saveBillEdit() {
     if (!db) return;
-    const docId = document.getElementById('ebm-docid').value;
+    const docIdEl = document.getElementById('ebm-docid');
+    const docId = docIdEl.value;
+    const currentStatus = docIdEl.dataset.currentStatus;
+    const currentPaid = parseFloat(docIdEl.dataset.currentPaid) || 0;
+
     const customerName = document.getElementById('ebm-name').value.trim();
     const customerPhone = document.getElementById('ebm-phone').value.trim();
     const paymentMethod = document.getElementById('ebm-payment').value;
-    const status = document.getElementById('ebm-status').value;
+    const selectedStatus = document.getElementById('ebm-status').value;
     const totalAmount = parseInt(document.getElementById('ebm-total').value) || 0;
     const note = document.getElementById('ebm-note').value.trim();
 
@@ -1163,18 +1262,65 @@ async function saveBillEdit() {
         return;
     }
 
+    if (currentStatus === 'paid' || currentStatus === 'overpaid' || currentStatus === 'partial') {
+        const warnResult = await Swal.fire({
+            title: 'Cảnh báo chỉnh sửa',
+            html: `Phiếu này đã được thanh toán (TT 1 phần / Trả thừa / Đã TT).<br>Nếu bạn thay đổi Tổng Tiền, hệ thống sẽ tự động tính lại công nợ theo số tiền đã đóng. Bạn có chắc chắn?`,
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#ef4444',
+            cancelButtonColor: '#6b7280',
+            confirmButtonText: 'Đồng ý sửa',
+            cancelButtonText: 'Hủy'
+        });
+        if (!warnResult.isConfirmed) return;
+    }
+
+    let remainingAmount = totalAmount - currentPaid;
+    let newStatus = selectedStatus;
+    let newPaidAmount = currentPaid;
+    let manualFullPayment = false;
+
+    if (selectedStatus === 'paid' && currentStatus === 'unpaid' && currentPaid === 0) {
+        remainingAmount = 0;
+        newPaidAmount = totalAmount;
+        newStatus = 'paid';
+        manualFullPayment = true;
+    } else {
+        if (remainingAmount === 0 && currentPaid > 0) newStatus = 'paid';
+        else if (remainingAmount > 0 && currentPaid > 0) newStatus = 'partial';
+        else if (remainingAmount < 0) newStatus = 'overpaid';
+        else if (remainingAmount === totalAmount && currentPaid === 0) newStatus = 'unpaid';
+    }
+
     try {
         Swal.fire({ title: 'Đang lưu...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
-        await db.collection('transactions').doc(docId).update({
+        const batch = db.batch();
+        const docRef = db.collection('transactions').doc(docId);
+        
+        batch.update(docRef, {
             customerName,
             customerPhone,
             paymentMethod,
-            status,
+            status: newStatus,
             totalAmount,
+            paidAmount: newPaidAmount,
+            remainingAmount,
             note
         });
+
+        if (manualFullPayment) {
+            batch.set(docRef.collection('payments').doc(), {
+                amount: totalAmount,
+                paidAt: firebase.firestore.FieldValue.serverTimestamp(),
+                sepayTransactionId: 'Sửa bill (Gạch nợ tay)'
+            });
+        }
+        await batch.commit();
+
         closeEditBillModal();
         Swal.fire({ icon: 'success', title: 'Đã cập nhật phiếu!', timer: 1500, showConfirmButton: false });
+        fetchReports(); // Refresh table UI
     } catch (e) {
         console.error('Lỗi sửa bill:', e);
         Swal.fire('Lỗi', 'Không thể cập nhật. Kiểm tra kết nối mạng!', 'error');

@@ -603,6 +603,17 @@
             <div class="p-5 overflow-y-auto" id="rm-content">
                 <!-- Nội dung phiếu đổ vào đây -->
             </div>
+
+            <div class="px-5 pb-5">
+                <h3 class="text-sm font-bold text-gray-800 border-b pb-2 mb-2"><i class="fa-solid fa-clock-rotate-left mr-1"></i> Lịch sử thanh toán</h3>
+                <table class="w-full text-left text-sm border">
+                    <thead>
+                        <tr class="bg-gray-100 text-gray-600"><th class="p-2 border">Ngày</th><th class="p-2 border">Số tiền</th><th class="p-2 border">Mã giao dịch SePay</th></tr>
+                    </thead>
+                    <tbody id="payment-history-table"></tbody>
+                </table>
+                <div id="payment-history-empty" class="text-xs text-gray-500 italic py-2 text-center">Đang tải lịch sử thanh toán...</div>
+            </div>
             
             <div class="bg-gray-50 border-t p-4 flex justify-between items-center">
                 <div class="flex space-x-2">

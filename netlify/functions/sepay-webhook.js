@@ -38,7 +38,7 @@ exports.handler = async (event, context) => {
 
         // Nơi SePay lưu Nội dung (HBA-XXX) và Số tiền
         const content = body.content || body.transactionContent || body.description || '';
-        const transferAmount = body.transferAmount || body.amountIn || body.amount || 0;
+        const transferAmount = parseInt(body.transferAmount || body.amountIn || body.amount || 0, 10);
 
         if (!content) {
             console.warn("Lỗi: Không tìm thấy nội dung chuyển khoản trong body!");
@@ -46,7 +46,6 @@ exports.handler = async (event, context) => {
         }
 
         // Tìm Mã Phiếu (Ví dụ: HBA-20231024-1234) trong dãy nội dung CK
-        // Lưu ý: Hệ thống mã VietQR tự động xóa dấu gạch ngang (-) nên cần Regex hỗ trợ cả 2 chuẩn
         const regex = /HBA\-?\d{8}\-?\d{4}/i;
         const match = content.match(regex);
         
@@ -60,40 +59,89 @@ exports.handler = async (event, context) => {
         const invoiceId = `HBA-${rawId.slice(3, 11)}-${rawId.slice(11, 15)}`;
 
         const db = admin.firestore();
-        // Tìm transaction dựa vào trường id
-        const snapshot = await db.collection('transactions').where('id', '==', invoiceId).get();
+        const docRef = db.collection('transactions').doc(invoiceId);
+        const docSnap = await docRef.get();
 
-        if (snapshot.empty) {
+        const paymentRecord = {
+            amount: transferAmount,
+            paidAt: admin.firestore.FieldValue.serverTimestamp(),
+            sepayTransactionId: String(body.id || body.referenceCode || '')
+        };
+
+        let resultData = {
+            paidAmount: transferAmount,
+            remainingAmount: 0,
+            status: 'paid'
+        };
+
+        if (!docSnap.exists) {
             // Document chưa được tạo do thu ngân chưa bấm "In Phiếu"
-            // Ta tạo trước một record nháp trạng thái 'paid'
-            const docRef = db.collection('transactions').doc(invoiceId);
+            // Tạo trước một record nháp
+            resultData.remainingAmount = 0;
+            resultData.status = 'paid';
+            
             await docRef.set({
                 id: invoiceId,
-                status: 'paid',
+                status: resultData.status,
                 prePaid: true,
                 paidAt: admin.firestore.FieldValue.serverTimestamp(),
                 createdAt: admin.firestore.FieldValue.serverTimestamp(),
-                transferAmount: transferAmount,
+                totalAmount: transferAmount,
+                paidAmount: transferAmount,
+                remainingAmount: resultData.remainingAmount,
                 paymentMethod: 'Chuyển khoản SePay',
                 customerName: 'Khách (Thanh toán QR)'
             });
+            // Thêm vào subcollection payments
+            await docRef.collection('payments').add(paymentRecord);
             
-            return { statusCode: 200, body: JSON.stringify({ success: true, message: 'Da tao phieu tra truoc cho phieu ' + invoiceId }) };
+            return { statusCode: 200, body: JSON.stringify({ success: true, message: 'Da tao phieu tra truoc cho phieu ' + invoiceId, data: resultData }) };
         }
 
-        // Cập nhật trạng thái thành paid cho toàn bộ result (đề phòng)
+        // Cập nhật giao dịch đã tồn tại
+        const data = docSnap.data();
+        let currentPaid = parseInt(data.paidAmount) || 0;
+        let totalAmount = parseInt(data.totalAmount) || parseInt(data.transferAmount) || 0;
+        
+        // Nếu record cũ chưa có paidAmount thì lấy transferAmount (phiên bản cũ)
+        if (currentPaid === 0 && data.transferAmount && data.status === 'paid') {
+            currentPaid = parseInt(data.transferAmount) || 0;
+        }
+
+        const newPaid = currentPaid + transferAmount;
+        const remaining = totalAmount - newPaid;
+        
+        let newStatus = 'unpaid';
+        if (remaining === 0) {
+            newStatus = 'paid';
+        } else if (remaining > 0) {
+            newStatus = 'partial';
+        } else {
+            newStatus = 'overpaid';
+        }
+
+        resultData = {
+            paidAmount: newPaid,
+            remainingAmount: remaining,
+            status: newStatus
+        };
+
         const batch = db.batch();
-        snapshot.docs.forEach((doc) => {
-            const docRef = db.collection('transactions').doc(doc.id);
-            // Có thể kiểm tra thêm điều kiện số tiền (transferAmount >= doc.data().totalAmount)
-            batch.update(docRef, { status: 'paid', paidAt: admin.firestore.FieldValue.serverTimestamp() });
+        batch.update(docRef, { 
+            paidAmount: newPaid, 
+            remainingAmount: remaining, 
+            status: newStatus,
+            paidAt: admin.firestore.FieldValue.serverTimestamp() // Cập nhật lần thanh toán cuối
         });
+        
+        const newPaymentRef = docRef.collection('payments').doc();
+        batch.set(newPaymentRef, paymentRecord);
 
         await batch.commit();
 
         return {
             statusCode: 200,
-            body: JSON.stringify({ success: true, message: `Da vao so cho phieu ${invoiceId}` })
+            body: JSON.stringify({ success: true, message: `Da vao so cho phieu ${invoiceId}`, data: resultData })
         };
 
     } catch (e) {
