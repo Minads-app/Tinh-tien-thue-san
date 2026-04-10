@@ -200,7 +200,24 @@
                     </div>
 
                     <div class="mt-6 border-t pt-4">
-                        <div class="flex justify-end">
+                        <div class="flex flex-col md:flex-row justify-between items-start gap-6">
+                            <!-- Box Trái: QR Code -->
+                            <div id="qr-section" class="w-full md:w-5/12 flex-shrink-0 transition-opacity duration-300">
+                                <div class="hidden">
+                                    <p class="text-xs font-bold text-indigo-800 uppercase mb-2">Thông tin chuyển khoản</p>
+                                    <p class="text-sm font-bold text-gray-800" id="bank-name">---</p>
+                                    <p class="text-sm text-gray-700">Tên TK: <span class="font-bold" id="bank-acc-name">---</span></p>
+                                    <p class="text-sm text-gray-700">Số TK: <span class="font-mono font-bold text-indigo-700 text-lg" id="bank-acc-num">---</span></p>
+                                </div>
+                                <div class="flex flex-col items-center justify-center">
+                                    <div class="bg-white p-1 rounded-lg shadow-sm border border-gray-200">
+                                        <img id="qr-image" src="" alt="QR Code" class="w-48 h-48 object-contain">
+                                    </div>
+                                    <p class="text-[11px] uppercase font-bold text-indigo-600 mt-2 text-center">Vui lòng quét mã QR để thanh toán</p>
+                                </div>
+                            </div>
+
+                            <!-- Box Phải: Tổng tiền -->
                             <div class="w-full md:w-1/2 space-y-2">
                                 <div class="flex justify-between text-gray-600 text-sm">
                                     <span>Tổng tiền hàng:</span><span class="font-medium" id="sub-total">0 ₫</span>
@@ -243,19 +260,6 @@
                                 <textarea id="inv-note" class="w-full border rounded p-1 text-sm mt-1 h-12 no-print" placeholder="..."></textarea>
                                 <p id="print-note" class="text-sm italic text-gray-600 print-only"></p>
                              </div>
-                        </div>
-
-                        <div id="qr-section" class="mt-6 border-2 border-dashed border-indigo-200 bg-indigo-50 p-4 rounded-lg flex items-center justify-between transition-colors duration-300">
-                            <div class="space-y-1">
-                                <p class="text-xs font-bold text-indigo-800 uppercase mb-2">Thông tin chuyển khoản</p>
-                                <p class="text-sm font-bold text-gray-800" id="bank-name">---</p>
-                                <p class="text-sm text-gray-700">Tên TK: <span class="font-bold" id="bank-acc-name">---</span></p>
-                                <p class="text-sm text-gray-700">Số TK: <span class="font-mono font-bold text-indigo-700 text-lg" id="bank-acc-num">---</span></p>
-                                <p class="text-xs text-gray-500 italic mt-1">Nội dung: Tên khách + SĐT</p>
-                            </div>
-                            <div class="bg-white p-2 rounded shadow-sm border">
-                                <img id="qr-image" src="" alt="QR Code" class="w-32 h-32 object-contain">
-                            </div>
                         </div>
                     </div>
                 </div>

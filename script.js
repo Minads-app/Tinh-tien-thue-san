@@ -1277,19 +1277,7 @@ function editFullBill(docId, dataStrEncoded) {
     }).then((result) => {
         if (result.isConfirmed) {
             // Chuyển sang Tab Booking
-            document.querySelectorAll('.tab-btn').forEach(btn => {
-                if (btn.dataset.tab === 'booking') {
-                    btn.classList.add('bg-blue-800');
-                    btn.classList.remove('bg-blue-600', 'hover:bg-blue-700');
-                } else {
-                    btn.classList.remove('bg-blue-800');
-                    btn.classList.add('bg-blue-600', 'hover:bg-blue-700');
-                }
-            });
-            document.querySelectorAll('.tab-content').forEach(content => {
-                if (content.id === 'tab-booking') content.classList.remove('hidden');
-                else content.classList.add('hidden');
-            });
+            switchTab('booking');
 
             // Set currentInvoiceId
             currentInvoiceId = data.id || `CŨ-${docId.slice(0,6).toUpperCase()}`;
