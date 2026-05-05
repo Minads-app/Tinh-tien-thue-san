@@ -284,6 +284,14 @@ document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('input[name="bank-select"]').forEach(radio => {
         radio.addEventListener('change', renderInvoice);
     });
+
+    // Khi đổi hình thức thanh toán, cập nhật print-pay-method ngay
+    document.querySelectorAll('input[name="pay-method"]').forEach(radio => {
+        radio.addEventListener('change', () => {
+            const val = document.querySelector('input[name="pay-method"]:checked').value;
+            document.getElementById('print-pay-method').textContent = val;
+        });
+    });
     
     renderInvoice(); 
 
@@ -665,7 +673,12 @@ function renderInvoice() {
                 </td>
                 <td class="p-3 text-center font-medium">${item.count} buổi</td>
                 <td class="p-3 text-center font-medium">${item.duration}h</td>
-                <td class="p-3 text-right text-gray-600">~${formatVND(displayPrice)}</td>
+                <td class="p-3 text-right">
+                    <input type="number" value="${displayPrice}" 
+                        class="w-24 text-right border border-gray-300 rounded px-1 py-0.5 text-sm font-medium text-indigo-700 focus:ring-1 focus:ring-indigo-400 outline-none no-print"
+                        onchange="updateItemPrice(${item.id}, this.value)">
+                    <span class="print-only text-gray-600">${formatVND(displayPrice)}</span>
+                </td>
                 <td class="p-3 text-right font-bold text-gray-800">${formatVND(item.total)}</td>
                 <td class="p-3 text-center no-print">
                     <button onclick="removeItem(${item.id})" class="text-red-400 hover:text-red-600"><i class="fa-solid fa-xmark"></i></button>
@@ -717,16 +730,31 @@ function updatePaymentInfo(finalTotal, isVatChecked) {
     const bankType = bankChoice ? bankChoice.value : 'personal';
 
     let selectedBank;
+    const bankInfoEl = document.getElementById('bank-info-display');
     if(bankType === 'company') {
         selectedBank = siteSettings.bankCompany;
         qrSection.classList.remove('bg-indigo-50', 'border-indigo-200');
         qrSection.classList.add('bg-blue-50', 'border-blue-300');
         if(printBankType) printBankType.textContent = 'TK Công ty';
+        // Hiển thị thông tin TK Công ty
+        if(bankInfoEl) {
+            bankInfoEl.classList.remove('hidden');
+            bankInfoEl.innerHTML = `
+                <div class="text-xs space-y-0.5">
+                    <p class="font-bold text-blue-800"><i class="fa-solid fa-building-columns mr-1"></i>${selectedBank.name || '---'}</p>
+                    <p class="text-gray-700">CTK: <span class="font-bold">${selectedBank.accName || '---'}</span></p>
+                    <p class="text-gray-700">STK: <span class="font-mono font-bold text-blue-700">${selectedBank.accNum || '---'}</span></p>
+                </div>`;
+        }
     } else {
         selectedBank = siteSettings.bankPersonal;
         qrSection.classList.add('bg-indigo-50', 'border-indigo-200');
         qrSection.classList.remove('bg-blue-50', 'border-blue-300');
         if(printBankType) printBankType.textContent = 'TK Cá nhân';
+        if(bankInfoEl) {
+            bankInfoEl.classList.add('hidden');
+            bankInfoEl.innerHTML = '';
+        }
     }
 
     bankNameEl.textContent = selectedBank.name || '---';
@@ -740,6 +768,15 @@ function updatePaymentInfo(finalTotal, isVatChecked) {
     } else {
         qrImageEl.src = '';
     }
+}
+
+function updateItemPrice(itemId, newPrice) {
+    const price = parseInt(newPrice) || 0;
+    const item = billItems.find(i => i.id === itemId);
+    if (!item) return;
+    item.price = price;
+    item.total = price * item.duration * item.count;
+    renderInvoice();
 }
 
 function removeItem(id) {
