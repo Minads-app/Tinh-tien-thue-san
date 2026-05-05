@@ -158,10 +158,46 @@ function getDayOfWeekString(dateStr) {
     return days[date.getDay()];
 }
 
-function findBestPrice(group, dayOfWeek, checkTime) {
+function timeStringToFloat(timeStr) {
+    const [h, m] = timeStr.split(':').map(Number);
+    return h + m / 60;
+}
+
+function floatToTimeString(floatTime) {
+    const h = Math.floor(floatTime);
+    const m = Math.round((floatTime - h) * 60);
+    return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+}
+
+function getSegmentsForTimeRange(group, dayOfWeek, startTimeStr, endTimeStr) {
     const candidates = pricingRules.filter(r => r.group === group && r.days.includes(dayOfWeek));
-    const match = candidates.find(r => checkTime >= r.start && checkTime < r.end);
-    return match ? match.price : 0;
+    const startVal = timeStringToFloat(startTimeStr);
+    const endVal = timeStringToFloat(endTimeStr);
+    
+    let segments = [];
+    
+    candidates.forEach(r => {
+        let rStartVal = timeStringToFloat(r.start);
+        let rEndVal = timeStringToFloat(r.end);
+        
+        let overlapStart = Math.max(startVal, rStartVal);
+        let overlapEnd = Math.min(endVal, rEndVal);
+        
+        if (overlapStart < overlapEnd) {
+            let duration = parseFloat((overlapEnd - overlapStart).toFixed(2));
+            segments.push({
+                startStr: floatToTimeString(overlapStart),
+                endStr: floatToTimeString(overlapEnd),
+                pricePerHour: r.price,
+                duration: duration,
+                total: duration * r.price,
+                ruleName: r.name
+            });
+        }
+    });
+    
+    segments.sort((a, b) => timeStringToFloat(a.startStr) - timeStringToFloat(b.startStr));
+    return segments;
 }
 
 // ==========================================
@@ -219,16 +255,19 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     document.getElementById('sport-select').addEventListener('change', function() {
-        const courtSelect = document.getElementById('court-select');
-        courtSelect.innerHTML = '<option value="">-- Chọn sân --</option>';
+        const container = document.getElementById('court-select-container');
+        container.innerHTML = '';
         const group = this.value;
         if(group && COURT_MAP[group]) {
             COURT_MAP[group].forEach(court => {
-                const opt = document.createElement('option');
-                opt.value = court;
-                opt.textContent = court;
-                courtSelect.appendChild(opt);
+                const label = document.createElement('label');
+                label.className = "flex items-center space-x-2 p-1 hover:bg-gray-50 cursor-pointer rounded";
+                label.innerHTML = `<input type="checkbox" name="court-checkbox" value="${court}" class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                                   <span class="text-sm font-medium text-gray-700">${court}</span>`;
+                container.appendChild(label);
             });
+        } else {
+            container.innerHTML = '<div class="text-gray-400 italic text-xs">-- Chọn môn trước --</div>';
         }
         updateEstimatedPrice();
     });
@@ -240,6 +279,11 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('discount-val').addEventListener('input', renderInvoice);
     document.getElementById('discount-type').addEventListener('change', renderInvoice);
     document.getElementById('vat-check').addEventListener('change', renderInvoice);
+
+    // Khi chọn TK ngân hàng, cập nhật QR ngay
+    document.querySelectorAll('input[name="bank-select"]').forEach(radio => {
+        radio.addEventListener('change', renderInvoice);
+    });
     
     renderInvoice(); 
 
@@ -485,19 +529,26 @@ function updateDuration() {
 function updateEstimatedPrice() {
     const group = document.getElementById('sport-select').value;
     const startTime = document.getElementById('time-start').value;
-    if(!group || !startTime) {
+    const endTime = document.getElementById('time-end').value;
+    if(!group || !startTime || !endTime) {
         document.getElementById('estimated-price').textContent = "---";
         return;
     }
     const todayDay = new Date().getDay();
-    const price = findBestPrice(group, todayDay, startTime);
-    document.getElementById('estimated-price').textContent = price > 0 ? formatVND(price) + "/h (Hôm nay)" : "Chưa có giá";
+    const segments = getSegmentsForTimeRange(group, todayDay, startTime, endTime);
+    if (segments.length > 0) {
+        let total = segments.reduce((sum, seg) => sum + seg.total, 0);
+        document.getElementById('estimated-price').textContent = formatVND(total) + " (Hôm nay)";
+    } else {
+        document.getElementById('estimated-price').textContent = "Chưa có giá";
+    }
 }
 
 function addToBill() {
     const group = document.getElementById('sport-select').value;
-    const courtName = document.getElementById('court-select').value;
-    if(!group || !courtName) { Swal.fire('Lỗi', 'Vui lòng chọn Môn và Sân', 'error'); return; }
+    const selectedCourts = Array.from(document.querySelectorAll('input[name="court-checkbox"]:checked')).map(cb => cb.value);
+    
+    if(!group || selectedCourts.length === 0) { Swal.fire('Lỗi', 'Vui lòng chọn Môn và ít nhất 1 Sân', 'error'); return; }
 
     const startDate = new Date(document.getElementById('start-date').value);
     const endDate = new Date(document.getElementById('end-date').value);
@@ -513,44 +564,71 @@ function addToBill() {
     document.querySelectorAll('input[name="weekday"]:checked').forEach(cb => selectedDays.push(parseInt(cb.value)));
     if(selectedDays.length === 0) { Swal.fire('Lỗi', 'Chọn thứ trong tuần', 'error'); return; }
 
-    let count = 0;
-    let totalPriceItem = 0;
+    let validDaysCount = 0;
+    let matchedDaysCount = 0;
     let skippedDates = [];
     let current = new Date(startDate);
     
+    let aggregatedSegments = {};
+
     while(current <= endDate) {
         const currentDayOfWeek = current.getDay();
         if(selectedDays.includes(currentDayOfWeek)) {
             if(excludeDates.includes(current.toDateString())) {
                 skippedDates.push(formatDate(current));
             } else {
-                const priceToday = findBestPrice(group, currentDayOfWeek, startTime);
-                if(priceToday > 0) {
-                    count++;
-                    totalPriceItem += (priceToday * duration);
+                validDaysCount++;
+                let daySegments = getSegmentsForTimeRange(group, currentDayOfWeek, startTime, endTime);
+                if (daySegments.length > 0) {
+                    matchedDaysCount++;
+                    daySegments.forEach(seg => {
+                        let key = `${seg.startStr}-${seg.endStr}-${seg.pricePerHour}`;
+                        if (!aggregatedSegments[key]) {
+                            aggregatedSegments[key] = {
+                                startStr: seg.startStr,
+                                endStr: seg.endStr,
+                                pricePerHour: seg.pricePerHour,
+                                duration: seg.duration,
+                                total: 0,
+                                count: 0,
+                                weekdays: new Set()
+                            };
+                        }
+                        aggregatedSegments[key].count++;
+                        aggregatedSegments[key].total += seg.total;
+                        aggregatedSegments[key].weekdays.add(currentDayOfWeek);
+                    });
                 }
             }
         }
         current.setDate(current.getDate() + 1);
     }
 
-    if(count === 0 && skippedDates.length === 0) { Swal.fire('Thông báo', 'Không có ngày phù hợp', 'warning'); return; }
-    if(totalPriceItem === 0 && count > 0) { Swal.fire('Cảnh báo', 'Không tìm thấy cấu hình giá cho khung giờ này!', 'warning'); return; }
+    if(validDaysCount === 0 && skippedDates.length === 0) { Swal.fire('Thông báo', 'Không có ngày phù hợp', 'warning'); return; }
+    if(matchedDaysCount === 0 && validDaysCount > 0) { Swal.fire('Cảnh báo', 'Không tìm thấy cấu hình giá cho khung giờ này!', 'warning'); return; }
 
-    const itemName = `${group} [${courtName}]`;
-    const avgPrice = totalPriceItem / (count * duration);
+    selectedCourts.forEach(courtName => {
+        const itemName = `${group} [${courtName}]`;
 
-    billItems.push({
-        id: Date.now(),
-        name: itemName,
-        weekdays: selectedDays,
-        desc: `${formatDate(startDate)} - ${formatDate(endDate)} (${startTime}-${endTime})`,
-        skipped: skippedDates,
-        count: count,
-        duration: duration,
-        price: avgPrice,
-        total: totalPriceItem
+        for (let key in aggregatedSegments) {
+            let seg = aggregatedSegments[key];
+            let weekdaysArray = Array.from(seg.weekdays).sort();
+            billItems.push({
+                id: Date.now() + Math.random(),
+                name: itemName,
+                weekdays: weekdaysArray,
+                desc: `${formatDate(startDate)} - ${formatDate(endDate)} (${seg.startStr}-${seg.endStr})`,
+                skipped: skippedDates,
+                count: seg.count,
+                duration: seg.duration,
+                price: seg.pricePerHour,
+                total: seg.total
+            });
+        }
     });
+
+    // Uncheck all selected courts after adding to bill for convenience
+    document.querySelectorAll('input[name="court-checkbox"]:checked').forEach(cb => cb.checked = false);
 
     renderInvoice();
     Swal.fire({ icon: 'success', title: 'Đã thêm', toast: true, position: 'top-end', showConfirmButton: false, timer: 1500 });
@@ -632,16 +710,23 @@ function updatePaymentInfo(finalTotal, isVatChecked) {
     const accNumEl = document.getElementById('bank-acc-num');
     const qrImageEl = document.getElementById('qr-image');
     const qrSection = document.getElementById('qr-section');
+    const printBankType = document.getElementById('print-bank-type');
+
+    // Đọc lựa chọn TK ngân hàng từ radio
+    const bankChoice = document.querySelector('input[name="bank-select"]:checked');
+    const bankType = bankChoice ? bankChoice.value : 'personal';
 
     let selectedBank;
-    if(isVatChecked && finalTotal >= 5000000) {
+    if(bankType === 'company') {
         selectedBank = siteSettings.bankCompany;
         qrSection.classList.remove('bg-indigo-50', 'border-indigo-200');
         qrSection.classList.add('bg-blue-50', 'border-blue-300');
+        if(printBankType) printBankType.textContent = 'TK Công ty';
     } else {
         selectedBank = siteSettings.bankPersonal;
         qrSection.classList.add('bg-indigo-50', 'border-indigo-200');
         qrSection.classList.remove('bg-blue-50', 'border-blue-300');
+        if(printBankType) printBankType.textContent = 'TK Cá nhân';
     }
 
     bankNameEl.textContent = selectedBank.name || '---';
