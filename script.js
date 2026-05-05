@@ -1340,11 +1340,103 @@ function viewReceipt(dataStrEncoded) {
     if (editFullBtn) editFullBtn.onclick = () => { editFullBill(data.docId, dataStrEncoded); };
     deleteBtn.onclick = () => { closeReceiptModal(); deleteBill(data.docId, invId); };
 
+    // Gán sự kiện cho nút In
+    const printBtn = document.getElementById('rm-print-btn');
+    if (printBtn) {
+        printBtn.onclick = () => { printReceipt(data); };
+    }
+
     document.getElementById('receipt-modal').classList.remove('hidden');
 }
 
 function closeReceiptModal() {
     document.getElementById('receipt-modal').classList.add('hidden');
+}
+
+function printReceipt(data) {
+    const status = data.status || 'paid';
+    const isPaid = (status === 'paid');
+    const docTitle = isPaid ? 'HÓA ĐƠN' : 'PHIẾU THANH TOÁN';
+    
+    // Load dữ liệu vào khu vực invoice chính để in
+    const invId = data.id || `CŨ-${(data.docId || '').slice(0,6).toUpperCase()}`;
+    
+    // Set mã phiếu
+    document.getElementById('inv-id').textContent = invId;
+    
+    // Set tiêu đề phiếu
+    const venueNameEl = document.getElementById('inv-venue-name');
+    venueNameEl.textContent = (siteSettings.venueName || '---') + ' - ' + docTitle;
+    
+    // Set ngày
+    let createdDate = new Date();
+    if (data.createdAt && data.createdAt.toDate) {
+        createdDate = data.createdAt.toDate();
+    } else if (data.createdAt && data.createdAt.seconds) {
+        createdDate = new Date(data.createdAt.seconds * 1000);
+    }
+    document.getElementById('inv-date').textContent = formatDateFull(createdDate);
+    
+    // Set thông tin khách
+    document.getElementById('display-name').textContent = data.customerName || 'Khách Vãng Lai';
+    document.getElementById('display-phone').textContent = data.customerPhone || '---';
+    document.getElementById('display-company').textContent = data.company || '';
+    document.getElementById('display-gender').textContent = '';
+    
+    // Set hình thức thanh toán
+    document.getElementById('print-pay-method').textContent = data.paymentMethod || 'Tiền mặt';
+    
+    // Set ghi chú
+    document.getElementById('print-note').textContent = data.note || '';
+    
+    // Load items vào bảng invoice
+    billItems = (data.items || []).map((item, idx) => ({
+        ...item,
+        id: Date.now() + idx
+    }));
+    
+    // Set giảm giá
+    document.getElementById('discount-val').value = '';
+    
+    // Set VAT
+    const vatAmount = data.vatAmount || 0;
+    document.getElementById('vat-check').checked = (vatAmount > 0);
+    
+    // Render invoice (sẽ tính sub-total từ items)
+    renderInvoice();
+    
+    // Override lại tổng tiền từ dữ liệu gốc để chính xác
+    document.getElementById('sub-total').textContent = formatVND(data.subTotal || 0);
+    document.getElementById('vat-amount').textContent = formatVND(vatAmount);
+    document.getElementById('final-total').textContent = formatVND(data.totalAmount || 0);
+    
+    // Nếu đã thanh toán, thêm dòng trạng thái ĐÃ THANH TOÁN
+    if (isPaid) {
+        document.getElementById('print-note').textContent = (data.note ? data.note + ' | ' : '') + '✅ ĐÃ THANH TOÁN';
+    }
+    
+    // Đóng modal, chờ render xong rồi in
+    closeReceiptModal();
+    
+    setTimeout(() => {
+        window.print();
+        
+        // Sau khi in xong, khôi phục lại trạng thái ban đầu
+        setTimeout(() => {
+            venueNameEl.textContent = (siteSettings.venueName || '---') + ' - Phiếu Thanh Toán';
+            billItems = [];
+            generateNewInvoiceId();
+            document.getElementById('inv-date').textContent = formatDateFull(new Date());
+            document.getElementById('display-name').textContent = '---';
+            document.getElementById('display-phone').textContent = '---';
+            document.getElementById('display-company').textContent = '';
+            document.getElementById('display-gender').textContent = '';
+            document.getElementById('print-note').textContent = '';
+            document.getElementById('discount-val').value = '';
+            document.getElementById('vat-check').checked = false;
+            renderInvoice();
+        }, 500);
+    }, 300);
 }
 
 async function confirmPayment(docId) {
