@@ -15,6 +15,7 @@ let siteSettings = {
 };
 
 const COURT_MAP = {
+    'Hồ bơi': ['Hồ bơi'],
     'Bóng đá': ['Sân bóng đá'],
     'Cầu lông': ['Sân cầu lông 1', 'Sân cầu lông 2', 'Sân cầu lông 3', 'Sân cầu lông 4'],
     'Bóng rổ Full': ['Bóng rổ 1', 'Bóng rổ 2'],
@@ -46,6 +47,7 @@ const DEFAULT_RULES = [
     { id: 7, group: 'Bóng rổ Full', name: 'Cuối tuần', days: [6,0], start: '06:00', end: '22:00', price: 500000 },
     { id: 8, group: 'Bóng đá', name: 'Sáng', days: [0,1,2,3,4,5,6], start: '06:00', end: '17:00', price: 450000 },
     { id: 9, group: 'Bóng đá', name: 'Tối', days: [0,1,2,3,4,5,6], start: '17:00', end: '22:00', price: 550000 },
+    { id: 10, group: 'Hồ bơi', name: 'Mặc định', days: [0,1,2,3,4,5,6], start: '06:00', end: '22:00', price: 50000 }
 ];
 
 let pricingRules = JSON.parse(localStorage.getItem('pricingRules')) || DEFAULT_RULES;
