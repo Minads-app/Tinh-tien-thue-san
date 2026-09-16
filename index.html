@@ -346,7 +346,7 @@
                 <div class="bg-gray-50 p-4 rounded-lg mb-6 flex flex-wrap gap-4 items-end border">
                     <div>
                         <label class="block text-xs font-semibold text-gray-600 mb-1">Thời gian</label>
-                        <select id="filter-date-preset" class="px-3 py-2 border rounded text-sm w-40">
+                        <select id="filter-date-preset" class="px-3 py-2 border rounded text-sm w-40 bg-white">
                             <option value="today">Hôm nay</option>
                             <option value="this_month" selected>Tháng này</option>
                             <option value="last_month">Tháng trước</option>
@@ -357,24 +357,43 @@
                     <div id="filter-custom-dates" class="hidden flex space-x-2">
                         <div>
                             <label class="block text-xs font-semibold text-gray-600 mb-1">Từ ngày</label>
-                            <input type="date" id="filter-start" class="px-3 py-2 border rounded text-sm w-36">
+                            <input type="date" id="filter-start" class="px-3 py-2 border rounded text-sm w-36 bg-white">
                         </div>
                         <div>
                             <label class="block text-xs font-semibold text-gray-600 mb-1">Đến ngày</label>
-                            <input type="date" id="filter-end" class="px-3 py-2 border rounded text-sm w-36">
+                            <input type="date" id="filter-end" class="px-3 py-2 border rounded text-sm w-36 bg-white">
                         </div>
                     </div>
                     <div>
                         <label class="block text-xs font-semibold text-gray-600 mb-1">Trạng thái phiếu</label>
-                        <select id="filter-status" class="px-3 py-2 border rounded text-sm w-40">
+                        <select id="filter-status" class="px-3 py-2 border rounded text-sm w-40 bg-white">
                             <option value="all">Tất cả</option>
                             <option value="unpaid">Chưa thanh toán</option>
                             <option value="paid">Đã thanh toán</option>
                         </select>
                     </div>
-                    <button onclick="fetchReports()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded text-sm font-bold shadow transition">
-                        <i class="fa-solid fa-filter mr-1"></i> Lọc
-                    </button>
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-600 mb-1">Tên khách hàng</label>
+                        <div class="relative">
+                            <i class="fa-solid fa-user absolute left-3 top-3 text-gray-400 text-xs"></i>
+                            <input type="text" id="filter-cust-name" class="pl-8 pr-3 py-2 border rounded text-sm w-44 bg-white outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" placeholder="Tên khách hàng...">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-600 mb-1">Số điện thoại</label>
+                        <div class="relative">
+                            <i class="fa-solid fa-phone absolute left-3 top-3 text-gray-400 text-xs"></i>
+                            <input type="text" id="filter-cust-phone" class="pl-8 pr-3 py-2 border rounded text-sm w-40 font-mono bg-white outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" placeholder="Số điện thoại...">
+                        </div>
+                    </div>
+                    <div class="flex space-x-2">
+                        <button onclick="fetchReports()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded text-sm font-bold shadow transition flex items-center">
+                            <i class="fa-solid fa-filter mr-1.5"></i> Lọc
+                        </button>
+                        <button onclick="resetReportsFilter()" class="bg-gray-200 hover:bg-gray-300 text-gray-700 px-4 py-2 rounded text-sm font-bold shadow-sm transition flex items-center" title="Đưa tất cả bộ lọc về mặc định">
+                            <i class="fa-solid fa-rotate-left mr-1.5"></i> Xóa lọc
+                        </button>
+                    </div>
                 </div>
                 <!-- Vùng hiển thị báo cáo -->
                 <div class="overflow-x-auto">
@@ -434,7 +453,8 @@
                                 <th class="p-3 border-r font-bold">Đội Bóng/Cty</th>
                                 <th class="p-3 border-r text-center font-bold">Lượt Thuê</th>
                                 <th class="p-3 border-r text-right font-bold w-32 py-4">Tổng Doanh Thu</th>
-                                <th class="p-3 font-bold">Ngày Chơi Cuối</th>
+                                <th class="p-3 border-r font-bold">Ngày Chơi Cuối</th>
+                                <th class="p-3 font-bold text-center w-28">Thao Tác</th>
                             </tr>
                         </thead>
                         <tbody id="customer-table-body" class="bg-white">
@@ -571,14 +591,15 @@
         </div>
     </div>
 
-    <!-- Modal Thêm Khách Hàng -->
+    <!-- Modal Thêm/Sửa Khách Hàng -->
     <div id="customer-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex flex-col items-center justify-center p-4 z-[60]">
         <div class="bg-white rounded-lg shadow-xl w-full max-w-sm overflow-hidden">
             <div class="bg-blue-600 p-4 flex justify-between items-center text-white">
-                <h2 class="text-lg font-bold"><i class="fa-solid fa-user-plus mr-2"></i> Thông Tin Khách Hàng</h2>
+                <h2 class="text-lg font-bold" id="customer-modal-title"><i class="fa-solid fa-user-plus mr-2"></i> Thông Tin Khách Hàng</h2>
                 <button onclick="closeCustomerModal()" class="text-blue-200 hover:text-white transition group"><i class="fa-solid fa-xmark text-xl group-hover:scale-110"></i></button>
             </div>
             <div class="p-6 space-y-4 relative">
+                <input type="hidden" id="c-edit-original-phone" value="">
                 <div>
                     <label class="block text-xs font-semibold text-gray-500 mb-1">Số điện thoại (*)</label>
                     <input type="tel" id="c-phone" class="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500 outline-none text-sm font-mono text-blue-700 font-bold" placeholder="Bắt buộc">
@@ -601,8 +622,108 @@
                     </div>
                 </div>
             </div>
-            <div class="bg-gray-50 border-t p-4 flex justify-end">
-                <button onclick="saveCustomerModal()" class="px-5 py-2 bg-blue-600 text-white rounded text-sm font-bold hover:bg-blue-700 shadow flex items-center transition"><i class="fa-solid fa-save mr-2"></i> Lưu Lại</button>
+            <div class="bg-gray-50 border-t p-4 flex justify-end space-x-2">
+                <button onclick="closeCustomerModal()" class="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded text-sm font-medium transition">Hủy</button>
+                <button id="c-save-btn" onclick="saveCustomerModal()" class="px-5 py-2 bg-blue-600 text-white rounded text-sm font-bold hover:bg-blue-700 shadow flex items-center transition"><i class="fa-solid fa-save mr-2"></i> Lưu Lại</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Xem Chi Tiết Khách Hàng -->
+    <div id="view-customer-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center p-4 z-[60]">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div class="bg-gradient-to-r from-blue-700 to-indigo-700 p-4 flex justify-between items-center text-white">
+                <div class="flex items-center space-x-3">
+                    <div class="w-10 h-10 rounded-full bg-white bg-opacity-20 flex items-center justify-center text-xl font-bold">
+                        <i class="fa-solid fa-user"></i>
+                    </div>
+                    <div>
+                        <h2 class="text-lg font-bold" id="vc-title">Hồ Sơ Khách Hàng</h2>
+                        <div class="text-xs text-blue-100 flex items-center gap-2">
+                            <span>Mã KH: <b id="vc-code" class="font-mono bg-blue-800 bg-opacity-50 px-1.5 py-0.5 rounded">---</b></span>
+                        </div>
+                    </div>
+                </div>
+                <button onclick="closeViewCustomerModal()" class="text-blue-200 hover:text-white transition group"><i class="fa-solid fa-xmark text-xl group-hover:scale-110"></i></button>
+            </div>
+
+            <div class="p-6 overflow-y-auto space-y-5">
+                <!-- Thẻ thông tin khách -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-gray-50 p-4 rounded-lg border">
+                    <div>
+                        <span class="text-xs text-gray-500 font-semibold uppercase">Họ và tên</span>
+                        <div id="vc-name" class="text-base font-bold text-gray-800 mt-0.5">---</div>
+                    </div>
+                    <div>
+                        <span class="text-xs text-gray-500 font-semibold uppercase">Số điện thoại</span>
+                        <div class="mt-0.5"><a id="vc-phone-link" href="#" class="text-base font-bold font-mono text-blue-600 hover:underline"><i class="fa-solid fa-phone text-xs mr-1"></i> <span id="vc-phone">---</span></a></div>
+                    </div>
+                    <div>
+                        <span class="text-xs text-gray-500 font-semibold uppercase">Danh xưng</span>
+                        <div id="vc-gender" class="text-sm font-medium text-gray-700 mt-0.5">---</div>
+                    </div>
+                    <div>
+                        <span class="text-xs text-gray-500 font-semibold uppercase">Đơn vị / Đội bóng</span>
+                        <div id="vc-company" class="text-sm font-medium text-gray-700 mt-0.5">---</div>
+                    </div>
+                </div>
+
+                <!-- Thống kê doanh thu / lượt chơi -->
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div class="bg-blue-50 border border-blue-200 p-3 rounded-lg text-center">
+                        <div class="text-xs text-blue-600 font-bold uppercase">Lượt thuê</div>
+                        <div id="vc-tickets" class="text-xl font-bold text-blue-800 mt-1">0</div>
+                    </div>
+                    <div class="bg-green-50 border border-green-200 p-3 rounded-lg text-center">
+                        <div class="text-xs text-green-600 font-bold uppercase">Tổng chi tiêu</div>
+                        <div id="vc-spent" class="text-xl font-bold text-green-700 mt-1">0 ₫</div>
+                    </div>
+                    <div class="bg-purple-50 border border-purple-200 p-3 rounded-lg text-center">
+                        <div class="text-xs text-purple-600 font-bold uppercase">Chơi gần nhất</div>
+                        <div id="vc-last-visit" class="text-xs font-bold text-purple-800 mt-1.5">---</div>
+                    </div>
+                    <div class="bg-amber-50 border border-amber-200 p-3 rounded-lg text-center">
+                        <div class="text-xs text-amber-600 font-bold uppercase">Ngày tạo</div>
+                        <div id="vc-created-at" class="text-xs font-bold text-amber-800 mt-1.5">---</div>
+                    </div>
+                </div>
+
+                <!-- Lịch sử các phiếu thuê -->
+                <div>
+                    <h3 class="text-sm font-bold text-gray-800 uppercase mb-3 flex items-center">
+                        <i class="fa-solid fa-clock-rotate-left mr-2 text-indigo-600"></i> Lịch Sử Đặt Sân / Phiếu Thu
+                    </h3>
+                    <div class="border rounded-lg overflow-x-auto max-h-56">
+                        <table class="w-full text-left text-xs border-collapse">
+                            <thead>
+                                <tr class="bg-gray-100 text-gray-700 uppercase font-semibold">
+                                    <th class="p-2 border">Mã Phiếu</th>
+                                    <th class="p-2 border">Ngày Tạo</th>
+                                    <th class="p-2 border text-center">Trạng Thái</th>
+                                    <th class="p-2 border text-right">Tổng Tiền</th>
+                                    <th class="p-2 border text-center">Chi Tiết</th>
+                                </tr>
+                            </thead>
+                            <tbody id="vc-transactions-body">
+                                <tr><td colspan="5" class="p-4 text-center text-gray-400 italic">Đang tải lịch sử giao dịch...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-gray-50 border-t p-4 flex justify-between items-center">
+                <div class="flex space-x-2">
+                    <button id="vc-edit-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-3 rounded transition text-sm flex items-center">
+                        <i class="fa-solid fa-pen mr-1.5"></i> Sửa
+                    </button>
+                    <button id="vc-delete-btn" class="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-3 rounded transition text-sm flex items-center">
+                        <i class="fa-solid fa-trash mr-1.5"></i> Xóa
+                    </button>
+                </div>
+                <button onclick="closeViewCustomerModal()" class="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded transition text-sm">
+                    Đóng
+                </button>
             </div>
         </div>
     </div>

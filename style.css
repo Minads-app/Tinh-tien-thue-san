@@ -46,6 +46,7 @@ body {
     #tab-config,
     #tab-reports,
     #tab-settings,
+    #tab-customers,
     .swal2-container { 
         display: none !important; 
     }

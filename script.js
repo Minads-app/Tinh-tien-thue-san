@@ -5,6 +5,15 @@
 // BANK_INFO is now dynamic, loaded from Firebase settings
 let unsubscribeReports = null;
 let knownTransactions = {};
+let cachedTransactions = [];
+
+function removeVietnameseTones(str) {
+    if (!str) return '';
+    str = str.toLowerCase();
+    str = str.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    str = str.replace(/[đĐ]/g, 'd');
+    return str.trim();
+}
 
 let siteSettings = {
     venueName: '',
@@ -238,6 +247,17 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
+
+    ['filter-cust-name', 'filter-cust-phone'].forEach(id => {
+        const inputEl = document.getElementById(id);
+        if (inputEl) {
+            inputEl.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    fetchReports();
+                }
+            });
+        }
+    });
 
     const today = new Date();
     document.getElementById('inv-date').textContent = formatDateFull(today);
@@ -793,12 +813,13 @@ function switchTab(tabName) {
     const btnBooking = document.getElementById('tab-btn-booking');
     const btnConfig = document.getElementById('tab-btn-config');
     const btnReports = document.getElementById('tab-btn-reports');
+    const btnCustomers = document.getElementById('tab-btn-customers');
     const btnSettings = document.getElementById('tab-btn-settings');
     
     const activeClass = "tab-active py-4 px-1 inline-flex items-center text-sm border-b-2 border-indigo-600 font-bold text-indigo-700 cursor-pointer";
     const inactiveClass = "tab-inactive py-4 px-1 inline-flex items-center text-sm border-b-2 border-transparent font-medium text-gray-500 hover:text-gray-800 transition cursor-pointer";
 
-    [btnBooking, btnConfig, btnReports, btnSettings].forEach(btn => { if(btn) btn.className = inactiveClass; });
+    [btnBooking, btnConfig, btnReports, btnCustomers, btnSettings].forEach(btn => { if(btn) btn.className = inactiveClass; });
 
     if(tabName === 'booking') {
         if(btnBooking) btnBooking.className = activeClass;
@@ -808,6 +829,9 @@ function switchTab(tabName) {
     } else if(tabName === 'reports') {
         if(btnReports) btnReports.className = activeClass;
         fetchReports();
+    } else if(tabName === 'customers') {
+        if(btnCustomers) btnCustomers.className = activeClass;
+        renderCustomerTable();
     } else if(tabName === 'settings') {
         if(btnSettings) btnSettings.className = activeClass;
         populateSettingsForm();
@@ -949,6 +973,8 @@ async function fetchReports() {
     const filterStatus = document.getElementById('filter-status') ? document.getElementById('filter-status').value : 'all';
     const filterStart = document.getElementById('filter-start') ? document.getElementById('filter-start').value : '';
     const filterEnd = document.getElementById('filter-end') ? document.getElementById('filter-end').value : '';
+    const filterCustName = document.getElementById('filter-cust-name') ? document.getElementById('filter-cust-name').value.trim() : '';
+    const filterCustPhone = document.getElementById('filter-cust-phone') ? document.getElementById('filter-cust-phone').value.trim() : '';
 
     const today = new Date();
     today.setHours(0,0,0,0);
@@ -1005,6 +1031,9 @@ async function fetchReports() {
                 }
             });
 
+            // Lưu bộ nhớ đệm tất cả giao dịch phục vụ tra cứu lịch sử khách
+            cachedTransactions = snapshot.docs.map(d => ({ docId: d.id, ...d.data() }));
+
             tbody.innerHTML = '';
             let totalRev = 0;
             let totalDebt = 0;
@@ -1025,9 +1054,30 @@ async function fetchReports() {
                 if (startLimit && createdAtDate < startLimit) return;
                 if (endLimit && createdAtDate > endLimit) return;
 
-                // Lọc theo trạng thái. (Cũ chưa có trường status thì ngầm định là 'paid' nếu tùy ý, ở đây set mặc định là 'paid' nếu null)
+                // Lọc theo trạng thái
                 const status = data.status || 'paid';
                 if (filterStatus !== 'all' && filterStatus !== status) return;
+
+                // Lọc theo tên khách hàng (hỗ trợ tiếng Việt có dấu và không dấu)
+                if (filterCustName) {
+                    const cName = data.customerName || '';
+                    const normCust = removeVietnameseTones(cName);
+                    const normSearch = removeVietnameseTones(filterCustName);
+                    if (!normCust.includes(normSearch) && !cName.toLowerCase().includes(filterCustName.toLowerCase())) {
+                        return;
+                    }
+                }
+
+                // Lọc theo số điện thoại
+                if (filterCustPhone) {
+                    const cPhone = (data.customerPhone || '').replace(/\D/g, '');
+                    const sPhone = filterCustPhone.replace(/\D/g, '');
+                    if (sPhone) {
+                        if (!cPhone.includes(sPhone)) return;
+                    } else {
+                        if (!(data.customerPhone || '').toLowerCase().includes(filterCustPhone.toLowerCase())) return;
+                    }
+                }
 
                 count++;
                 const amount = data.totalAmount || 0;
@@ -1113,6 +1163,25 @@ async function fetchReports() {
     } catch (e) {
         console.error("Error setting up snapshot:", e);
     }
+}
+
+function resetReportsFilter() {
+    const presetEl = document.getElementById('filter-date-preset');
+    if (presetEl) presetEl.value = 'this_month';
+    const customDates = document.getElementById('filter-custom-dates');
+    if (customDates) customDates.classList.add('hidden');
+    const startEl = document.getElementById('filter-start');
+    if (startEl) startEl.value = '';
+    const endEl = document.getElementById('filter-end');
+    if (endEl) endEl.value = '';
+    const statusEl = document.getElementById('filter-status');
+    if (statusEl) statusEl.value = 'all';
+    const custNameEl = document.getElementById('filter-cust-name');
+    if (custNameEl) custNameEl.value = '';
+    const custPhoneEl = document.getElementById('filter-cust-phone');
+    if (custPhoneEl) custPhoneEl.value = '';
+
+    fetchReports();
 }
 
 // ==========================================
@@ -1756,10 +1825,18 @@ function renderCustomerTable() {
 
     let filtered = customersList;
     if (searchVal) {
-        filtered = customersList.filter(c => 
-            (c.name || '').toLowerCase().includes(searchVal) || 
-            (c.phoneId || '').includes(searchVal)
-        );
+        const normSearch = removeVietnameseTones(searchVal);
+        filtered = customersList.filter(c => {
+            const name = c.name || '';
+            const phone = c.phoneId || '';
+            const code = c.customerCode || '';
+            const comp = c.company || '';
+            return removeVietnameseTones(name).includes(normSearch) ||
+                name.toLowerCase().includes(searchVal) ||
+                phone.includes(searchVal) ||
+                code.toLowerCase().includes(searchVal) ||
+                comp.toLowerCase().includes(searchVal);
+        });
     }
 
     tbody.innerHTML = '';
@@ -1775,17 +1852,29 @@ function renderCustomerTable() {
                 lastVisitStr = `${d.getDate().toString().padStart(2,'0')}/${(d.getMonth()+1).toString().padStart(2,'0')}/${d.getFullYear()}`;
             }
 
+            const safeName = (c.name || '').replace(/'/g, "\\'");
             const tr = document.createElement('tr');
             tr.className = "border-b hover:bg-blue-50 transition text-sm text-gray-700";
             tr.innerHTML = `
                 <td class="p-3 border-r font-mono text-xs font-bold text-gray-500">${c.customerCode || '---'}</td>
-                <td class="p-3 border-r font-bold text-blue-700">${c.name || '---'}</td>
+                <td class="p-3 border-r font-bold text-blue-700 cursor-pointer hover:underline" onclick="viewCustomer('${c.phoneId}')" title="Click xem chi tiết">${c.name || '---'}</td>
                 <td class="p-3 border-r font-mono font-bold">${c.phoneId || '---'}</td>
                 <td class="p-3 border-r text-gray-600">${c.gender || '---'}</td>
                 <td class="p-3 border-r text-gray-600">${c.company || '---'}</td>
                 <td class="p-3 border-r text-center font-bold text-gray-800">${c.ticketCount || 0}</td>
                 <td class="p-3 border-r text-right font-bold text-green-700 text-base">${formatVND(c.totalSpent || 0)}</td>
-                <td class="p-3 text-gray-500 whitespace-nowrap"><i class="fa-regular fa-calendar mr-1"></i> ${lastVisitStr}</td>
+                <td class="p-3 border-r text-gray-500 whitespace-nowrap"><i class="fa-regular fa-calendar mr-1"></i> ${lastVisitStr}</td>
+                <td class="p-3 text-center whitespace-nowrap">
+                    <button onclick="viewCustomer('${c.phoneId}')" title="Xem chi tiết" class="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 hover:bg-indigo-100 hover:text-indigo-800 transition mr-1">
+                        <i class="fa-solid fa-eye text-xs"></i>
+                    </button>
+                    <button onclick="openEditCustomerModal('${c.phoneId}')" title="Sửa thông tin" class="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 hover:text-blue-800 transition mr-1">
+                        <i class="fa-solid fa-pen text-xs"></i>
+                    </button>
+                    <button onclick="deleteCustomer('${c.phoneId}', '${safeName}')" title="Xóa khách hàng" class="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-red-50 text-red-500 hover:bg-red-100 hover:text-red-700 transition">
+                        <i class="fa-solid fa-trash text-xs"></i>
+                    </button>
+                </td>
             `;
             tbody.appendChild(tr);
         });
@@ -1797,10 +1886,36 @@ if(document.getElementById('customer-search')) {
 }
 
 function openAddCustomerModal() {
+    const titleEl = document.getElementById('customer-modal-title');
+    const saveBtn = document.getElementById('c-save-btn');
+    if (titleEl) titleEl.innerHTML = '<i class="fa-solid fa-user-plus mr-2"></i> Thêm Khách Hàng Mới';
+    if (saveBtn) saveBtn.innerHTML = '<i class="fa-solid fa-save mr-2"></i> Lưu Lại';
+    const origPhoneEl = document.getElementById('c-edit-original-phone');
+    if (origPhoneEl) origPhoneEl.value = '';
+
     document.getElementById('c-phone').value = '';
     document.getElementById('c-name').value = '';
     document.getElementById('c-company').value = '';
     document.getElementById('c-gender').value = 'Anh';
+    document.getElementById('customer-modal').classList.remove('hidden');
+}
+
+function openEditCustomerModal(phoneId) {
+    const cust = customersList.find(c => c.phoneId === phoneId);
+    if (!cust) return;
+
+    const titleEl = document.getElementById('customer-modal-title');
+    const saveBtn = document.getElementById('c-save-btn');
+    if (titleEl) titleEl.innerHTML = '<i class="fa-solid fa-user-pen mr-2"></i> Sửa Thông Tin Khách Hàng';
+    if (saveBtn) saveBtn.innerHTML = '<i class="fa-solid fa-floppy-disk mr-2"></i> Cập Nhật';
+    const origPhoneEl = document.getElementById('c-edit-original-phone');
+    if (origPhoneEl) origPhoneEl.value = phoneId;
+
+    document.getElementById('c-phone').value = cust.phoneId || '';
+    document.getElementById('c-name').value = cust.name || '';
+    document.getElementById('c-company').value = cust.company || '';
+    document.getElementById('c-gender').value = cust.gender || 'Anh';
+
     document.getElementById('customer-modal').classList.remove('hidden');
 }
 
@@ -1809,45 +1924,234 @@ function closeCustomerModal() {
 }
 
 async function saveCustomerModal() {
+    const origPhoneEl = document.getElementById('c-edit-original-phone');
+    const originalPhone = origPhoneEl ? origPhoneEl.value.trim() : '';
     const phone = document.getElementById('c-phone').value.trim();
     const name = document.getElementById('c-name').value.trim();
     const gender = document.getElementById('c-gender').value;
     const company = document.getElementById('c-company').value.trim();
 
-    if(!phone || !name) {
-        Swal.fire('Lỗi', 'Vui lòng nhập đủ SĐT và Họ Tên!', 'error');
+    if (!phone || !name) {
+        Swal.fire('Lỗi', 'Vui lòng nhập đủ Số điện thoại và Họ tên!', 'error');
         return;
     }
 
     if (!db) return;
 
+    const isEditing = !!originalPhone;
+
     try {
         Swal.fire({ title: 'Đang lưu...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
-        const docRef = await db.collection('customers').doc(phone).get();
-        if (docRef.exists) {
-            Swal.fire('Cảnh báo', 'Khách hàng với Số điện thoại này đã tồn tại trong danh bạ!', 'warning');
-            return;
+
+        if (!isEditing) {
+            // Thêm mới
+            const docRef = await db.collection('customers').doc(phone).get();
+            if (docRef.exists) {
+                Swal.fire('Cảnh báo', 'Khách hàng với Số điện thoại này đã tồn tại trong danh bạ!', 'warning');
+                return;
+            }
+
+            const code = 'KH' + Math.floor(1000 + Math.random() * 9000);
+
+            await db.collection('customers').doc(phone).set({
+                customerCode: code,
+                name: name,
+                gender: gender,
+                company: company,
+                createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                lastVisit: firebase.firestore.FieldValue.serverTimestamp(),
+                totalSpent: 0,
+                ticketCount: 0
+            });
+
+            closeCustomerModal();
+            Swal.fire({ icon: 'success', title: 'Thành công', text: 'Đã thêm khách hàng mới!', timer: 1500, showConfirmButton: false });
+        } else {
+            // Sửa thông tin
+            if (phone === originalPhone) {
+                await db.collection('customers').doc(originalPhone).update({
+                    name: name,
+                    gender: gender,
+                    company: company
+                });
+            } else {
+                // Đổi số điện thoại: kiểm tra xem số mới có bị trùng không
+                const newDocRef = await db.collection('customers').doc(phone).get();
+                if (newDocRef.exists) {
+                    Swal.fire('Cảnh báo', `Số điện thoại ${phone} đã được dùng cho một khách hàng khác!`, 'warning');
+                    return;
+                }
+
+                // Sao chép dữ liệu từ doc cũ sang doc mới
+                const oldDoc = await db.collection('customers').doc(originalPhone).get();
+                const oldData = oldDoc.exists ? oldDoc.data() : {};
+
+                await db.collection('customers').doc(phone).set({
+                    ...oldData,
+                    name: name,
+                    gender: gender,
+                    company: company
+                });
+
+                // Xóa doc cũ
+                await db.collection('customers').doc(originalPhone).delete();
+            }
+
+            closeCustomerModal();
+
+            // Nếu modal chi tiết khách đang mở, refresh lại
+            const viewModal = document.getElementById('view-customer-modal');
+            if (viewModal && !viewModal.classList.contains('hidden')) {
+                viewCustomer(phone);
+            }
+
+            Swal.fire({ icon: 'success', title: 'Thành công', text: 'Đã cập nhật thông tin khách hàng!', timer: 1500, showConfirmButton: false });
         }
-
-        const code = 'KH' + Math.floor(1000 + Math.random() * 9000);
-
-        await db.collection('customers').doc(phone).set({
-            customerCode: code,
-            name: name,
-            gender: gender,
-            company: company,
-            createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-            lastVisit: firebase.firestore.FieldValue.serverTimestamp(),
-            totalSpent: 0,
-            ticketCount: 0
-        });
-
-        closeCustomerModal();
-        Swal.fire({ icon: 'success', title: 'Thành công', text: 'Đã thêm khách hàng mới!', timer: 1500, showConfirmButton: false });
     } catch (e) {
         console.error("Lỗi lưu khách hàng:", e);
-        Swal.fire('Lỗi', 'Không thể lưu. Vui lòng kiểm tra mạng!', 'error');
+        Swal.fire('Lỗi', 'Không thể lưu thông tin. Vui lòng kiểm tra kết nối mạng!', 'error');
     }
+}
+
+async function deleteCustomer(phoneId, customerName) {
+    const result = await Swal.fire({
+        title: 'Xác nhận xóa khách hàng?',
+        html: `Khách hàng <b class="text-blue-700">${customerName || phoneId}</b> (SĐT: ${phoneId}) sẽ bị xóa vĩnh viễn khỏi danh bạ!`,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#ef4444',
+        cancelButtonColor: '#6b7280',
+        confirmButtonText: '<i class="fa-solid fa-trash mr-1"></i> Xóa ngay',
+        cancelButtonText: 'Hủy bỏ',
+        reverseButtons: true
+    });
+
+    if (!result.isConfirmed) return;
+    if (!db) return;
+
+    try {
+        Swal.fire({ title: 'Đang xóa...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+        await db.collection('customers').doc(phoneId).delete();
+        closeViewCustomerModal();
+        Swal.fire({ icon: 'success', title: 'Đã xóa!', text: `Đã xóa khách hàng ${customerName || phoneId} khỏi danh bạ.`, timer: 1500, showConfirmButton: false });
+    } catch (e) {
+        console.error('Lỗi xóa khách hàng:', e);
+        Swal.fire('Lỗi', 'Không thể xóa khách hàng. Kiểm tra kết nối mạng!', 'error');
+    }
+}
+
+async function viewCustomer(phoneId) {
+    const cust = customersList.find(c => c.phoneId === phoneId);
+    if (!cust) return;
+
+    const el = (id) => document.getElementById(id);
+    if (!el('view-customer-modal')) return;
+
+    el('vc-title').textContent = `Hồ Sơ: ${cust.name || 'Khách hàng'}`;
+    el('vc-code').textContent = cust.customerCode || '---';
+    el('vc-name').textContent = cust.name || '---';
+    el('vc-phone').textContent = cust.phoneId || '---';
+    el('vc-phone-link').href = `tel:${cust.phoneId || ''}`;
+    el('vc-gender').textContent = cust.gender || '---';
+    el('vc-company').textContent = cust.company || '---';
+    el('vc-tickets').textContent = cust.ticketCount || 0;
+    el('vc-spent').textContent = formatVND(cust.totalSpent || 0);
+
+    let lastVisitStr = '---';
+    if (cust.lastVisit && cust.lastVisit.toDate) {
+        const d = cust.lastVisit.toDate();
+        lastVisitStr = `${d.getDate().toString().padStart(2,'0')}/${(d.getMonth()+1).toString().padStart(2,'0')}/${d.getFullYear()}`;
+    }
+    el('vc-last-visit').textContent = lastVisitStr;
+
+    let createdAtStr = '---';
+    if (cust.createdAt && cust.createdAt.toDate) {
+        const d = cust.createdAt.toDate();
+        createdAtStr = `${d.getDate().toString().padStart(2,'0')}/${(d.getMonth()+1).toString().padStart(2,'0')}/${d.getFullYear()}`;
+    }
+    el('vc-created-at').textContent = createdAtStr;
+
+    el('vc-edit-btn').onclick = () => {
+        openEditCustomerModal(phoneId);
+    };
+    el('vc-delete-btn').onclick = () => {
+        deleteCustomer(phoneId, cust.name);
+    };
+
+    el('view-customer-modal').classList.remove('hidden');
+
+    const transBody = el('vc-transactions-body');
+    transBody.innerHTML = '<tr><td colspan="5" class="p-3 text-center text-gray-500"><i class="fa-solid fa-spinner fa-spin mr-1"></i> Đang tải lịch sử giao dịch...</td></tr>';
+
+    try {
+        let transactions = [];
+        const cleanPhone = (phoneId || '').replace(/\D/g, '');
+
+        if (cachedTransactions && cachedTransactions.length > 0) {
+            transactions = cachedTransactions.filter(t => {
+                const tPhone = (t.customerPhone || '').replace(/\D/g, '');
+                return (cleanPhone && tPhone && tPhone === cleanPhone) || (t.customerPhone === phoneId);
+            });
+        } else if (db) {
+            const snap = await db.collection('transactions').where('customerPhone', '==', phoneId).get();
+            snap.forEach(d => transactions.push({ docId: d.id, ...d.data() }));
+        }
+
+        if (transactions.length === 0) {
+            transBody.innerHTML = '<tr><td colspan="5" class="p-4 text-center text-gray-400 italic">Chưa có phiếu thuê nào của khách hàng này.</td></tr>';
+        } else {
+            transactions.sort((a, b) => {
+                const tA = (a.createdAt && a.createdAt.toDate) ? a.createdAt.toDate().getTime() : 0;
+                const tB = (b.createdAt && b.createdAt.toDate) ? b.createdAt.toDate().getTime() : 0;
+                return tB - tA;
+            });
+
+            transBody.innerHTML = '';
+            transactions.forEach(t => {
+                let dateStr = '---';
+                if (t.createdAt && t.createdAt.toDate) {
+                    const d = t.createdAt.toDate();
+                    dateStr = `${d.getDate().toString().padStart(2,'0')}/${(d.getMonth()+1).toString().padStart(2,'0')}/${d.getFullYear()}`;
+                }
+                const invId = t.id || `CŨ-${(t.docId || '').slice(0,6).toUpperCase()}`;
+                const status = t.status || 'paid';
+                let statusBadge = '';
+                if (status === 'unpaid') {
+                    statusBadge = `<span class="px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-[10px] font-bold">Chưa TT</span>`;
+                } else if (status === 'partial') {
+                    statusBadge = `<span class="px-2 py-0.5 bg-orange-100 text-orange-700 rounded-full text-[10px] font-bold">TT 1 Phần</span>`;
+                } else if (status === 'overpaid') {
+                    statusBadge = `<span class="px-2 py-0.5 bg-purple-100 text-purple-700 rounded-full text-[10px] font-bold">Trả Thừa</span>`;
+                } else {
+                    statusBadge = `<span class="px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-[10px] font-bold">Đã TT</span>`;
+                }
+
+                const dataStr = encodeURIComponent(JSON.stringify(t));
+                const tr = document.createElement('tr');
+                tr.className = "border-b hover:bg-gray-50";
+                tr.innerHTML = `
+                    <td class="p-2 border font-mono font-bold text-indigo-600">${invId}</td>
+                    <td class="p-2 border text-gray-600 whitespace-nowrap">${dateStr}</td>
+                    <td class="p-2 border text-center whitespace-nowrap">${statusBadge}</td>
+                    <td class="p-2 border text-right font-bold text-gray-800 whitespace-nowrap">${formatVND(t.totalAmount || 0)}</td>
+                    <td class="p-2 border text-center whitespace-nowrap">
+                        <button onclick="viewReceipt('${dataStr}')" class="px-2 py-1 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded text-[11px] font-bold transition">
+                            <i class="fa-solid fa-eye mr-1"></i> Phiếu
+                        </button>
+                    </td>
+                `;
+                transBody.appendChild(tr);
+            });
+        }
+    } catch (e) {
+        console.error("Lỗi lấy lịch sử giao dịch của khách:", e);
+        transBody.innerHTML = '<tr><td colspan="5" class="p-3 text-center text-red-500">Lỗi khi tải lịch sử giao dịch.</td></tr>';
+    }
+}
+
+function closeViewCustomerModal() {
+    const modal = document.getElementById('view-customer-modal');
+    if (modal) modal.classList.add('hidden');
 }
 
 // ==========================================
