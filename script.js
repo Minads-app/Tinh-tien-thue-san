@@ -672,7 +672,10 @@ function addToBill() {
                 name: itemName,
                 weekdays: weekdaysArray,
                 desc: `${formatDate(startDate)} - ${formatDate(endDate)} (${seg.startStr}-${seg.endStr})`,
-                skipped: skippedDates,
+                startDateStr: document.getElementById('start-date').value,
+                endDateStr: document.getElementById('end-date').value,
+                originalCount: seg.count + skippedDates.length,
+                skipped: [...skippedDates],
                 count: seg.count,
                 duration: seg.duration,
                 price: seg.pricePerHour,
@@ -699,10 +702,37 @@ function renderInvoice() {
         document.getElementById('empty-cart-msg').style.display = 'none';
         billItems.forEach(item => {
             subTotal += item.total;
-            let skippedText = item.skipped && item.skipped.length > 0 ? `<br><span class="text-xs text-red-500 italic font-medium">Trừ ngày: ${item.skipped.join(', ')}</span>` : '';
             
-            const daysText = item.weekdays.map(d => getDayName(d)).join(', ');
+            const daysText = (item.weekdays || []).map(d => getDayName(d)).join(', ');
             const weekdayDisplay = `<div class="text-xs text-indigo-600 font-semibold mt-0.5">Thứ: ${daysText}</div>`;
+
+            let skippedSection = '';
+            if (item.skipped && item.skipped.length > 0) {
+                skippedSection = `
+                    <div class="mt-1 flex flex-wrap items-center gap-1.5">
+                        <span class="text-xs text-red-600 font-semibold bg-red-50 border border-red-200 px-1.5 py-0.5 rounded inline-flex items-center">
+                            <i class="fa-solid fa-calendar-xmark mr-1"></i>Trừ: ${item.skipped.join(', ')}
+                        </span>
+                        <button type="button" onclick="openExcludeModalForItem(${item.id})" class="no-print text-[11px] text-blue-600 hover:text-blue-800 font-medium underline cursor-pointer" title="Sửa danh sách ngày trừ">
+                            (Sửa)
+                        </button>
+                        <button type="button" onclick="clearExcludeDatesForItem(${item.id})" class="no-print text-[11px] text-gray-400 hover:text-red-500 font-medium cursor-pointer" title="Hủy bỏ các ngày loại trừ">
+                            <i class="fa-solid fa-circle-xmark"></i>
+                        </button>
+                    </div>
+                `;
+            } else {
+                skippedSection = `
+                    <div class="mt-1 no-print">
+                        <button type="button" onclick="openExcludeModalForItem(${item.id})" class="text-[11px] text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 border border-indigo-200 rounded px-2 py-0.5 inline-flex items-center gap-1 font-medium transition cursor-pointer" title="Chọn ngày nghỉ hoặc ngày lễ để trừ bớt buổi">
+                            <i class="fa-regular fa-calendar-minus"></i> Trừ ngày nghỉ / Lễ
+                        </button>
+                    </div>
+                `;
+            }
+            const printSkipped = (item.skipped && item.skipped.length > 0) 
+                ? `<span class="print-only text-xs text-red-600 font-medium block">Trừ ngày: ${item.skipped.join(', ')}</span>` 
+                : '';
 
             const displayPrice = Math.round(item.price);
 
@@ -714,10 +744,19 @@ function renderInvoice() {
                     <div class="text-xs text-gray-500">
                         ${item.desc}
                         ${weekdayDisplay}
-                        ${skippedText}
+                        ${skippedSection}
+                        ${printSkipped}
                     </div>
                 </td>
-                <td class="p-3 text-center font-medium">${item.count} buổi</td>
+                <td class="p-3 text-center font-medium">
+                    <div class="inline-flex items-center justify-center no-print">
+                        <input type="number" min="0" value="${item.count}" 
+                            class="w-14 text-center border border-gray-300 rounded px-1 py-0.5 text-sm font-bold text-indigo-700 focus:ring-1 focus:ring-indigo-400 outline-none"
+                            onchange="updateItemCount(${item.id}, this.value)" title="Nhấp để sửa nhanh số buổi">
+                        <span class="text-xs text-gray-500 ml-1">buổi</span>
+                    </div>
+                    <span class="print-only">${item.count} buổi</span>
+                </td>
                 <td class="p-3 text-center font-medium">${item.duration}h</td>
                 <td class="p-3 text-right">
                     <input type="number" value="${displayPrice}" 
@@ -828,6 +867,328 @@ function updateItemPrice(itemId, newPrice) {
 function removeItem(id) {
     billItems = billItems.filter(i => i.id !== id);
     renderInvoice();
+}
+
+function updateItemCount(itemId, newCount) {
+    const count = parseInt(newCount);
+    if (isNaN(count) || count < 0) return;
+    const item = billItems.find(i => i.id === itemId);
+    if (!item) return;
+    item.count = count;
+    item.total = item.price * item.duration * item.count;
+    renderInvoice();
+}
+
+function getItemDateRange(item) {
+    let start, end;
+    if (item.startDateStr && item.endDateStr) {
+        const [sy, sm, sd] = item.startDateStr.split('-').map(Number);
+        const [ey, em, ed] = item.endDateStr.split('-').map(Number);
+        start = new Date(sy, sm - 1, sd);
+        end = new Date(ey, em - 1, ed);
+        if (!isNaN(start.getTime()) && !isNaN(end.getTime())) {
+            return { start, end };
+        }
+    }
+
+    if (item.desc) {
+        const match = item.desc.match(/(\d{1,2})\/(\d{1,2})(?:\/(\d{4}))?\s*-\s*(\d{1,2})\/(\d{1,2})(?:\/(\d{4}))?/);
+        if (match) {
+            const currentYear = new Date().getFullYear();
+            const formStartYear = document.getElementById('start-date')?.value ? parseInt(document.getElementById('start-date').value.split('-')[0]) : currentYear;
+            const sd = parseInt(match[1]);
+            const sm = parseInt(match[2]);
+            const sy = match[3] ? parseInt(match[3]) : formStartYear;
+
+            const ed = parseInt(match[4]);
+            const em = parseInt(match[5]);
+            const ey = match[6] ? parseInt(match[6]) : sy;
+
+            start = new Date(sy, sm - 1, sd);
+            end = new Date(ey, em - 1, ed);
+            if (!isNaN(start.getTime()) && !isNaN(end.getTime())) {
+                return { start, end };
+            }
+        }
+    }
+
+    const formStart = document.getElementById('start-date')?.value;
+    const formEnd = document.getElementById('end-date')?.value;
+    if (formStart && formEnd) {
+        const [sy, sm, sd] = formStart.split('-').map(Number);
+        const [ey, em, ed] = formEnd.split('-').map(Number);
+        start = new Date(sy, sm - 1, sd);
+        end = new Date(ey, em - 1, ed);
+        if (!isNaN(start.getTime()) && !isNaN(end.getTime())) {
+            return { start, end };
+        }
+    }
+
+    const now = new Date();
+    start = new Date(now.getFullYear(), now.getMonth(), 1);
+    end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    return { start, end };
+}
+
+function getItemAllPlayingDates(item) {
+    const { start, end } = getItemDateRange(item);
+    const weekdays = Array.isArray(item.weekdays) ? item.weekdays.map(Number) : [];
+    const dates = [];
+
+    let current = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+    const stop = new Date(end.getFullYear(), end.getMonth(), end.getDate());
+
+    while (current <= stop) {
+        const dayOfWeek = current.getDay();
+        if (weekdays.length === 0 || weekdays.includes(dayOfWeek)) {
+            const dStr = String(current.getDate()).padStart(2, '0');
+            const mStr = String(current.getMonth() + 1).padStart(2, '0');
+            const yStr = current.getFullYear();
+            const dateStr = `${dStr}/${mStr}/${yStr}`;
+            const shortDateStr = `${current.getDate()}/${current.getMonth() + 1}`;
+
+            const holiday = HOLIDAYS_DATA.find(h => {
+                const parts = h.date.split('/').map(Number);
+                return parts[0] === current.getDate() && parts[1] === (current.getMonth() + 1) && (!parts[2] || parts[2] === current.getFullYear());
+            });
+
+            dates.push({
+                date: new Date(current),
+                dateStr: dateStr,
+                shortDateStr: shortDateStr,
+                dayOfWeek: dayOfWeek,
+                dayName: dayOfWeek === 0 ? 'Chủ Nhật' : `Thứ ${dayOfWeek + 1}`,
+                holidayName: holiday ? holiday.name : null
+            });
+        }
+        current.setDate(current.getDate() + 1);
+    }
+    return dates;
+}
+
+function clearExcludeDatesForItem(itemId) {
+    const item = billItems.find(i => i.id === itemId);
+    if (!item) return;
+    const allDates = getItemAllPlayingDates(item);
+    const totalOriginal = item.originalCount || allDates.length;
+    item.skipped = [];
+    item.count = totalOriginal;
+    item.total = item.count * item.duration * item.price;
+    renderInvoice();
+    Swal.fire({
+        icon: 'info',
+        title: 'Đã hủy loại trừ',
+        text: `Đã khôi phục số buổi của ${item.name} về ${item.count} buổi.`,
+        timer: 1500,
+        showConfirmButton: false
+    });
+}
+
+function openExcludeModalForItem(itemId) {
+    const item = billItems.find(i => i.id === itemId);
+    if (!item) return;
+
+    const allDates = getItemAllPlayingDates(item);
+    if (allDates.length === 0) {
+        Swal.fire('Thông báo', 'Không tìm thấy ngày chơi nào tương ứng trong khoảng thời gian này!', 'warning');
+        return;
+    }
+
+    const currentSkipped = item.skipped || [];
+
+    const isChecked = (dObj) => {
+        return currentSkipped.some(s => {
+            if (s === dObj.dateStr || s === dObj.shortDateStr) return true;
+            const parts = s.split('/').map(Number);
+            if (parts.length >= 2) {
+                return parts[0] === dObj.date.getDate() && parts[1] === (dObj.date.getMonth() + 1);
+            }
+            return false;
+        });
+    };
+
+    let datesHtml = '';
+    allDates.forEach((d, idx) => {
+        const checked = isChecked(d) ? 'checked' : '';
+        const dayClass = (d.dayOfWeek === 0 || d.dayOfWeek === 6) ? 'bg-red-50 text-red-600 border-red-200' : 'bg-indigo-50 text-indigo-700 border-indigo-200';
+        const holidayBadge = d.holidayName 
+            ? `<span class="inline-flex items-center gap-1 text-[11px] bg-red-100 text-red-700 font-bold px-1.5 py-0.5 rounded border border-red-200"><i class="fa-solid fa-flag"></i> ${d.holidayName}</span>` 
+            : '';
+
+        datesHtml += `
+            <label class="flex items-center justify-between p-2.5 bg-white border border-gray-200 rounded-lg cursor-pointer hover:bg-indigo-50/50 transition">
+                <div class="flex items-center gap-3">
+                    <input type="checkbox" value="${d.dateStr}" data-holiday="${d.holidayName ? '1' : '0'}" 
+                        class="swal-exclude-item-cb w-4 h-4 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500 cursor-pointer" ${checked}>
+                    <div>
+                        <div class="flex items-center gap-2">
+                            <span class="font-bold text-gray-800 text-sm">${d.dateStr}</span>
+                            <span class="text-xs font-semibold px-1.5 py-0.5 rounded border ${dayClass}">${d.dayName}</span>
+                        </div>
+                        ${holidayBadge ? `<div class="mt-1">${holidayBadge}</div>` : ''}
+                    </div>
+                </div>
+                <span class="text-xs text-gray-400 font-medium">Buổi ${idx + 1}</span>
+            </label>
+        `;
+    });
+
+    const hasMultipleSimilarCourts = billItems.filter(i => {
+        if (i.id === item.id) return false;
+        const w1 = JSON.stringify((i.weekdays || []).slice().sort());
+        const w2 = JSON.stringify((item.weekdays || []).slice().sort());
+        return w1 === w2;
+    }).length > 0;
+
+    const modalContentHtml = `
+        <div class="text-left space-y-3">
+            <div class="bg-gray-50 p-2.5 rounded-lg border border-gray-200 text-xs text-gray-600 space-y-1">
+                <div><span class="font-bold text-gray-800">Dịch vụ:</span> ${item.name}</div>
+                <div><span class="font-bold text-gray-800">Khung giờ:</span> ${item.desc}</div>
+                <div><span class="font-bold text-gray-800">Đơn giá:</span> ${formatVND(item.price)}/h (${item.duration}h/buổi)</div>
+            </div>
+
+            <div class="flex justify-between items-center pt-1">
+                <span class="text-xs font-bold text-gray-700 uppercase">Tích chọn ngày NGHỈ / LỄ cần loại trừ:</span>
+                <div class="flex gap-1.5 text-xs">
+                    <button type="button" id="swal-btn-suggest-holiday" class="text-[11px] text-blue-600 hover:text-blue-800 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded font-medium cursor-pointer">
+                        <i class="fa-solid fa-wand-magic-sparkles mr-1"></i>Gợi ý Lễ/Tết
+                    </button>
+                    <button type="button" id="swal-btn-clear-all" class="text-[11px] text-gray-600 hover:text-gray-800 bg-gray-100 px-2 py-0.5 rounded cursor-pointer">
+                        Bỏ chọn
+                    </button>
+                </div>
+            </div>
+
+            <div class="max-h-60 overflow-y-auto space-y-2 p-1 border rounded-lg bg-gray-50/50">
+                ${datesHtml}
+            </div>
+
+            ${hasMultipleSimilarCourts ? `
+                <label class="flex items-center gap-2 p-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800 cursor-pointer">
+                    <input type="checkbox" id="swal-apply-similar" class="rounded text-amber-600 focus:ring-amber-500 w-4 h-4" checked>
+                    <span>Đồng thời áp dụng các ngày trừ này cho các sân khác cùng thứ trong phiếu</span>
+                </label>
+            ` : ''}
+
+            <div class="bg-indigo-50 border border-indigo-200 rounded-lg p-2.5 text-xs text-indigo-900 space-y-1" id="swal-exclude-calc-box">
+                <div class="flex justify-between">
+                    <span>Tổng số buổi ban đầu:</span>
+                    <span class="font-bold">${allDates.length} buổi</span>
+                </div>
+                <div class="flex justify-between text-red-600">
+                    <span>Số ngày loại trừ:</span>
+                    <span class="font-bold" id="swal-exclude-count">0 ngày</span>
+                </div>
+                <div class="flex justify-between text-green-700 font-bold border-t border-indigo-200 pt-1">
+                    <span>Số buổi thực tế mới:</span>
+                    <span id="swal-new-sessions">${allDates.length} buổi</span>
+                </div>
+                <div class="flex justify-between text-indigo-700 font-bold">
+                    <span>Thành tiền mới:</span>
+                    <span id="swal-new-total">${formatVND(allDates.length * item.duration * item.price)}</span>
+                </div>
+            </div>
+        </div>
+    `;
+
+    Swal.fire({
+        title: 'Loại Trừ Ngày Nghỉ / Lễ',
+        html: modalContentHtml,
+        width: 520,
+        showCancelButton: true,
+        confirmButtonText: '<i class="fa-solid fa-check mr-1"></i> Áp Dụng Loại Trừ',
+        cancelButtonText: 'Đóng',
+        confirmButtonColor: '#4f46e5',
+        focusConfirm: false,
+        didOpen: () => {
+            const checkboxes = document.querySelectorAll('.swal-exclude-item-cb');
+            const calcBoxCount = document.getElementById('swal-exclude-count');
+            const calcBoxSessions = document.getElementById('swal-new-sessions');
+            const calcBoxTotal = document.getElementById('swal-new-total');
+
+            function updateLiveCalculation() {
+                const checkedCount = document.querySelectorAll('.swal-exclude-item-cb:checked').length;
+                const newSessions = Math.max(0, allDates.length - checkedCount);
+                const newTotal = newSessions * item.duration * item.price;
+
+                if (calcBoxCount) calcBoxCount.textContent = `${checkedCount} ngày`;
+                if (calcBoxSessions) calcBoxSessions.textContent = `${newSessions} buổi`;
+                if (calcBoxTotal) calcBoxTotal.textContent = formatVND(newTotal);
+            }
+
+            checkboxes.forEach(cb => cb.addEventListener('change', updateLiveCalculation));
+            updateLiveCalculation();
+
+            // Gợi ý Lễ/Tết
+            const btnSuggest = document.getElementById('swal-btn-suggest-holiday');
+            if (btnSuggest) {
+                btnSuggest.addEventListener('click', () => {
+                    checkboxes.forEach(cb => {
+                        if (cb.getAttribute('data-holiday') === '1') {
+                            cb.checked = true;
+                        }
+                    });
+                    updateLiveCalculation();
+                });
+            }
+
+            // Bỏ chọn tất cả
+            const btnClearAll = document.getElementById('swal-btn-clear-all');
+            if (btnClearAll) {
+                btnClearAll.addEventListener('click', () => {
+                    checkboxes.forEach(cb => cb.checked = false);
+                    updateLiveCalculation();
+                });
+            }
+        },
+        preConfirm: () => {
+            const checkedBoxes = document.querySelectorAll('.swal-exclude-item-cb:checked');
+            const selectedDates = Array.from(checkedBoxes).map(cb => cb.value);
+            const applySimilar = document.getElementById('swal-apply-similar')?.checked || false;
+            return { selectedDates, applySimilar };
+        }
+    }).then((result) => {
+        if (result.isConfirmed) {
+            const { selectedDates, applySimilar } = result.value || { selectedDates: [], applySimilar: false };
+            
+            // Cập nhật cho item hiện tại
+            item.originalCount = allDates.length;
+            item.skipped = selectedDates;
+            item.count = Math.max(0, allDates.length - selectedDates.length);
+            item.total = item.count * item.duration * item.price;
+
+            // Nếu người dùng chọn áp dụng cho các sân khác cùng thứ
+            let affectedCount = 1;
+            if (applySimilar) {
+                const itemWeekdaysKey = JSON.stringify((item.weekdays || []).slice().sort());
+                billItems.forEach(otherItem => {
+                    if (otherItem.id !== item.id) {
+                        const otherWeekdaysKey = JSON.stringify((otherItem.weekdays || []).slice().sort());
+                        if (otherWeekdaysKey === itemWeekdaysKey) {
+                            const otherDates = getItemAllPlayingDates(otherItem);
+                            otherItem.originalCount = otherDates.length;
+                            otherItem.skipped = [...selectedDates];
+                            otherItem.count = Math.max(0, otherDates.length - selectedDates.length);
+                            otherItem.total = otherItem.count * otherItem.duration * otherItem.price;
+                            affectedCount++;
+                        }
+                    }
+                });
+            }
+
+            renderInvoice();
+            Swal.fire({
+                icon: 'success',
+                title: 'Đã cập nhật',
+                text: selectedDates.length > 0 
+                    ? `Đã trừ ${selectedDates.length} ngày cho ${affectedCount} dòng sân. Số buổi thực tế: ${item.count} buổi.`
+                    : `Đã bỏ toàn bộ ngày trừ. Số buổi thực tế: ${item.count} buổi.`,
+                timer: 2000,
+                showConfirmButton: false
+            });
+        }
+    });
 }
 
 function switchTab(tabName) {
@@ -2450,6 +2811,10 @@ function renderRenewPreview() {
             name: orig.name,
             weekdays: weekdays,
             desc: `${formatDate(startDate)} - ${formatDate(endDate)} (${timeStr})`,
+            startDateStr: startDateVal,
+            endDateStr: endDateVal,
+            originalCount: count,
+            timeRange: timeStr,
             skipped: [],
             count: count,
             duration: duration,
