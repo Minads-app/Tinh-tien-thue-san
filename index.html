@@ -753,13 +753,16 @@
             
             <div class="bg-gray-50 border-t p-4 flex justify-between items-center">
                 <div class="flex space-x-2">
-                    <button id="rm-edit-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded transition text-sm flex items-center" title="Sửa Tổng tiền / Khách hàng / Trạng thái">
+                    <button id="rm-renew-btn" class="bg-teal-600 hover:bg-teal-700 text-white font-bold py-2 px-3 rounded transition text-sm flex items-center" title="Gia hạn phiếu sang tháng tiếp theo (cùng lịch, cùng sân)">
+                        <i class="fa-solid fa-calendar-plus mr-1"></i> Gia Hạn
+                    </button>
+                    <button id="rm-edit-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-3 rounded transition text-sm flex items-center" title="Sửa Tổng tiền / Khách hàng / Trạng thái">
                         <i class="fa-solid fa-pen mr-1"></i> Sửa Nhanh
                     </button>
-                    <button id="rm-edit-full-btn" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded transition text-sm flex items-center" title="Sửa sân chơi, thời gian, thuộc tính vé">
-                        <i class="fa-solid fa-pen-to-square mr-1"></i> Sửa Lịch Đặt
+                    <button id="rm-edit-full-btn" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-3 rounded transition text-sm flex items-center" title="Sửa sân chơi, thời gian, thuộc tính vé">
+                        <i class="fa-solid fa-pen-to-square mr-1"></i> Sửa Lịch
                     </button>
-                    <button id="rm-delete-btn" class="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded transition text-sm flex items-center">
+                    <button id="rm-delete-btn" class="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-3 rounded transition text-sm flex items-center">
                         <i class="fa-solid fa-trash mr-1"></i> Xóa
                     </button>
                 </div>
@@ -827,6 +830,138 @@
                 <button onclick="saveBillEdit()" class="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm font-bold shadow transition flex items-center">
                     <i class="fa-solid fa-floppy-disk mr-2"></i>Lưu Thay Đổi
                 </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Gia Hạn Phiếu -->
+    <div id="renew-modal" class="fixed inset-0 bg-black bg-opacity-60 hidden flex items-center justify-center z-[80] p-4">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[92vh]">
+            <div class="bg-gradient-to-r from-teal-600 to-cyan-700 p-4 flex justify-between items-center text-white">
+                <div class="flex items-center space-x-2.5">
+                    <i class="fa-solid fa-calendar-plus text-xl"></i>
+                    <div>
+                        <h2 class="text-base md:text-lg font-bold">Gia Hạn Phiếu Thuê Sân</h2>
+                        <div class="text-xs text-teal-100 flex items-center gap-2">
+                            <span>Từ phiếu gốc: <b id="rn-original-id" class="font-mono bg-teal-800 bg-opacity-60 px-1.5 py-0.5 rounded">---</b></span>
+                        </div>
+                    </div>
+                </div>
+                <button onclick="closeRenewModal()" class="text-teal-200 hover:text-white transition group"><i class="fa-solid fa-xmark text-xl group-hover:scale-110"></i></button>
+            </div>
+
+            <div class="p-5 overflow-y-auto space-y-4">
+                <!-- Thông tin khách hàng & kỳ cũ -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-teal-50 border border-teal-200 p-3.5 rounded-lg text-sm">
+                    <div>
+                        <span class="text-xs text-teal-700 font-semibold uppercase">Khách hàng:</span>
+                        <div class="font-bold text-gray-800 mt-0.5"><span id="rn-cust-name">---</span> <span id="rn-cust-phone" class="font-mono text-teal-800 text-xs font-semibold ml-1"></span></div>
+                    </div>
+                    <div>
+                        <span class="text-xs text-teal-700 font-semibold uppercase">Kỳ phiếu gốc:</span>
+                        <div class="font-bold text-gray-700 font-mono mt-0.5" id="rn-original-dates">---</div>
+                    </div>
+                </div>
+
+                <!-- Cấu hình kỳ gia hạn mới -->
+                <div class="bg-gray-50 border p-4 rounded-lg space-y-3">
+                    <h3 class="text-xs font-bold text-gray-700 uppercase flex items-center">
+                        <i class="fa-solid fa-sliders mr-1.5 text-teal-600"></i> Chọn Thời Gian Gia Hạn
+                    </h3>
+                    
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div>
+                            <label class="block text-xs font-semibold text-gray-600 mb-1">Gia hạn cho tháng</label>
+                            <select id="rn-month-select" class="w-full px-3 py-2 border rounded text-sm bg-white font-bold text-teal-800 focus:ring-2 focus:ring-teal-500 outline-none">
+                                <!-- Options will be populated dynamically -->
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-gray-600 mb-1">Từ ngày</label>
+                            <input type="date" id="rn-start-date" class="w-full px-3 py-2 border rounded text-sm bg-white font-mono focus:ring-2 focus:ring-teal-500 outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-gray-600 mb-1">Đến ngày</label>
+                            <input type="date" id="rn-end-date" class="w-full px-3 py-2 border rounded text-sm bg-white font-mono focus:ring-2 focus:ring-teal-500 outline-none">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Bảng danh sách sân & tính buổi tự động -->
+                <div>
+                    <div class="flex justify-between items-center mb-2">
+                        <h3 class="text-xs font-bold text-gray-700 uppercase flex items-center">
+                            <i class="fa-solid fa-list-check mr-1.5 text-teal-600"></i> Lịch Chơi & Số Buổi Trong Kỳ Mới
+                        </h3>
+                        <span class="text-[11px] text-gray-500 italic">* Tự động tính số buổi theo lịch thực tế của tháng mới</span>
+                    </div>
+
+                    <div class="border rounded-lg overflow-x-auto">
+                        <table class="w-full text-left text-xs border-collapse">
+                            <thead>
+                                <tr class="bg-gray-100 text-gray-700 uppercase font-semibold border-b">
+                                    <th class="p-2.5 border-r">Môn / Sân</th>
+                                    <th class="p-2.5 border-r">Thứ áp dụng</th>
+                                    <th class="p-2.5 border-r text-center">Khung Giờ</th>
+                                    <th class="p-2.5 border-r text-center">Số Buổi Mới</th>
+                                    <th class="p-2.5 border-r text-right">Đơn Giá/h</th>
+                                    <th class="p-2.5 text-right font-bold">Thành Tiền</th>
+                                </tr>
+                            </thead>
+                            <tbody id="rn-items-table" class="bg-white">
+                                <!-- Rendered dynamically -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Thanh toán & Ghi chú -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-gray-50 p-3.5 border rounded-lg">
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-600 mb-1">Hình thức thanh toán</label>
+                        <select id="rn-payment-method" class="w-full px-3 py-1.5 border rounded text-sm bg-white">
+                            <option value="Chuyển khoản">Chuyển khoản</option>
+                            <option value="Tiền mặt">Tiền mặt</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-600 mb-1">Trạng thái phiếu gia hạn</label>
+                        <select id="rn-status" class="w-full px-3 py-1.5 border rounded text-sm bg-white font-bold">
+                            <option value="unpaid" class="text-red-600">Chưa thanh toán (Ghi nợ)</option>
+                            <option value="paid" class="text-green-600">Đã thanh toán</option>
+                        </select>
+                    </div>
+                    <div class="sm:col-span-2">
+                        <label class="block text-xs font-semibold text-gray-600 mb-1">Ghi chú phiếu mới</label>
+                        <input type="text" id="rn-note" class="w-full px-3 py-1.5 border rounded text-sm bg-white" placeholder="VD: Gia hạn cố định tháng tiếp theo...">
+                    </div>
+                </div>
+
+                <!-- Tổng kết tiền -->
+                <div class="bg-teal-50 border border-teal-200 p-3 rounded-lg flex justify-between items-center">
+                    <div>
+                        <span class="text-xs text-teal-700 font-bold uppercase">Tổng Số Buổi Kỳ Mới:</span>
+                        <span id="rn-total-sessions" class="text-base font-bold text-teal-900 ml-1">0 buổi</span>
+                    </div>
+                    <div class="text-right">
+                        <span class="text-xs text-teal-700 font-bold uppercase">Tổng Tiền Mới Dự Kiến:</span>
+                        <div id="rn-total-amount" class="text-xl font-bold text-teal-800">0 ₫</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-gray-50 border-t p-4 flex flex-col sm:flex-row justify-between items-center gap-2">
+                <button onclick="closeRenewModal()" class="w-full sm:w-auto px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded text-sm font-medium transition">
+                    Đóng
+                </button>
+                <div class="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+                    <button onclick="transferRenewToBooking()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded text-sm font-bold shadow transition flex items-center justify-center" title="Đưa sang tab Tạo Phiếu để thêm dịch vụ, chỉnh giá hoặc in phiếu">
+                        <i class="fa-solid fa-arrow-up-right-from-square mr-1.5"></i> Mở Bảng Tính Tiền
+                    </button>
+                    <button onclick="submitRenewDirect()" class="px-5 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded text-sm font-bold shadow transition flex items-center justify-center">
+                        <i class="fa-solid fa-circle-check mr-1.5"></i> Tạo Phiếu Mới Ngay
+                    </button>
+                </div>
             </div>
         </div>
     </div>

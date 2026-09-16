@@ -259,6 +259,30 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    // Listeners cho Modal Gia Hạn
+    const renewMonthSelect = document.getElementById('rn-month-select');
+    if (renewMonthSelect) {
+        renewMonthSelect.addEventListener('change', (e) => {
+            if (e.target.value !== 'custom') {
+                const [s, end] = e.target.value.split('|');
+                document.getElementById('rn-start-date').value = s;
+                document.getElementById('rn-end-date').value = end;
+            }
+            renderRenewPreview();
+        });
+    }
+
+    ['rn-start-date', 'rn-end-date'].forEach(id => {
+        const inputEl = document.getElementById(id);
+        if (inputEl) {
+            inputEl.addEventListener('change', () => {
+                const monthSelect = document.getElementById('rn-month-select');
+                if (monthSelect) monthSelect.value = 'custom';
+                renderRenewPreview();
+            });
+        }
+    });
+
     const today = new Date();
     document.getElementById('inv-date').textContent = formatDateFull(today);
     generateNewInvoiceId();
@@ -1135,6 +1159,9 @@ async function fetchReports() {
                     <td class="p-3 border text-right text-sm ${vatAmount > 0 ? 'text-orange-600 font-bold' : 'text-gray-400'}">${vatAmount > 0 ? formatVND(vatAmount) : '---'}</td>
                     <td class="p-3 border text-right font-bold text-indigo-700 text-base">${formatVND(data.totalAmount || 0)}</td>
                     <td class="p-3 border text-center whitespace-nowrap">
+                        <button onclick="openRenewModal('${dataStr}')" title="Gia hạn phiếu sang tháng mới (cùng lịch, cùng sân)" class="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-teal-50 text-teal-600 hover:bg-teal-100 hover:text-teal-800 transition mr-1">
+                            <i class="fa-solid fa-calendar-plus text-xs"></i>
+                        </button>
                         <button onclick="editBill('${dataStr}')" title="Sửa phiếu" class="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 hover:text-blue-800 transition mr-1">
                             <i class="fa-solid fa-pen text-xs"></i>
                         </button>
@@ -1402,11 +1429,13 @@ function viewReceipt(dataStrEncoded) {
         statusBtn.style.display = 'none';
     }
 
-    // Gán sự kiện cho nút Sửa và Xóa trong modal xem chi tiết
+    // Gán sự kiện cho nút Gia Hạn, Sửa và Xóa trong modal xem chi tiết
+    const renewBtn = document.getElementById('rm-renew-btn');
     const editBtn = document.getElementById('rm-edit-btn');
     const editFullBtn = document.getElementById('rm-edit-full-btn');
     const deleteBtn = document.getElementById('rm-delete-btn');
     
+    if (renewBtn) renewBtn.onclick = () => { closeReceiptModal(); openRenewModal(dataStrEncoded); };
     editBtn.onclick = () => { closeReceiptModal(); editBill(dataStrEncoded); };
     if (editFullBtn) editFullBtn.onclick = () => { editFullBill(data.docId, dataStrEncoded); };
     deleteBtn.onclick = () => { closeReceiptModal(); deleteBill(data.docId, invId); };
@@ -2135,8 +2164,11 @@ async function viewCustomer(phoneId) {
                     <td class="p-2 border text-center whitespace-nowrap">${statusBadge}</td>
                     <td class="p-2 border text-right font-bold text-gray-800 whitespace-nowrap">${formatVND(t.totalAmount || 0)}</td>
                     <td class="p-2 border text-center whitespace-nowrap">
-                        <button onclick="viewReceipt('${dataStr}')" class="px-2 py-1 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded text-[11px] font-bold transition">
+                        <button onclick="viewReceipt('${dataStr}')" class="px-2 py-1 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded text-[11px] font-bold transition mr-1" title="Xem chi tiết phiếu">
                             <i class="fa-solid fa-eye mr-1"></i> Phiếu
+                        </button>
+                        <button onclick="closeViewCustomerModal(); openRenewModal('${dataStr}')" class="px-2 py-1 bg-teal-50 text-teal-600 hover:bg-teal-100 rounded text-[11px] font-bold transition" title="Gia hạn phiếu này sang tháng mới">
+                            <i class="fa-solid fa-calendar-plus mr-1"></i> Gia Hạn
                         </button>
                     </td>
                 `;
@@ -2238,5 +2270,383 @@ function showPaymentNotification(name, amount, invId) {
         }
     });
 }
+
+// ==========================================
+// TICKET RENEWAL / GIA HẠN PHIẾU
+// ==========================================
+
+let currentRenewData = null;
+let currentRenewCalculatedItems = [];
+
+function openRenewModal(dataStrEncoded) {
+    const data = JSON.parse(decodeURIComponent(dataStrEncoded));
+    currentRenewData = data;
+
+    const el = (id) => document.getElementById(id);
+    if (!el('renew-modal')) return;
+
+    const origId = data.id || `CŨ-${(data.docId || '').slice(0, 6).toUpperCase()}`;
+    el('rn-original-id').textContent = origId;
+    el('rn-cust-name').textContent = data.customerName || 'Vãng lai';
+    el('rn-cust-phone').textContent = data.customerPhone ? `(${data.customerPhone})` : '';
+
+    let origStartStr = data.startDate || '---';
+    let origEndStr = data.endDate || '---';
+    if (origStartStr.includes('-')) { const [y, m, d] = origStartStr.split('-'); origStartStr = `${d}/${m}/${y}`; }
+    if (origEndStr.includes('-')) { const [y, m, d] = origEndStr.split('-'); origEndStr = `${d}/${m}/${y}`; }
+    el('rn-original-dates').textContent = `${origStartStr} - ${origEndStr}`;
+
+    // Xác định mốc thời gian kết thúc của phiếu cũ để gợi ý tháng mới
+    let baseDate = new Date();
+    if (data.endDate && data.endDate.includes('-')) {
+        const [y, m, d] = data.endDate.split('-').map(Number);
+        baseDate = new Date(y, m - 1, d);
+    } else if (data.startDate && data.startDate.includes('-')) {
+        const [y, m, d] = data.startDate.split('-').map(Number);
+        baseDate = new Date(y, m - 1, d);
+    }
+
+    // Tạo các options gợi ý tháng tiếp theo (+1 tháng, +2 tháng, +3 tháng)
+    const monthSelect = el('rn-month-select');
+    monthSelect.innerHTML = '';
+
+    const monthOptions = [];
+    for (let i = 1; i <= 3; i++) {
+        const nextMonthDate = new Date(baseDate.getFullYear(), baseDate.getMonth() + i, 1);
+        const y = nextMonthDate.getFullYear();
+        const m = nextMonthDate.getMonth() + 1; // 1-indexed
+        const lastDay = new Date(y, m, 0).getDate();
+        
+        const startISO = `${y}-${m.toString().padStart(2, '0')}-01`;
+        const endISO = `${y}-${m.toString().padStart(2, '0')}-${lastDay.toString().padStart(2, '0')}`;
+        const label = i === 1 
+            ? `Tháng ${m}/${y} (Tháng tiếp theo)` 
+            : `Tháng ${m}/${y} (+${i} tháng)`;
+
+        monthOptions.push({ value: `${startISO}|${endISO}`, label: label, startISO, endISO });
+    }
+
+    monthOptions.forEach((opt, idx) => {
+        const option = document.createElement('option');
+        option.value = opt.value;
+        option.textContent = opt.label;
+        if (idx === 0) option.selected = true;
+        monthSelect.appendChild(option);
+    });
+
+    const customOpt = document.createElement('option');
+    customOpt.value = 'custom';
+    customOpt.textContent = 'Tùy chỉnh khoảng ngày...';
+    monthSelect.appendChild(customOpt);
+
+    // Mặc định chọn tháng kế tiếp
+    el('rn-start-date').value = monthOptions[0].startISO;
+    el('rn-end-date').value = monthOptions[0].endISO;
+
+    // Ghi chú và trạng thái
+    el('rn-note').value = `Gia hạn cố định`;
+    el('rn-status').value = 'unpaid';
+    el('rn-payment-method').value = data.paymentMethod || 'Chuyển khoản';
+
+    // Render xem trước lịch và tính toán số buổi
+    renderRenewPreview();
+
+    // Hiển thị modal
+    el('renew-modal').classList.remove('hidden');
+}
+
+function closeRenewModal() {
+    const modal = document.getElementById('renew-modal');
+    if (modal) modal.classList.add('hidden');
+    currentRenewData = null;
+    currentRenewCalculatedItems = [];
+}
+
+function renderRenewPreview() {
+    if (!currentRenewData) return;
+
+    const el = (id) => document.getElementById(id);
+    const startDateVal = el('rn-start-date').value;
+    const endDateVal = el('rn-end-date').value;
+
+    const tbody = el('rn-items-table');
+    tbody.innerHTML = '';
+
+    if (!startDateVal || !endDateVal) {
+        tbody.innerHTML = '<tr><td colspan="6" class="p-3 text-center text-red-500 font-medium">Vui lòng chọn ngày bắt đầu và kết thúc hợp lệ.</td></tr>';
+        el('rn-total-sessions').textContent = '0 buổi';
+        el('rn-total-amount').textContent = '0 ₫';
+        currentRenewCalculatedItems = [];
+        return;
+    }
+
+    const [sy, sm, sd] = startDateVal.split('-').map(Number);
+    const [ey, em, ed] = endDateVal.split('-').map(Number);
+    const startDate = new Date(sy, sm - 1, sd);
+    const endDate = new Date(ey, em - 1, ed);
+
+    if (startDate > endDate) {
+        tbody.innerHTML = '<tr><td colspan="6" class="p-3 text-center text-red-500 font-medium">Ngày kết thúc phải sau hoặc bằng ngày bắt đầu!</td></tr>';
+        el('rn-total-sessions').textContent = '0 buổi';
+        el('rn-total-amount').textContent = '0 ₫';
+        currentRenewCalculatedItems = [];
+        return;
+    }
+
+    const origItems = currentRenewData.items || [];
+    currentRenewCalculatedItems = [];
+
+    let totalSessions = 0;
+    let subTotal = 0;
+
+    origItems.forEach(orig => {
+        let weekdays = [];
+        if (orig.weekdays && Array.isArray(orig.weekdays) && orig.weekdays.length > 0) {
+            weekdays = orig.weekdays.map(Number);
+        } else {
+            // Fallback: suy từ desc hoặc name
+            const str = (orig.desc || '') + ' ' + (orig.name || '');
+            const map = { 'CN': 0, 'T2': 1, 'T3': 2, 'T4': 3, 'T5': 4, 'T6': 5, 'T7': 6 };
+            for (let k in map) {
+                if (str.includes(k)) weekdays.push(map[k]);
+            }
+            if (weekdays.length === 0) weekdays = [1, 2, 3, 4, 5, 6, 0];
+        }
+
+        // Đếm số buổi thực tế trong khoảng ngày mới
+        let count = 0;
+        let cur = new Date(startDate);
+        while (cur <= endDate) {
+            const dayOfWeek = cur.getDay();
+            if (weekdays.includes(dayOfWeek)) {
+                count++;
+            }
+            cur.setDate(cur.getDate() + 1);
+        }
+
+        // Trích xuất khung giờ từ desc cũ (VD: "(18:00-20:00)")
+        let timeStr = '---';
+        const matchTime = (orig.desc || '').match(/\((\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})\)/);
+        if (matchTime) {
+            timeStr = `${matchTime[1]}-${matchTime[2]}`;
+        }
+
+        let duration = parseFloat(orig.duration);
+        if (isNaN(duration) || duration <= 0) {
+            if (matchTime) duration = calculateHours(matchTime[1], matchTime[2]);
+            else duration = 1;
+        }
+
+        const price = parseFloat(orig.price) || 0;
+        const itemTotal = count * duration * price;
+
+        totalSessions += count;
+        subTotal += itemTotal;
+
+        const daysText = weekdays.length === 7 ? 'Tất cả các ngày' : weekdays.map(d => d === 0 ? 'CN' : 'T' + (d + 1)).join(', ');
+
+        const newItem = {
+            id: Date.now() + Math.random(),
+            name: orig.name,
+            weekdays: weekdays,
+            desc: `${formatDate(startDate)} - ${formatDate(endDate)} (${timeStr})`,
+            skipped: [],
+            count: count,
+            duration: duration,
+            price: price,
+            total: itemTotal
+        };
+        currentRenewCalculatedItems.push(newItem);
+
+        const tr = document.createElement('tr');
+        tr.className = "border-b hover:bg-teal-50/50 transition";
+        tr.innerHTML = `
+            <td class="p-2.5 border-r font-bold text-gray-800">${orig.name}</td>
+            <td class="p-2.5 border-r text-indigo-600 font-semibold">${daysText}</td>
+            <td class="p-2.5 border-r text-center font-mono text-gray-600">${timeStr}</td>
+            <td class="p-2.5 border-r text-center font-bold text-teal-700 bg-teal-50/40">${count} buổi</td>
+            <td class="p-2.5 border-r text-right font-medium text-gray-700">${formatVND(price)}</td>
+            <td class="p-2.5 text-right font-bold text-gray-800">${formatVND(itemTotal)}</td>
+        `;
+        tbody.appendChild(tr);
+    });
+
+    if (origItems.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="p-3 text-center text-gray-400 italic">Phiếu gốc không chứa thông tin chi tiết dịch vụ/sân đặt.</td></tr>';
+    }
+
+    // Tính thuế VAT nếu phiếu gốc có thuế
+    let vatAmount = 0;
+    if (currentRenewData.vatAmount && currentRenewData.vatAmount > 0) {
+        vatAmount = Math.round(subTotal * 0.10);
+    }
+    const finalTotal = subTotal + vatAmount;
+
+    el('rn-total-sessions').textContent = `${totalSessions} buổi`;
+    el('rn-total-amount').textContent = formatVND(finalTotal);
+}
+
+async function submitRenewDirect() {
+    if (!currentRenewData || currentRenewCalculatedItems.length === 0) {
+        Swal.fire('Lỗi', 'Không có lịch sân hợp lệ để gia hạn!', 'error');
+        return;
+    }
+
+    if (!db) {
+        Swal.fire('Lỗi', 'Không thể kết nối cơ sở dữ liệu!', 'error');
+        return;
+    }
+
+    const el = (id) => document.getElementById(id);
+    const startDateVal = el('rn-start-date').value;
+    const endDateVal = el('rn-end-date').value;
+
+    let subTotal = currentRenewCalculatedItems.reduce((sum, i) => sum + i.total, 0);
+    let vatAmount = (currentRenewData.vatAmount && currentRenewData.vatAmount > 0) ? Math.round(subTotal * 0.10) : 0;
+    let finalTotal = subTotal + vatAmount;
+
+    const payMethod = el('rn-payment-method').value;
+    const status = el('rn-status').value;
+    const userNote = el('rn-note').value.trim();
+
+    const origId = currentRenewData.id || `CŨ-${(currentRenewData.docId || '').slice(0, 6).toUpperCase()}`;
+    const note = userNote ? `Gia hạn từ phiếu ${origId}. ${userNote}` : `Gia hạn từ phiếu ${origId}`;
+
+    // Cấp mã phiếu mới
+    const d = new Date();
+    const dateStr = `${d.getFullYear()}${(d.getMonth() + 1).toString().padStart(2, '0')}${d.getDate().toString().padStart(2, '0')}`;
+    const randNum = Math.floor(1000 + Math.random() * 9000);
+    const newInvoiceId = `HBA-${dateStr}-${randNum}`;
+
+    const newTransaction = {
+        id: newInvoiceId,
+        status: status,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+        customerName: currentRenewData.customerName || '',
+        customerPhone: currentRenewData.customerPhone || '',
+        company: currentRenewData.company || '',
+        gender: currentRenewData.gender || 'Anh',
+        paymentMethod: payMethod,
+        note: note,
+        subTotal: subTotal,
+        vatAmount: vatAmount,
+        totalAmount: finalTotal,
+        paidAmount: status === 'paid' ? finalTotal : 0,
+        remainingAmount: status === 'paid' ? 0 : finalTotal,
+        startDate: startDateVal,
+        endDate: endDateVal,
+        items: currentRenewCalculatedItems
+    };
+
+    try {
+        Swal.fire({ title: 'Đang tạo phiếu gia hạn...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+
+        const docRef = db.collection('transactions').doc(newInvoiceId);
+        await docRef.set(newTransaction);
+
+        // Cập nhật thống kê khách hàng
+        if (currentRenewData.customerPhone) {
+            const cRef = db.collection('customers').doc(currentRenewData.customerPhone);
+            cRef.get().then(snap => {
+                if (snap.exists) {
+                    cRef.update({
+                        totalSpent: firebase.firestore.FieldValue.increment(finalTotal),
+                        ticketCount: firebase.firestore.FieldValue.increment(1),
+                        lastVisit: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                }
+            }).catch(e => console.error(e));
+        }
+
+        closeRenewModal();
+        fetchReports(); // Cập nhật lại bảng báo cáo
+
+        const totalSessions = currentRenewCalculatedItems.reduce((sum, i) => sum + i.count, 0);
+        let [sy, sm, sd] = startDateVal.split('-');
+        let [ey, em, ed] = endDateVal.split('-');
+
+        Swal.fire({
+            icon: 'success',
+            title: 'Gia hạn thành công!',
+            html: `Đã tạo phiếu mới: <b class="text-teal-700 font-mono text-base">${newInvoiceId}</b><br>Kỳ: <b>${sd}/${sm}/${sy} - ${ed}/${em}/${ey}</b> (${totalSessions} buổi)<br>Tổng tiền: <b class="text-indigo-700 font-bold">${formatVND(finalTotal)}</b>`,
+            confirmButtonColor: '#0d9488',
+            confirmButtonText: '<i class="fa-solid fa-eye mr-1"></i> Xem Chi Tiết Phiếu',
+            showCancelButton: true,
+            cancelButtonText: 'Đóng'
+        }).then((res) => {
+            if (res.isConfirmed) {
+                const encoded = encodeURIComponent(JSON.stringify({ ...newTransaction, docId: newInvoiceId }));
+                viewReceipt(encoded);
+            }
+        });
+
+    } catch (e) {
+        console.error("Lỗi tạo phiếu gia hạn:", e);
+        Swal.fire('Lỗi', 'Không thể tạo phiếu gia hạn. Vui lòng kiểm tra kết nối mạng!', 'error');
+    }
+}
+
+function transferRenewToBooking() {
+    if (!currentRenewData || currentRenewCalculatedItems.length === 0) {
+        Swal.fire('Lỗi', 'Không có lịch sân hợp lệ để chuyển sang bảng Tính Tiền!', 'error');
+        return;
+    }
+
+    const el = (id) => document.getElementById(id);
+    const startDateVal = el('rn-start-date').value;
+    const endDateVal = el('rn-end-date').value;
+    const userNote = el('rn-note').value.trim();
+    const origId = currentRenewData.id || `CŨ-${(currentRenewData.docId || '').slice(0, 6).toUpperCase()}`;
+    const fullNote = userNote ? `Gia hạn từ phiếu ${origId}. ${userNote}` : `Gia hạn từ phiếu ${origId}`;
+
+    const itemsToTransfer = JSON.parse(JSON.stringify(currentRenewCalculatedItems));
+    const customerName = currentRenewData.customerName || '';
+    const customerPhone = currentRenewData.customerPhone || '';
+    const company = currentRenewData.company || '';
+    const gender = currentRenewData.gender || 'Anh';
+    const vatChecked = (currentRenewData.vatAmount && currentRenewData.vatAmount > 0);
+
+    closeRenewModal();
+
+    // Chuyển sang Tab Booking
+    switchTab('booking');
+
+    // Cấp mã phiếu mới
+    generateNewInvoiceId();
+
+    // Điền thông tin khách
+    if (el('cust-name')) el('cust-name').value = customerName;
+    if (el('cust-phone')) el('cust-phone').value = customerPhone;
+    if (el('cust-company')) el('cust-company').value = company;
+    if (el('cust-gender')) el('cust-gender').value = gender;
+    if (el('inv-note')) el('inv-note').value = fullNote;
+
+    ['cust-name', 'cust-phone', 'cust-company', 'cust-gender'].forEach(id => {
+        if (el(id)) el(id).dispatchEvent(new Event('input'));
+    });
+
+    // Điền ngày bắt đầu và kết thúc
+    if (el('start-date')) el('start-date').value = startDateVal;
+    if (el('end-date')) el('end-date').value = endDateVal;
+
+    // Gán danh sách items
+    billItems = itemsToTransfer;
+
+    // VAT
+    if (el('vat-check')) el('vat-check').checked = vatChecked;
+
+    // Render lại giao diện hóa đơn
+    renderInvoice();
+
+    Swal.fire({
+        icon: 'success',
+        title: 'Đã chuyển sang Bảng Tính Tiền!',
+        html: `Lịch gia hạn cho khách <b>${customerName}</b> đã được nạp vào hóa đơn.<br>Bạn có thể chỉnh sửa thêm/bớt sân, áp dụng chiết khấu hoặc bấm <b>Lưu & Xuất Phiếu</b> ngay.`,
+        timer: 3500,
+        showConfirmButton: true,
+        confirmButtonText: 'Đã hiểu'
+    });
+}
+
 
 
