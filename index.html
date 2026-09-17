@@ -65,12 +65,40 @@
                                 <input type="tel" id="cust-phone" class="w-full px-3 py-2 border rounded text-sm outline-none focus:ring-2 focus:ring-blue-500" placeholder="SĐT (*)" autocomplete="off">
                                 <ul id="autocomplete-phone" class="absolute z-50 w-full bg-white border border-gray-200 shadow-lg rounded mt-1 max-h-48 overflow-y-auto hidden"></ul>
                             </div>
-                            <select id="cust-gender" class="w-full px-3 py-2 border rounded text-sm outline-none">
-                                <option value="Anh">Anh</option>
-                                <option value="Chị">Chị</option>
-                            </select>
+                            <div class="grid grid-cols-2 gap-2">
+                                <select id="cust-gender" class="w-full px-2 py-2 border rounded text-sm outline-none bg-white">
+                                    <option value="Anh">Anh</option>
+                                    <option value="Chị">Chị</option>
+                                </select>
+                                <input type="text" id="cust-team" class="w-full px-2 py-2 border rounded text-sm outline-none" placeholder="Đội bóng">
+                            </div>
                         </div>
-                        <input type="text" id="cust-company" class="w-full px-3 py-2 border rounded text-sm outline-none" placeholder="Công ty / Đội bóng">
+                        <!-- Thông tin doanh nghiệp (Tùy chọn) -->
+                        <div class="border rounded-lg p-2.5 bg-gray-50 text-xs">
+                            <div class="flex justify-between items-center cursor-pointer select-none" onclick="toggleBookingBizInfo()">
+                                <span class="font-bold text-gray-700 flex items-center">
+                                    <i class="fa-solid fa-building text-blue-600 mr-1.5"></i> Thông tin doanh nghiệp
+                                    <span class="text-gray-400 font-normal ml-1">(Tùy chọn)</span>
+                                </span>
+                                <i id="cust-biz-toggle-icon" class="fa-solid fa-chevron-down text-gray-400 text-xs transition-transform duration-200"></i>
+                            </div>
+                            <div id="cust-biz-fields" class="hidden mt-2.5 space-y-2 pt-2 border-t border-gray-200">
+                                <div>
+                                    <label class="block text-[11px] font-semibold text-gray-500 mb-0.5">Tên Công ty</label>
+                                    <input type="text" id="cust-company" class="w-full px-2.5 py-1.5 border rounded text-xs outline-none bg-white focus:ring-1 focus:ring-blue-500" placeholder="VD: Công ty TNHH ABC">
+                                </div>
+                                <div class="grid grid-cols-2 gap-2">
+                                    <div>
+                                        <label class="block text-[11px] font-semibold text-gray-500 mb-0.5">Mã số thuế</label>
+                                        <input type="text" id="cust-tax-code" class="w-full px-2.5 py-1.5 border rounded text-xs outline-none font-mono bg-white focus:ring-1 focus:ring-blue-500" placeholder="VD: 0101234567">
+                                    </div>
+                                    <div>
+                                        <label class="block text-[11px] font-semibold text-gray-500 mb-0.5">Địa chỉ thuế</label>
+                                        <input type="text" id="cust-tax-address" class="w-full px-2.5 py-1.5 border rounded text-xs outline-none bg-white focus:ring-1 focus:ring-blue-500" placeholder="Địa chỉ ĐKKD">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -172,7 +200,10 @@
                             <div>
                                 <span class="text-gray-500 block text-xs uppercase">Khách hàng:</span>
                                 <span class="font-bold text-lg text-gray-800" id="display-name">---</span>
-                                <div id="display-company" class="text-gray-600 italic text-xs mt-1"></div>
+                                <div id="display-team" class="text-gray-500 italic text-xs mt-0.5"></div>
+                                <div id="display-company" class="text-blue-800 font-semibold text-xs mt-1"></div>
+                                <div id="display-tax-code" class="text-gray-600 font-mono text-xs"></div>
+                                <div id="display-tax-address" class="text-gray-500 text-xs"></div>
                             </div>
                             <div class="text-right">
                                 <span class="text-gray-500 block text-xs uppercase">Liên hệ:</span>
@@ -431,7 +462,7 @@
                     <div class="flex gap-2 w-full md:w-auto">
                         <div class="relative w-full md:w-64">
                             <i class="fa-solid fa-magnifying-glass absolute left-3 top-3 text-gray-400"></i>
-                            <input type="text" id="customer-search" class="pl-9 pr-3 py-2 border rounded text-sm w-full outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="Tìm tên hoặc SĐT...">
+                            <input type="text" id="customer-search" class="pl-9 pr-3 py-2 border rounded text-sm w-full outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="Tìm tên, SĐT, Cty, MST...">
                         </div>
                         <button onclick="openAddCustomerModal()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded text-sm font-bold shadow transition whitespace-nowrap hidden lg:flex items-center">
                             <i class="fa-solid fa-user-plus mr-2"></i> Khách Mới
@@ -593,12 +624,12 @@
 
     <!-- Modal Thêm/Sửa Khách Hàng -->
     <div id="customer-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex flex-col items-center justify-center p-4 z-[60]">
-        <div class="bg-white rounded-lg shadow-xl w-full max-w-sm overflow-hidden">
+        <div class="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden flex flex-col max-h-[90vh]">
             <div class="bg-blue-600 p-4 flex justify-between items-center text-white">
                 <h2 class="text-lg font-bold" id="customer-modal-title"><i class="fa-solid fa-user-plus mr-2"></i> Thông Tin Khách Hàng</h2>
                 <button onclick="closeCustomerModal()" class="text-blue-200 hover:text-white transition group"><i class="fa-solid fa-xmark text-xl group-hover:scale-110"></i></button>
             </div>
-            <div class="p-6 space-y-4 relative">
+            <div class="p-6 space-y-4 relative overflow-y-auto">
                 <input type="hidden" id="c-edit-original-phone" value="">
                 <div>
                     <label class="block text-xs font-semibold text-gray-500 mb-1">Số điện thoại (*)</label>
@@ -617,8 +648,31 @@
                         </select>
                     </div>
                     <div>
-                        <label class="block text-xs font-semibold text-gray-500 mb-1">Đội bóng/Tổ chức</label>
-                        <input type="text" id="c-company" class="w-full px-3 py-2 border rounded text-sm" placeholder="Tùy chọn">
+                        <label class="block text-xs font-semibold text-gray-500 mb-1">Đội bóng/CLB</label>
+                        <input type="text" id="c-team" class="w-full px-3 py-2 border rounded text-sm" placeholder="Tùy chọn">
+                    </div>
+                </div>
+
+                <!-- Khối thông tin doanh nghiệp (Không bắt buộc) -->
+                <div class="border-t pt-3 mt-1">
+                    <div class="text-xs font-bold text-gray-700 uppercase mb-2 flex items-center">
+                        <i class="fa-solid fa-building text-blue-600 mr-1.5"></i> Thông Tin Doanh Nghiệp <span class="text-gray-400 font-normal text-[11px] ml-1">(Không bắt buộc)</span>
+                    </div>
+                    <div class="space-y-3 bg-gray-50 p-3.5 rounded-lg border border-gray-200">
+                        <div>
+                            <label class="block text-xs font-semibold text-gray-500 mb-1">Tên Công ty</label>
+                            <input type="text" id="c-company" class="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500 outline-none text-sm bg-white" placeholder="VD: Công ty Cổ phần ABC">
+                        </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div>
+                                <label class="block text-xs font-semibold text-gray-500 mb-1">Mã số thuế</label>
+                                <input type="text" id="c-tax-code" class="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500 outline-none text-sm font-mono bg-white" placeholder="VD: 0101234567">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-gray-500 mb-1">Địa chỉ thuế</label>
+                                <input type="text" id="c-tax-address" class="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500 outline-none text-sm bg-white" placeholder="Địa chỉ ĐKKD">
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -664,7 +718,28 @@
                     </div>
                     <div>
                         <span class="text-xs text-gray-500 font-semibold uppercase">Đơn vị / Đội bóng</span>
-                        <div id="vc-company" class="text-sm font-medium text-gray-700 mt-0.5">---</div>
+                        <div id="vc-team" class="text-sm font-medium text-gray-700 mt-0.5">---</div>
+                    </div>
+                </div>
+
+                <!-- Thẻ thông tin doanh nghiệp -->
+                <div class="bg-blue-50/60 p-4 rounded-lg border border-blue-100 space-y-2">
+                    <div class="text-xs font-bold text-blue-800 uppercase flex items-center">
+                        <i class="fa-solid fa-building mr-1.5 text-blue-600"></i> Thông Tin Doanh Nghiệp
+                    </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                        <div>
+                            <span class="text-gray-500 font-semibold uppercase block">Tên Công Ty</span>
+                            <div id="vc-company" class="text-sm font-bold text-gray-800 mt-0.5">---</div>
+                        </div>
+                        <div>
+                            <span class="text-gray-500 font-semibold uppercase block">Mã Số Thuế</span>
+                            <div id="vc-tax-code" class="text-sm font-mono font-bold text-blue-700 mt-0.5">---</div>
+                        </div>
+                        <div>
+                            <span class="text-gray-500 font-semibold uppercase block">Địa Chỉ Thuế</span>
+                            <div id="vc-tax-address" class="text-sm font-medium text-gray-700 mt-0.5">---</div>
+                        </div>
                     </div>
                 </div>
 

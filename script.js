@@ -290,14 +290,42 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('end-date').valueAsDate = today;
 
     // Listeners
-    ['cust-name', 'cust-phone', 'cust-company', 'cust-gender'].forEach(id => {
-        document.getElementById(id).addEventListener('input', () => {
-            document.getElementById('display-name').textContent = document.getElementById('cust-name').value || '---';
-            document.getElementById('display-phone').textContent = document.getElementById('cust-phone').value || '---';
-            document.getElementById('display-company').textContent = document.getElementById('cust-company').value;
-            const gender = document.getElementById('cust-gender').value;
-            document.getElementById('display-gender').textContent = gender ? `(${gender})` : '';
-        });
+    ['cust-name', 'cust-phone', 'cust-company', 'cust-gender', 'cust-team', 'cust-tax-code', 'cust-tax-address'].forEach(id => {
+        const inputEl = document.getElementById(id);
+        if (inputEl) {
+            inputEl.addEventListener('input', () => {
+                document.getElementById('display-name').textContent = document.getElementById('cust-name').value || '---';
+                document.getElementById('display-phone').textContent = document.getElementById('cust-phone').value || '---';
+                
+                const teamVal = document.getElementById('cust-team') ? document.getElementById('cust-team').value.trim() : '';
+                const compVal = document.getElementById('cust-company') ? document.getElementById('cust-company').value.trim() : '';
+                const taxCodeVal = document.getElementById('cust-tax-code') ? document.getElementById('cust-tax-code').value.trim() : '';
+                const taxAddrVal = document.getElementById('cust-tax-address') ? document.getElementById('cust-tax-address').value.trim() : '';
+                
+                const displayTeam = document.getElementById('display-team');
+                if (displayTeam) {
+                    displayTeam.textContent = teamVal ? `Đội: ${teamVal}` : '';
+                }
+                
+                const displayComp = document.getElementById('display-company');
+                if (displayComp) {
+                    displayComp.textContent = compVal ? `Công ty: ${compVal}` : '';
+                }
+                
+                const displayTax = document.getElementById('display-tax-code');
+                if (displayTax) {
+                    displayTax.textContent = taxCodeVal ? `MST: ${taxCodeVal}` : '';
+                }
+                
+                const displayAddr = document.getElementById('display-tax-address');
+                if (displayAddr) {
+                    displayAddr.textContent = taxAddrVal ? `Đ/C: ${taxAddrVal}` : '';
+                }
+                
+                const gender = document.getElementById('cust-gender').value;
+                document.getElementById('display-gender').textContent = gender ? `(${gender})` : '';
+            });
+        }
     });
 
     document.getElementById('sport-select').addEventListener('change', function() {
@@ -371,27 +399,38 @@ document.addEventListener('DOMContentLoaded', () => {
         const invoiceId = currentInvoiceId;
 
         // Cập nhật tự động thông tin Khách hàng vào kho dữ liệu mới
+        const team = document.getElementById('cust-team') ? document.getElementById('cust-team').value.trim() : '';
+        const comp = document.getElementById('cust-company') ? document.getElementById('cust-company').value.trim() : '';
+        const taxCode = document.getElementById('cust-tax-code') ? document.getElementById('cust-tax-code').value.trim() : '';
+        const taxAddress = document.getElementById('cust-tax-address') ? document.getElementById('cust-tax-address').value.trim() : '';
+
         if (customerPhone && db) {
             const cRef = db.collection('customers').doc(customerPhone);
             cRef.get().then(docSnap => {
                 const gender = document.getElementById('cust-gender') ? document.getElementById('cust-gender').value : 'Anh';
-                const comp = document.getElementById('cust-company') ? document.getElementById('cust-company').value : '';
                 if (docSnap.exists) {
-                    cRef.update({
+                    const updatePayload = {
                         name: customerName,
                         gender: gender,
-                        company: comp,
                         totalSpent: firebase.firestore.FieldValue.increment(finalTotalNum),
                         ticketCount: firebase.firestore.FieldValue.increment(1),
                         lastVisit: firebase.firestore.FieldValue.serverTimestamp()
-                    });
+                    };
+                    if (comp) updatePayload.company = comp;
+                    if (taxCode) updatePayload.taxCode = taxCode;
+                    if (taxAddress) updatePayload.taxAddress = taxAddress;
+                    if (team) updatePayload.team = team;
+                    cRef.update(updatePayload);
                 } else {
                     const code = 'KH' + Math.floor(1000 + Math.random() * 9000);
                     cRef.set({
                         customerCode: code,
                         name: customerName,
                         gender: gender,
+                        team: team,
                         company: comp,
+                        taxCode: taxCode,
+                        taxAddress: taxAddress,
                         createdAt: firebase.firestore.FieldValue.serverTimestamp(),
                         lastVisit: firebase.firestore.FieldValue.serverTimestamp(),
                         totalSpent: finalTotalNum,
@@ -410,6 +449,10 @@ document.addEventListener('DOMContentLoaded', () => {
             createdAt: firebase.firestore.FieldValue.serverTimestamp(),
             customerName: customerName,
             customerPhone: customerPhone,
+            team: team,
+            company: comp,
+            taxCode: taxCode,
+            taxAddress: taxAddress,
             paymentMethod: payMethod,
             note: note,
             subTotal: subTotalNum,
@@ -1728,6 +1771,14 @@ function viewReceipt(dataStrEncoded) {
             <div><span class="text-gray-500 font-medium">SĐT:</span> <br><b>${data.customerPhone || '---'}</b></div>
             <div><span class="text-gray-500 font-medium">Chi nhánh:</span> <br><b>${data.note || '---'}</b></div>
             <div><span class="text-gray-500 font-medium">Thanh toán:</span> <br><b>${data.paymentMethod || '---'}</b></div>
+            ${(data.company || data.taxCode || data.taxAddress) ? `
+            <div class="col-span-2 text-xs border-t pt-2 mt-1 bg-white p-2 rounded border border-blue-100">
+                <span class="text-blue-800 font-bold uppercase block mb-1"><i class="fa-solid fa-building mr-1"></i> Thông Tin Doanh Nghiệp</span>
+                ${data.company ? `<div>Tên Cty: <b>${data.company}</b></div>` : ''}
+                ${data.taxCode ? `<div>MST: <b class="font-mono text-blue-700">${data.taxCode}</b></div>` : ''}
+                ${data.taxAddress ? `<div>Địa chỉ: <span>${data.taxAddress}</span></div>` : ''}
+            </div>` : ''}
+            ${data.team ? `<div class="col-span-2 text-xs text-gray-500 italic">Đội bóng: ${data.team}</div>` : ''}
         </div>
         <div class="mb-4">
             <h3 class="font-bold text-gray-700 mb-2 border-b pb-1">DỊCH VỤ ĐÃ ĐẶT</h3>
@@ -1841,7 +1892,10 @@ function printReceipt(data) {
     // Set thông tin khách
     document.getElementById('display-name').textContent = data.customerName || 'Khách Vãng Lai';
     document.getElementById('display-phone').textContent = data.customerPhone || '---';
-    document.getElementById('display-company').textContent = data.company || '';
+    if (document.getElementById('display-team')) document.getElementById('display-team').textContent = data.team ? `Đội: ${data.team}` : '';
+    document.getElementById('display-company').textContent = data.company ? `Công ty: ${data.company}` : '';
+    if (document.getElementById('display-tax-code')) document.getElementById('display-tax-code').textContent = data.taxCode ? `MST: ${data.taxCode}` : '';
+    if (document.getElementById('display-tax-address')) document.getElementById('display-tax-address').textContent = data.taxAddress ? `Đ/C: ${data.taxAddress}` : '';
     document.getElementById('display-gender').textContent = '';
     
     // Set hình thức thanh toán
@@ -1968,7 +2022,17 @@ function editFullBill(docId, dataStrEncoded) {
             // Điền Khách hàng
             if(document.getElementById('cust-name')) document.getElementById('cust-name').value = data.customerName || '';
             if(document.getElementById('cust-phone')) document.getElementById('cust-phone').value = data.customerPhone || '';
+            if(document.getElementById('cust-team')) document.getElementById('cust-team').value = data.team || '';
             if(document.getElementById('cust-company')) document.getElementById('cust-company').value = data.company || '';
+            if(document.getElementById('cust-tax-code')) document.getElementById('cust-tax-code').value = data.taxCode || '';
+            if(document.getElementById('cust-tax-address')) document.getElementById('cust-tax-address').value = data.taxAddress || '';
+            
+            if (data.company || data.taxCode || data.taxAddress) {
+                const bizFields = document.getElementById('cust-biz-fields');
+                const toggleIcon = document.getElementById('cust-biz-toggle-icon');
+                if (bizFields) bizFields.classList.remove('hidden');
+                if (toggleIcon) toggleIcon.classList.add('rotate-180');
+            }
             
             // Chọn giới tính nếu có (hoặc để nguyên)
             // Điền Ghi chú
@@ -2034,7 +2098,10 @@ function cancelEditMode() {
     // Clear data
     document.getElementById('cust-name').value = '';
     document.getElementById('cust-phone').value = '';
+    if(document.getElementById('cust-team')) document.getElementById('cust-team').value = '';
     document.getElementById('cust-company').value = '';
+    if(document.getElementById('cust-tax-code')) document.getElementById('cust-tax-code').value = '';
+    if(document.getElementById('cust-tax-address')) document.getElementById('cust-tax-address').value = '';
     document.getElementById('inv-note').value = '';
     document.getElementById('cust-name').dispatchEvent(new Event('input'));
     
@@ -2221,11 +2288,19 @@ function renderCustomerTable() {
             const phone = c.phoneId || '';
             const code = c.customerCode || '';
             const comp = c.company || '';
+            const team = c.team || '';
+            const tax = c.taxCode || '';
+            const addr = c.taxAddress || '';
             return removeVietnameseTones(name).includes(normSearch) ||
                 name.toLowerCase().includes(searchVal) ||
                 phone.includes(searchVal) ||
                 code.toLowerCase().includes(searchVal) ||
-                comp.toLowerCase().includes(searchVal);
+                removeVietnameseTones(comp).includes(normSearch) ||
+                comp.toLowerCase().includes(searchVal) ||
+                removeVietnameseTones(team).includes(normSearch) ||
+                team.toLowerCase().includes(searchVal) ||
+                tax.toLowerCase().includes(searchVal) ||
+                removeVietnameseTones(addr).includes(normSearch);
         });
     }
 
@@ -2242,6 +2317,18 @@ function renderCustomerTable() {
                 lastVisitStr = `${d.getDate().toString().padStart(2,'0')}/${(d.getMonth()+1).toString().padStart(2,'0')}/${d.getFullYear()}`;
             }
 
+            let orgDisplay = '---';
+            if (c.company && c.team) {
+                orgDisplay = `<span class="font-semibold text-gray-800">${c.company}</span><br><span class="text-xs text-gray-500">Đội: ${c.team}</span>`;
+            } else if (c.company) {
+                orgDisplay = `<span class="font-semibold text-gray-800">${c.company}</span>`;
+            } else if (c.team) {
+                orgDisplay = `<span class="text-gray-700">${c.team}</span>`;
+            }
+            if (c.taxCode) {
+                orgDisplay += `<br><span class="text-[11px] font-mono text-blue-600 bg-blue-50 px-1 py-0.5 rounded">MST: ${c.taxCode}</span>`;
+            }
+
             const safeName = (c.name || '').replace(/'/g, "\\'");
             const tr = document.createElement('tr');
             tr.className = "border-b hover:bg-blue-50 transition text-sm text-gray-700";
@@ -2250,7 +2337,7 @@ function renderCustomerTable() {
                 <td class="p-3 border-r font-bold text-blue-700 cursor-pointer hover:underline" onclick="viewCustomer('${c.phoneId}')" title="Click xem chi tiết">${c.name || '---'}</td>
                 <td class="p-3 border-r font-mono font-bold">${c.phoneId || '---'}</td>
                 <td class="p-3 border-r text-gray-600">${c.gender || '---'}</td>
-                <td class="p-3 border-r text-gray-600">${c.company || '---'}</td>
+                <td class="p-3 border-r text-gray-600">${orgDisplay}</td>
                 <td class="p-3 border-r text-center font-bold text-gray-800">${c.ticketCount || 0}</td>
                 <td class="p-3 border-r text-right font-bold text-green-700 text-base">${formatVND(c.totalSpent || 0)}</td>
                 <td class="p-3 border-r text-gray-500 whitespace-nowrap"><i class="fa-regular fa-calendar mr-1"></i> ${lastVisitStr}</td>
@@ -2275,6 +2362,20 @@ if(document.getElementById('customer-search')) {
     document.getElementById('customer-search').addEventListener('input', renderCustomerTable);
 }
 
+function toggleBookingBizInfo() {
+    const bizFields = document.getElementById('cust-biz-fields');
+    const toggleIcon = document.getElementById('cust-biz-toggle-icon');
+    if (!bizFields) return;
+    const isHidden = bizFields.classList.contains('hidden');
+    if (isHidden) {
+        bizFields.classList.remove('hidden');
+        if (toggleIcon) toggleIcon.classList.add('rotate-180');
+    } else {
+        bizFields.classList.add('hidden');
+        if (toggleIcon) toggleIcon.classList.remove('rotate-180');
+    }
+}
+
 function openAddCustomerModal() {
     const titleEl = document.getElementById('customer-modal-title');
     const saveBtn = document.getElementById('c-save-btn');
@@ -2285,7 +2386,10 @@ function openAddCustomerModal() {
 
     document.getElementById('c-phone').value = '';
     document.getElementById('c-name').value = '';
+    if (document.getElementById('c-team')) document.getElementById('c-team').value = '';
     document.getElementById('c-company').value = '';
+    if (document.getElementById('c-tax-code')) document.getElementById('c-tax-code').value = '';
+    if (document.getElementById('c-tax-address')) document.getElementById('c-tax-address').value = '';
     document.getElementById('c-gender').value = 'Anh';
     document.getElementById('customer-modal').classList.remove('hidden');
 }
@@ -2303,7 +2407,10 @@ function openEditCustomerModal(phoneId) {
 
     document.getElementById('c-phone').value = cust.phoneId || '';
     document.getElementById('c-name').value = cust.name || '';
+    if (document.getElementById('c-team')) document.getElementById('c-team').value = cust.team || '';
     document.getElementById('c-company').value = cust.company || '';
+    if (document.getElementById('c-tax-code')) document.getElementById('c-tax-code').value = cust.taxCode || '';
+    if (document.getElementById('c-tax-address')) document.getElementById('c-tax-address').value = cust.taxAddress || '';
     document.getElementById('c-gender').value = cust.gender || 'Anh';
 
     document.getElementById('customer-modal').classList.remove('hidden');
@@ -2319,7 +2426,10 @@ async function saveCustomerModal() {
     const phone = document.getElementById('c-phone').value.trim();
     const name = document.getElementById('c-name').value.trim();
     const gender = document.getElementById('c-gender').value;
+    const team = document.getElementById('c-team') ? document.getElementById('c-team').value.trim() : '';
     const company = document.getElementById('c-company').value.trim();
+    const taxCode = document.getElementById('c-tax-code') ? document.getElementById('c-tax-code').value.trim() : '';
+    const taxAddress = document.getElementById('c-tax-address') ? document.getElementById('c-tax-address').value.trim() : '';
 
     if (!phone || !name) {
         Swal.fire('Lỗi', 'Vui lòng nhập đủ Số điện thoại và Họ tên!', 'error');
@@ -2347,7 +2457,10 @@ async function saveCustomerModal() {
                 customerCode: code,
                 name: name,
                 gender: gender,
+                team: team,
                 company: company,
+                taxCode: taxCode,
+                taxAddress: taxAddress,
                 createdAt: firebase.firestore.FieldValue.serverTimestamp(),
                 lastVisit: firebase.firestore.FieldValue.serverTimestamp(),
                 totalSpent: 0,
@@ -2362,7 +2475,10 @@ async function saveCustomerModal() {
                 await db.collection('customers').doc(originalPhone).update({
                     name: name,
                     gender: gender,
-                    company: company
+                    team: team,
+                    company: company,
+                    taxCode: taxCode,
+                    taxAddress: taxAddress
                 });
             } else {
                 // Đổi số điện thoại: kiểm tra xem số mới có bị trùng không
@@ -2380,7 +2496,10 @@ async function saveCustomerModal() {
                     ...oldData,
                     name: name,
                     gender: gender,
-                    company: company
+                    team: team,
+                    company: company,
+                    taxCode: taxCode,
+                    taxAddress: taxAddress
                 });
 
                 // Xóa doc cũ
@@ -2443,7 +2562,10 @@ async function viewCustomer(phoneId) {
     el('vc-phone').textContent = cust.phoneId || '---';
     el('vc-phone-link').href = `tel:${cust.phoneId || ''}`;
     el('vc-gender').textContent = cust.gender || '---';
+    if (el('vc-team')) el('vc-team').textContent = cust.team || '---';
     el('vc-company').textContent = cust.company || '---';
+    if (el('vc-tax-code')) el('vc-tax-code').textContent = cust.taxCode || '---';
+    if (el('vc-tax-address')) el('vc-tax-address').textContent = cust.taxAddress || '---';
     el('vc-tickets').textContent = cust.ticketCount || 0;
     el('vc-spent').textContent = formatVND(cust.totalSpent || 0);
 
@@ -2580,8 +2702,19 @@ function setupAutocomplete() {
             li.onclick = () => {
                 document.getElementById('cust-name').value = m.name || '';
                 document.getElementById('cust-phone').value = m.phoneId || '';
+                if (document.getElementById('cust-team')) document.getElementById('cust-team').value = m.team || '';
                 document.getElementById('cust-company').value = m.company || '';
-                if(m.gender) document.getElementById('cust-gender').value = m.gender;
+                if (document.getElementById('cust-tax-code')) document.getElementById('cust-tax-code').value = m.taxCode || '';
+                if (document.getElementById('cust-tax-address')) document.getElementById('cust-tax-address').value = m.taxAddress || '';
+                if (m.gender) document.getElementById('cust-gender').value = m.gender;
+                
+                // Mở khối thông tin doanh nghiệp nếu có dữ liệu
+                if (m.company || m.taxCode || m.taxAddress) {
+                    const bizFields = document.getElementById('cust-biz-fields');
+                    const toggleIcon = document.getElementById('cust-biz-toggle-icon');
+                    if (bizFields) bizFields.classList.remove('hidden');
+                    if (toggleIcon) toggleIcon.classList.add('rotate-180');
+                }
                 
                 document.getElementById('cust-name').dispatchEvent(new Event('input'));
                 document.getElementById('cust-phone').dispatchEvent(new Event('input'));
@@ -2889,7 +3022,10 @@ async function submitRenewDirect() {
         createdAt: firebase.firestore.FieldValue.serverTimestamp(),
         customerName: currentRenewData.customerName || '',
         customerPhone: currentRenewData.customerPhone || '',
+        team: currentRenewData.team || '',
         company: currentRenewData.company || '',
+        taxCode: currentRenewData.taxCode || '',
+        taxAddress: currentRenewData.taxAddress || '',
         gender: currentRenewData.gender || 'Anh',
         paymentMethod: payMethod,
         note: note,
@@ -2967,7 +3103,10 @@ function transferRenewToBooking() {
     const itemsToTransfer = JSON.parse(JSON.stringify(currentRenewCalculatedItems));
     const customerName = currentRenewData.customerName || '';
     const customerPhone = currentRenewData.customerPhone || '';
+    const team = currentRenewData.team || '';
     const company = currentRenewData.company || '';
+    const taxCode = currentRenewData.taxCode || '';
+    const taxAddress = currentRenewData.taxAddress || '';
     const gender = currentRenewData.gender || 'Anh';
     const vatChecked = (currentRenewData.vatAmount && currentRenewData.vatAmount > 0);
 
@@ -2982,11 +3121,21 @@ function transferRenewToBooking() {
     // Điền thông tin khách
     if (el('cust-name')) el('cust-name').value = customerName;
     if (el('cust-phone')) el('cust-phone').value = customerPhone;
+    if (el('cust-team')) el('cust-team').value = team;
     if (el('cust-company')) el('cust-company').value = company;
+    if (el('cust-tax-code')) el('cust-tax-code').value = taxCode;
+    if (el('cust-tax-address')) el('cust-tax-address').value = taxAddress;
     if (el('cust-gender')) el('cust-gender').value = gender;
     if (el('inv-note')) el('inv-note').value = fullNote;
 
-    ['cust-name', 'cust-phone', 'cust-company', 'cust-gender'].forEach(id => {
+    if (company || taxCode || taxAddress) {
+        const bizFields = document.getElementById('cust-biz-fields');
+        const toggleIcon = document.getElementById('cust-biz-toggle-icon');
+        if (bizFields) bizFields.classList.remove('hidden');
+        if (toggleIcon) toggleIcon.classList.add('rotate-180');
+    }
+
+    ['cust-name', 'cust-phone', 'cust-team', 'cust-company', 'cust-tax-code', 'cust-tax-address', 'cust-gender'].forEach(id => {
         if (el(id)) el(id).dispatchEvent(new Event('input'));
     });
 
