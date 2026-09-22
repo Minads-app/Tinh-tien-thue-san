@@ -751,14 +751,39 @@ async function captureAndShowReceiptPopup() {
         didOpen: () => Swal.showLoading()
     });
 
+    // 1. Kiểm tra xem #tab-booking có đang bị ẩn không (khi user ở tab Báo cáo, Cài đặt, Khách hàng...)
+    const tabBooking = document.getElementById('tab-booking');
+    const wasBookingHidden = tabBooking && tabBooking.classList.contains('hidden');
+    let prevStyle = {};
+
+    if (wasBookingHidden) {
+        prevStyle = {
+            position: tabBooking.style.position,
+            left: tabBooking.style.left,
+            top: tabBooking.style.top,
+            width: tabBooking.style.width,
+            zIndex: tabBooking.style.zIndex,
+            visibility: tabBooking.style.visibility,
+            display: tabBooking.style.display
+        };
+        // Tạm đưa tab-booking ra ngoài màn hình nhưng vẫn hiện để trình duyệt layout đầy đủ kích thước
+        tabBooking.classList.remove('hidden');
+        tabBooking.style.position = 'fixed';
+        tabBooking.style.left = '-9999px';
+        tabBooking.style.top = '0';
+        tabBooking.style.width = '1200px';
+        tabBooking.style.zIndex = '-1000';
+        tabBooking.style.visibility = 'visible';
+    }
+
     try {
-        // Chờ QR image load xong
+        // Chờ QR image load xong (nếu có)
         const qrImg = document.getElementById('qr-image');
         if (qrImg && qrImg.src && !qrImg.complete) {
             await new Promise((resolve) => {
                 qrImg.onload = resolve;
                 qrImg.onerror = resolve;
-                setTimeout(resolve, 3000);
+                setTimeout(resolve, 2000);
             });
         }
 
@@ -766,7 +791,7 @@ async function captureAndShowReceiptPopup() {
         const canvas = await html2canvas(invoiceEl, {
             scale: 2,
             useCORS: true,
-            allowTaint: true,
+            allowTaint: false,
             backgroundColor: '#ffffff',
             logging: false,
             // Ẩn các phần tử no-print khi chụp
@@ -774,6 +799,17 @@ async function captureAndShowReceiptPopup() {
                 return el.classList && el.classList.contains('no-print');
             },
             onclone: (clonedDoc) => {
+                const clonedBooking = clonedDoc.getElementById('tab-booking');
+                if (clonedBooking) {
+                    clonedBooking.classList.remove('hidden');
+                    clonedBooking.style.display = 'grid';
+                    clonedBooking.style.visibility = 'visible';
+                }
+                const clonedInvoice = clonedDoc.getElementById('invoice-area');
+                if (clonedInvoice) {
+                    clonedInvoice.style.display = 'flex';
+                    clonedInvoice.style.visibility = 'visible';
+                }
                 // Hiện các phần tử print-only trong bản clone
                 clonedDoc.querySelectorAll('.print-only').forEach(el => {
                     el.style.display = 'block';
@@ -781,12 +817,42 @@ async function captureAndShowReceiptPopup() {
             }
         });
 
-        const imgDataUrl = canvas.toDataURL('image/png');
+        // Khôi phục lại tab-booking ngay sau khi html2canvas đã chụp xong
+        if (wasBookingHidden && tabBooking) {
+            tabBooking.classList.add('hidden');
+            tabBooking.style.position = prevStyle.position || '';
+            tabBooking.style.left = prevStyle.left || '';
+            tabBooking.style.top = prevStyle.top || '';
+            tabBooking.style.width = prevStyle.width || '';
+            tabBooking.style.zIndex = prevStyle.zIndex || '';
+            tabBooking.style.visibility = prevStyle.visibility || '';
+            tabBooking.style.display = prevStyle.display || '';
+        }
+
+        if (!canvas || canvas.width === 0 || canvas.height === 0) {
+            throw new Error(`Kích thước hình phiếu không hợp lệ (${canvas?.width}x${canvas?.height})`);
+        }
+
+        let imgDataUrl = '';
+        try {
+            imgDataUrl = canvas.toDataURL('image/png');
+        } catch (e) {
+            console.error("toDataURL lỗi:", e);
+        }
+
+        if (!imgDataUrl || imgDataUrl === 'data:,' || imgDataUrl.length < 50) {
+            throw new Error("Không thể chuyển đổi canvas thành dữ liệu ảnh hợp lệ");
+        }
 
         // Lưu blob để dùng cho copy clipboard
-        const imgBlob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+        let imgBlob = null;
+        try {
+            imgBlob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+        } catch (e) {
+            console.warn("toBlob lỗi:", e);
+        }
 
-        Swal.fire({
+        await Swal.fire({
             title: `<span class="text-base font-bold text-gray-700"><i class="fa-solid fa-file-invoice mr-1.5 text-indigo-600"></i>Phiếu #${savedInvoiceId}</span>`,
             html: `
                 <div class="space-y-3">
@@ -843,7 +909,7 @@ async function captureAndShowReceiptPopup() {
 
                     try {
                         // Thử dùng Clipboard API (modern browsers)
-                        if (navigator.clipboard && typeof ClipboardItem !== 'undefined') {
+                        if (navigator.clipboard && typeof ClipboardItem !== 'undefined' && imgBlob) {
                             await navigator.clipboard.write([
                                 new ClipboardItem({ 'image/png': imgBlob })
                             ]);
@@ -877,11 +943,22 @@ async function captureAndShowReceiptPopup() {
         });
 
     } catch (err) {
+        // Đảm bảo luôn khôi phục lại tab-booking nếu có lỗi xảy ra
+        if (wasBookingHidden && tabBooking) {
+            tabBooking.classList.add('hidden');
+            tabBooking.style.position = prevStyle.position || '';
+            tabBooking.style.left = prevStyle.left || '';
+            tabBooking.style.top = prevStyle.top || '';
+            tabBooking.style.width = prevStyle.width || '';
+            tabBooking.style.zIndex = prevStyle.zIndex || '';
+            tabBooking.style.visibility = prevStyle.visibility || '';
+            tabBooking.style.display = prevStyle.display || '';
+        }
         console.error('Lỗi chụp phiếu:', err);
         Swal.fire({
             icon: 'error',
             title: 'Không tạo được hình phiếu',
-            text: 'Đã xảy ra lỗi khi tạo ảnh phiếu. Bạn có muốn in trực tiếp không?',
+            text: 'Đã xảy ra lỗi khi tạo ảnh phiếu: ' + (err.message || 'Lỗi không xác định') + '. Bạn có muốn in trực tiếp không?',
             showCancelButton: true,
             confirmButtonText: '<i class="fa-solid fa-print mr-1"></i> In trực tiếp',
             cancelButtonText: 'Đóng'
@@ -1079,6 +1156,7 @@ function updatePaymentInfo(finalTotal, isVatChecked) {
         // Chuẩn hóa mã phiếu: Xóa dấu gạch ngang (VD: HBA-20260320-1966 -> HBA202603201966)
         // Thêm tiền tố SEVQR để Vietinbank đẩy thông báo cho SePay
         const cleanInvoiceId = currentInvoiceId.replace(/-/g, '');
+        qrImageEl.crossOrigin = 'anonymous';
         qrImageEl.src = `https://img.vietqr.io/image/${selectedBank.qrString}-compact.png?amount=${finalTotal}&addInfo=SEVQR%20${cleanInvoiceId}&accountName=${encodeURIComponent(selectedBank.accName || '')}`;
     } else {
         qrImageEl.src = '';
@@ -2291,24 +2369,22 @@ async function printAndShareReceipt(data) {
     
     closeReceiptModal();
     
-    // Chụp và hiện popup in / chia sẻ
+    // Chụp và hiện popup in / chia sẻ (đợi người dùng xem xong và đóng popup)
     await captureAndShowReceiptPopup();
     
-    // Sau khi popup xong, khôi phục lại trạng thái ban đầu của form chính
-    setTimeout(() => {
-        if (venueNameEl) venueNameEl.textContent = (siteSettings.venueName || '---') + ' - Phiếu Thanh Toán';
-        billItems = [];
-        generateNewInvoiceId();
-        if (document.getElementById('inv-date')) document.getElementById('inv-date').textContent = formatDateFull(new Date());
-        if (document.getElementById('display-name')) document.getElementById('display-name').textContent = '---';
-        if (document.getElementById('display-phone')) document.getElementById('display-phone').textContent = '---';
-        if (document.getElementById('display-company')) document.getElementById('display-company').textContent = '';
-        if (document.getElementById('display-gender')) document.getElementById('display-gender').textContent = '';
-        if (document.getElementById('print-note')) document.getElementById('print-note').textContent = '';
-        if (document.getElementById('discount-val')) document.getElementById('discount-val').value = '';
-        if (document.getElementById('vat-check')) document.getElementById('vat-check').checked = false;
-        renderInvoice();
-    }, 500);
+    // Sau khi popup đóng, khôi phục lại trạng thái ban đầu của form chính
+    if (venueNameEl) venueNameEl.textContent = (siteSettings.venueName || '---') + ' - Phiếu Thanh Toán';
+    billItems = [];
+    generateNewInvoiceId();
+    if (document.getElementById('inv-date')) document.getElementById('inv-date').textContent = formatDateFull(new Date());
+    if (document.getElementById('display-name')) document.getElementById('display-name').textContent = '---';
+    if (document.getElementById('display-phone')) document.getElementById('display-phone').textContent = '---';
+    if (document.getElementById('display-company')) document.getElementById('display-company').textContent = '';
+    if (document.getElementById('display-gender')) document.getElementById('display-gender').textContent = '';
+    if (document.getElementById('print-note')) document.getElementById('print-note').textContent = '';
+    if (document.getElementById('discount-val')) document.getElementById('discount-val').value = '';
+    if (document.getElementById('vat-check')) document.getElementById('vat-check').checked = false;
+    renderInvoice();
 }
 
 async function confirmPayment(docId) {
