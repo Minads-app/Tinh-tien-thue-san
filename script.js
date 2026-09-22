@@ -2115,33 +2115,32 @@ function viewReceipt(dataStrEncoded) {
         });
     }
 
+    const statusContainer = document.getElementById('rm-status-container');
     const statusBtn = document.getElementById('rm-status-btn');
     if (status === 'unpaid' || status === 'partial') {
-        statusBtn.style.display = 'block';
+        if (statusContainer) statusContainer.classList.remove('hidden');
+        statusBtn.style.display = 'flex';
         statusBtn.innerHTML = status === 'partial' 
-            ? `<i class="fa-solid fa-check-double mr-1"></i> Thu phần nợ còn lại (Tiền mặt)`
-            : `<i class="fa-solid fa-check mr-1"></i> Xác Nhận Đã Thanh Toán (Tiền mặt)`;
+            ? `<i class="fa-solid fa-check-double mr-1.5"></i> Thu phần nợ còn lại (Tiền mặt)`
+            : `<i class="fa-solid fa-check mr-1.5"></i> Xác Nhận Đã Thanh Toán (Tiền mặt)`;
         statusBtn.onclick = () => confirmPayment(data.docId);
     } else {
+        if (statusContainer) statusContainer.classList.add('hidden');
         statusBtn.style.display = 'none';
     }
 
-    // Gán sự kiện cho nút Gia Hạn, Sửa và Xóa trong modal xem chi tiết
+    // Gán sự kiện cho các nút trong modal xem chi tiết
     const renewBtn = document.getElementById('rm-renew-btn');
-    const editBtn = document.getElementById('rm-edit-btn');
     const editFullBtn = document.getElementById('rm-edit-full-btn');
     const deleteBtn = document.getElementById('rm-delete-btn');
+    const printBtn = document.getElementById('rm-print-btn');
+    const printShareBtn = document.getElementById('rm-print-share-btn');
     
     if (renewBtn) renewBtn.onclick = () => { closeReceiptModal(); openRenewModal(dataStrEncoded); };
-    editBtn.onclick = () => { closeReceiptModal(); editBill(dataStrEncoded); };
     if (editFullBtn) editFullBtn.onclick = () => { editFullBill(data.docId, dataStrEncoded); };
-    deleteBtn.onclick = () => { closeReceiptModal(); deleteBill(data.docId, invId); };
-
-    // Gán sự kiện cho nút In
-    const printBtn = document.getElementById('rm-print-btn');
-    if (printBtn) {
-        printBtn.onclick = () => { printReceipt(data); };
-    }
+    if (deleteBtn) deleteBtn.onclick = () => { closeReceiptModal(); deleteBill(data.docId, invId); };
+    if (printBtn) printBtn.onclick = () => { printReceipt(data); };
+    if (printShareBtn) printShareBtn.onclick = () => { printAndShareReceipt(data); };
 
     document.getElementById('receipt-modal').classList.remove('hidden');
 }
@@ -2157,6 +2156,7 @@ function printReceipt(data) {
     
     // Load dữ liệu vào khu vực invoice chính để in
     const invId = data.id || `CŨ-${(data.docId || '').slice(0,6).toUpperCase()}`;
+    currentInvoiceId = invId;
     
     // Set mã phiếu
     document.getElementById('inv-id').textContent = invId;
@@ -2237,6 +2237,78 @@ function printReceipt(data) {
             renderInvoice();
         }, 500);
     }, 300);
+}
+
+async function printAndShareReceipt(data) {
+    const status = data.status || 'paid';
+    const isPaid = (status === 'paid');
+    const docTitle = isPaid ? 'HÓA ĐƠN' : 'PHIẾU THANH TOÁN';
+    
+    const invId = data.id || `CŨ-${(data.docId || '').slice(0,6).toUpperCase()}`;
+    currentInvoiceId = invId;
+    if (document.getElementById('inv-id')) document.getElementById('inv-id').textContent = invId;
+    
+    const venueNameEl = document.getElementById('inv-venue-name');
+    if (venueNameEl) venueNameEl.textContent = (siteSettings.venueName || '---') + ' - ' + docTitle;
+    
+    let createdDate = new Date();
+    if (data.createdAt && data.createdAt.toDate) {
+        createdDate = data.createdAt.toDate();
+    } else if (data.createdAt && data.createdAt.seconds) {
+        createdDate = new Date(data.createdAt.seconds * 1000);
+    }
+    if (document.getElementById('inv-date')) document.getElementById('inv-date').textContent = formatDateFull(createdDate);
+    
+    if (document.getElementById('display-name')) document.getElementById('display-name').textContent = data.customerName || 'Khách Vãng Lai';
+    if (document.getElementById('display-phone')) document.getElementById('display-phone').textContent = data.customerPhone || '---';
+    if (document.getElementById('display-team')) document.getElementById('display-team').textContent = data.team ? `Đội: ${data.team}` : '';
+    if (document.getElementById('display-company')) document.getElementById('display-company').textContent = data.company ? `Công ty: ${data.company}` : '';
+    if (document.getElementById('display-tax-code')) document.getElementById('display-tax-code').textContent = data.taxCode ? `MST: ${data.taxCode}` : '';
+    if (document.getElementById('display-tax-address')) document.getElementById('display-tax-address').textContent = data.taxAddress ? `Đ/C: ${data.taxAddress}` : '';
+    if (document.getElementById('display-gender')) document.getElementById('display-gender').textContent = '';
+    
+    if (document.getElementById('print-pay-method')) document.getElementById('print-pay-method').textContent = data.paymentMethod || 'Tiền mặt';
+    if (document.getElementById('print-note')) document.getElementById('print-note').textContent = data.note || '';
+    
+    billItems = (data.items || []).map((item, idx) => ({
+        ...item,
+        id: Date.now() + idx
+    }));
+    
+    if (document.getElementById('discount-val')) document.getElementById('discount-val').value = '';
+    const vatAmount = data.vatAmount || 0;
+    if (document.getElementById('vat-check')) document.getElementById('vat-check').checked = (vatAmount > 0);
+    
+    renderInvoice();
+    
+    if (document.getElementById('sub-total')) document.getElementById('sub-total').textContent = formatVND(data.subTotal || 0);
+    if (document.getElementById('vat-amount')) document.getElementById('vat-amount').textContent = formatVND(vatAmount);
+    if (document.getElementById('final-total')) document.getElementById('final-total').textContent = formatVND(data.totalAmount || 0);
+    
+    if (isPaid && document.getElementById('print-note')) {
+        document.getElementById('print-note').textContent = (data.note ? data.note + ' | ' : '') + '✅ ĐÃ THANH TOÁN';
+    }
+    
+    closeReceiptModal();
+    
+    // Chụp và hiện popup in / chia sẻ
+    await captureAndShowReceiptPopup();
+    
+    // Sau khi popup xong, khôi phục lại trạng thái ban đầu của form chính
+    setTimeout(() => {
+        if (venueNameEl) venueNameEl.textContent = (siteSettings.venueName || '---') + ' - Phiếu Thanh Toán';
+        billItems = [];
+        generateNewInvoiceId();
+        if (document.getElementById('inv-date')) document.getElementById('inv-date').textContent = formatDateFull(new Date());
+        if (document.getElementById('display-name')) document.getElementById('display-name').textContent = '---';
+        if (document.getElementById('display-phone')) document.getElementById('display-phone').textContent = '---';
+        if (document.getElementById('display-company')) document.getElementById('display-company').textContent = '';
+        if (document.getElementById('display-gender')) document.getElementById('display-gender').textContent = '';
+        if (document.getElementById('print-note')) document.getElementById('print-note').textContent = '';
+        if (document.getElementById('discount-val')) document.getElementById('discount-val').value = '';
+        if (document.getElementById('vat-check')) document.getElementById('vat-check').checked = false;
+        renderInvoice();
+    }, 500);
 }
 
 async function confirmPayment(docId) {

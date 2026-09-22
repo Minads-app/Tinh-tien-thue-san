@@ -805,18 +805,18 @@
     </div>
 
     <!-- Modal Xem Chi Tiết Phiếu -->
-    <div id="receipt-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-50">
-        <div class="bg-white rounded-lg shadow-xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]">
+    <div id="receipt-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-50 p-3">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
             <div class="bg-indigo-600 p-4 flex justify-between items-center text-white">
                 <h2 class="text-lg font-bold"><i class="fa-solid fa-file-invoice mr-2"></i> Chi Tiết Phiếu: <span id="rm-id"></span></h2>
-                <button onclick="closeReceiptModal()" class="text-indigo-200 hover:text-white transition group"><i class="fa-solid fa-xmark text-xl group-hover:scale-110"></i></button>
+                <button onclick="closeReceiptModal()" class="text-indigo-200 hover:text-white transition group cursor-pointer"><i class="fa-solid fa-xmark text-xl group-hover:scale-110"></i></button>
             </div>
             
             <div class="p-5 overflow-y-auto" id="rm-content">
                 <!-- Nội dung phiếu đổ vào đây -->
             </div>
 
-            <div class="px-5 pb-5">
+            <div class="px-5 pb-4">
                 <h3 class="text-sm font-bold text-gray-800 border-b pb-2 mb-2"><i class="fa-solid fa-clock-rotate-left mr-1"></i> Lịch sử thanh toán</h3>
                 <table class="w-full text-left text-sm border">
                     <thead>
@@ -827,31 +827,42 @@
                 <div id="payment-history-empty" class="text-xs text-gray-500 italic py-2 text-center">Đang tải lịch sử thanh toán...</div>
             </div>
             
-            <div class="bg-gray-50 border-t p-4 flex justify-between items-center">
-                <div class="flex space-x-2">
-                    <button id="rm-renew-btn" class="bg-teal-600 hover:bg-teal-700 text-white font-bold py-2 px-3 rounded transition text-sm flex items-center" title="Gia hạn phiếu sang tháng tiếp theo (cùng lịch, cùng sân)">
-                        <i class="fa-solid fa-calendar-plus mr-1"></i> Gia Hạn
-                    </button>
-                    <button id="rm-edit-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-3 rounded transition text-sm flex items-center" title="Sửa Tổng tiền / Khách hàng / Trạng thái">
-                        <i class="fa-solid fa-pen mr-1"></i> Sửa Nhanh
-                    </button>
-                    <button id="rm-edit-full-btn" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-3 rounded transition text-sm flex items-center" title="Sửa sân chơi, thời gian, thuộc tính vé">
-                        <i class="fa-solid fa-pen-to-square mr-1"></i> Sửa Lịch
-                    </button>
-                    <button id="rm-delete-btn" class="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-3 rounded transition text-sm flex items-center">
-                        <i class="fa-solid fa-trash mr-1"></i> Xóa
+            <!-- Footer actions sắp xếp 2 tầng gọn gàng -->
+            <div class="bg-gray-50 border-t p-3.5 space-y-2.5">
+                <!-- Tầng 1: Nút Thu Tiền Mặt / Xác Nhận Thanh Toán (chỉ hiện khi còn nợ) -->
+                <div id="rm-status-container" class="w-full">
+                    <button id="rm-status-btn" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 px-4 rounded-lg transition text-sm flex items-center justify-center shadow-sm cursor-pointer">
+                        <i class="fa-solid fa-check mr-1.5"></i> Xác Nhận Đã Thanh Toán
                     </button>
                 </div>
-                <div class="flex space-x-2">
-                    <button id="rm-status-btn" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded transition text-sm">
-                        <i class="fa-solid fa-check mr-1"></i> Xác Nhận Đã Thanh Toán
-                    </button>
-                    <button id="rm-print-btn" class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded transition text-sm flex items-center">
-                        <i class="fa-solid fa-print mr-1"></i> In
-                    </button>
-                    <button onclick="closeReceiptModal()" class="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded transition text-sm">
-                        Đóng
-                    </button>
+
+                <!-- Tầng 2: Các nút thao tác chính chia 2 cụm rõ ràng -->
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                    <!-- Cụm trái: Thao tác phiếu -->
+                    <div class="flex items-center gap-1.5 sm:gap-2">
+                        <button id="rm-edit-full-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-3 rounded-lg transition text-xs sm:text-sm flex items-center shadow-sm cursor-pointer" title="Sửa sân chơi, thời gian, thuộc tính phiếu">
+                            <i class="fa-solid fa-pen-to-square mr-1.5"></i> Sửa Phiếu
+                        </button>
+                        <button id="rm-renew-btn" class="bg-teal-600 hover:bg-teal-700 text-white font-semibold py-2 px-3 rounded-lg transition text-xs sm:text-sm flex items-center shadow-sm cursor-pointer" title="Gia hạn phiếu sang tháng tiếp theo (cùng lịch, cùng sân)">
+                            <i class="fa-solid fa-calendar-plus mr-1.5"></i> Gia Hạn
+                        </button>
+                        <button id="rm-delete-btn" class="bg-red-50 hover:bg-red-100 text-red-600 hover:text-red-700 border border-red-200 font-semibold py-2 px-2.5 sm:px-3 rounded-lg transition text-xs sm:text-sm flex items-center cursor-pointer" title="Xóa phiếu này">
+                            <i class="fa-solid fa-trash mr-1.5"></i> Xóa
+                        </button>
+                    </div>
+
+                    <!-- Cụm phải: In, In & Chia Sẻ, Đóng -->
+                    <div class="flex items-center gap-1.5 sm:gap-2">
+                        <button id="rm-print-btn" class="bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2 px-3 rounded-lg transition text-xs sm:text-sm flex items-center shadow-sm cursor-pointer" title="In trực tiếp phiếu này">
+                            <i class="fa-solid fa-print mr-1.5"></i> In
+                        </button>
+                        <button id="rm-print-share-btn" class="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2 px-3 rounded-lg transition text-xs sm:text-sm flex items-center shadow-sm cursor-pointer" title="Xem ảnh phiếu để in hoặc sao chép vào bộ nhớ tạm gửi khách">
+                            <i class="fa-solid fa-share-from-square mr-1.5"></i> In & Chia Sẻ
+                        </button>
+                        <button onclick="closeReceiptModal()" class="bg-gray-200 hover:bg-gray-300 text-gray-700 font-semibold py-2 px-3 sm:px-4 rounded-lg transition text-xs sm:text-sm cursor-pointer">
+                            Đóng
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
