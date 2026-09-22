@@ -989,7 +989,7 @@ function renderInvoice() {
 
             if (hasSkipped || hasAdded) {
                 scheduleSection = `
-                    <div class="mt-1 flex flex-wrap items-center gap-1.5">
+                    <div class="mt-1 flex flex-wrap items-center gap-1.5 no-print">
                         ${hasSkipped ? `
                             <span class="text-xs text-red-600 font-semibold bg-red-50 border border-red-200 px-1.5 py-0.5 rounded inline-flex items-center" title="Ngày đã trừ: ${item.skipped.join(', ')}">
                                 <i class="fa-solid fa-calendar-xmark mr-1"></i>Trừ (${item.skipped.length}): ${item.skipped.join(', ')}
