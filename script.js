@@ -524,7 +524,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 // Xóa giao diện Edit Mode (nếu đang bật)
                 if (document.getElementById('cancel-edit-btn')) {
-                    document.getElementById('inv-id').parentElement.classList.remove('text-orange-600', 'bg-orange-100', 'p-1', 'rounded');
+                    document.getElementById('inv-id').parentElement.classList.remove('text-orange-600', 'bg-orange-100', 'p-1', 'px-1.5', 'py-0.5', 'rounded');
                     document.getElementById('cancel-edit-btn').classList.add('hidden');
                     document.getElementById('print-btn-text').textContent = 'Lưu & Xuất Phiếu';
                     document.getElementById('print-btn').classList.replace('bg-orange-600', 'bg-blue-600');
@@ -2298,7 +2298,7 @@ function editFullBill(docId, dataStrEncoded) {
             if (document.getElementById('inv-id')) document.getElementById('inv-id').textContent = currentInvoiceId;
             
             // Đổi giao diện để User biết đang sửa
-            document.getElementById('inv-id').parentElement.classList.add('text-orange-600', 'bg-orange-100', 'p-1', 'rounded');
+            document.getElementById('inv-id').parentElement.classList.add('text-orange-600', 'bg-orange-100', 'px-1.5', 'py-0.5', 'rounded');
             document.getElementById('cancel-edit-btn').classList.remove('hidden');
             document.getElementById('print-btn-text').textContent = 'Lưu Phiếu (Ghi đè)';
             document.getElementById('print-btn').classList.replace('bg-blue-600', 'bg-orange-600');
@@ -2374,7 +2374,7 @@ function editFullBill(docId, dataStrEncoded) {
 
 function cancelEditMode() {
     generateNewInvoiceId();
-    document.getElementById('inv-id').parentElement.classList.remove('text-orange-600', 'bg-orange-100', 'p-1', 'rounded');
+    document.getElementById('inv-id').parentElement.classList.remove('text-orange-600', 'bg-orange-100', 'p-1', 'px-1.5', 'py-0.5', 'rounded');
     document.getElementById('cancel-edit-btn').classList.add('hidden');
     document.getElementById('print-btn-text').textContent = 'Lưu & Xuất Phiếu';
     document.getElementById('print-btn').classList.replace('bg-orange-600', 'bg-blue-600');
