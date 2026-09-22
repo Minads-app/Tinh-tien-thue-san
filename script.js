@@ -1257,6 +1257,8 @@ function openScheduleEditModalForItem(itemId) {
         return timeRange ? `${dateDesc} (${timeRange})` : dateDesc;
     }
 
+    const similarCourtsHtml = hasMultipleSimilarCourts ? '<label class="flex items-center gap-2 p-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800 cursor-pointer"><input type="checkbox" id="swal-apply-similar" class="rounded text-amber-600 focus:ring-amber-500 w-4 h-4" checked><span>Đồng thời áp dụng các thay đổi này cho các sân khác cùng thứ trong phiếu</span></label>' : '';
+
     const modalContentHtml = `
         <div class="text-left space-y-3">
             <div class="bg-gray-50 p-2.5 rounded-lg border border-gray-200 text-xs text-gray-600 space-y-2">
@@ -1313,12 +1315,7 @@ function openScheduleEditModalForItem(itemId) {
 
             <div id="swal-schedule-dates-container" class="max-h-56 overflow-y-auto space-y-1.5 p-1 border rounded-lg bg-gray-50/50"></div>
 
-            ${hasMultipleSimilarCourts ? \`
-                <label class="flex items-center gap-2 p-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800 cursor-pointer">
-                    <input type="checkbox" id="swal-apply-similar" class="rounded text-amber-600 focus:ring-amber-500 w-4 h-4" checked>
-                    <span>Đồng thời áp dụng các thay đổi này cho các sân khác cùng thứ trong phiếu</span>
-                </label>
-            \` : ''}
+            ${similarCourtsHtml}
 
             <div class="bg-indigo-50 border border-indigo-200 rounded-lg p-2.5 text-xs text-indigo-950 space-y-1">
                 <div class="flex justify-between"><span class="text-gray-600">Lịch định kỳ ban đầu:</span><span class="font-bold text-gray-800" id="swal-calc-original">${regularDates.length} buổi</span></div>
