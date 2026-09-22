@@ -392,6 +392,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const vatAmountStr = document.getElementById('vat-amount').textContent.replace(/[^0-9]/g, '');
         const vatAmountNum = document.getElementById('vat-check').checked ? (parseInt(vatAmountStr) || 0) : 0;
 
+        const discountStr = document.getElementById('print-discount') ? document.getElementById('print-discount').textContent.replace(/[^0-9]/g, '') : '';
+        const discountNum = parseInt(discountStr) || Math.max(0, subTotalNum - (finalTotalNum - vatAmountNum));
+
         const startDateVal = document.getElementById('start-date').value || '';
         const endDateVal = document.getElementById('end-date').value || '';
         
@@ -456,6 +459,7 @@ document.addEventListener('DOMContentLoaded', () => {
             paymentMethod: payMethod,
             note: note,
             subTotal: subTotalNum,
+            discountAmount: discountNum,
             vatAmount: vatAmountNum,
             totalAmount: finalTotalNum,
             startDate: startDateVal,
@@ -812,7 +816,13 @@ async function captureAndShowReceiptPopup() {
                 }
                 // Hiện các phần tử print-only trong bản clone
                 clonedDoc.querySelectorAll('.print-only').forEach(el => {
-                    el.style.display = 'block';
+                    if (el.id === 'print-discount-row') {
+                        el.style.display = el.classList.contains('no-discount') ? 'none' : 'flex';
+                    } else if (el.id === 'vat-label-print') {
+                        el.style.display = el.classList.contains('no-vat') ? 'none' : 'block';
+                    } else {
+                        el.style.display = 'block';
+                    }
                 });
             }
         });
@@ -1090,19 +1100,34 @@ function renderInvoice() {
     const preTaxTotal = subTotal - discount;
     let vatAmount = 0;
     
+    const vatLabelPrint = document.getElementById('vat-label-print');
     if(isVatChecked) {
         vatAmount = preTaxTotal * 0.10;
         document.getElementById('vat-amount').style.display = 'block';
-        document.getElementById('vat-label-print').style.display = 'block';
+        if (vatLabelPrint) {
+            vatLabelPrint.style.display = 'block';
+            vatLabelPrint.classList.remove('no-vat');
+        }
     } else {
         document.getElementById('vat-amount').style.display = 'none';
-        document.getElementById('vat-label-print').style.display = 'none';
+        if (vatLabelPrint) {
+            vatLabelPrint.style.display = 'none';
+            vatLabelPrint.classList.add('no-vat');
+        }
     }
 
     const finalTotal = preTaxTotal + vatAmount;
 
     document.getElementById('sub-total').textContent = formatVND(subTotal);
     document.getElementById('print-discount').textContent = formatVND(discount);
+    const printDiscountRow = document.getElementById('print-discount-row');
+    if (printDiscountRow) {
+        if (discount > 0) {
+            printDiscountRow.classList.remove('no-discount');
+        } else {
+            printDiscountRow.classList.add('no-discount');
+        }
+    }
     document.getElementById('vat-amount').textContent = formatVND(vatAmount);
     document.getElementById('final-total').textContent = formatVND(finalTotal);
 
@@ -2128,7 +2153,8 @@ function viewReceipt(dataStrEncoded) {
         </div>`;
     }).join('');
 
-    const html = `
+        const modalDiscount = data.discountAmount !== undefined ? data.discountAmount : (data.discount !== undefined ? data.discount : Math.max(0, (data.subTotal || 0) - ((data.totalAmount || 0) - (data.vatAmount || 0))));
+        const html = `
         <div class="grid grid-cols-2 gap-4 mb-4 text-sm bg-gray-50 p-3 rounded">
             <div><span class="text-gray-500 font-medium">Khách hàng:</span> <br><b>${data.customerName || 'Vãng lai'}</b></div>
             <div><span class="text-gray-500 font-medium">SĐT:</span> <br><b>${data.customerPhone || '---'}</b></div>
@@ -2149,7 +2175,8 @@ function viewReceipt(dataStrEncoded) {
         </div>
         <div class="bg-indigo-50 p-3 rounded text-right space-y-1">
             <p class="text-sm text-gray-600">Tiền hàng: ${formatVND(data.subTotal || 0)}</p>
-            <p class="text-sm text-gray-600">Thuế VAT: ${formatVND(data.vatAmount || 0)}</p>
+            ${modalDiscount > 0 ? `<p class="text-sm text-emerald-700 font-medium">Giảm giá: -${formatVND(modalDiscount)}</p>` : ''}
+            ${(data.vatAmount && data.vatAmount > 0) ? `<p class="text-sm text-gray-600">Thuế VAT (10%): ${formatVND(data.vatAmount)}</p>` : ''}
             <p class="font-bold text-lg text-indigo-700 mt-2 pt-2 border-t border-indigo-100">Tổng V/A: ${formatVND(data.totalAmount || 0)}</p>
             <p class="text-sm font-bold text-green-700">Đã thanh toán: ${formatVND(data.paidAmount !== undefined ? data.paidAmount : (status==='paid' ? data.totalAmount : 0))}</p>
             <p class="text-sm font-bold ${data.remainingAmount > 0 ? "text-red-600" : (data.remainingAmount < 0 ? "text-purple-600" : "text-gray-600")}">Còn nợ: ${formatVND(data.remainingAmount !== undefined ? data.remainingAmount : (status==='paid' ? 0 : (data.totalAmount||0)))}</p>
@@ -2274,19 +2301,30 @@ function printReceipt(data) {
     }));
     
     // Set giảm giá
-    document.getElementById('discount-val').value = '';
+    const discountAmount = data.discountAmount !== undefined ? data.discountAmount : (data.discount !== undefined ? data.discount : Math.max(0, (data.subTotal || 0) - ((data.totalAmount || 0) - (data.vatAmount || 0))));
+    if (document.getElementById('discount-type')) document.getElementById('discount-type').value = 'money';
+    if (document.getElementById('discount-val')) document.getElementById('discount-val').value = discountAmount || '';
     
     // Set VAT
     const vatAmount = data.vatAmount || 0;
-    document.getElementById('vat-check').checked = (vatAmount > 0);
+    if (document.getElementById('vat-check')) document.getElementById('vat-check').checked = (vatAmount > 0);
     
     // Render invoice (sẽ tính sub-total từ items)
     renderInvoice();
     
     // Override lại tổng tiền từ dữ liệu gốc để chính xác
-    document.getElementById('sub-total').textContent = formatVND(data.subTotal || 0);
-    document.getElementById('vat-amount').textContent = formatVND(vatAmount);
-    document.getElementById('final-total').textContent = formatVND(data.totalAmount || 0);
+    if (document.getElementById('sub-total')) document.getElementById('sub-total').textContent = formatVND(data.subTotal || 0);
+    if (document.getElementById('print-discount')) document.getElementById('print-discount').textContent = formatVND(discountAmount);
+    const printDiscountRow = document.getElementById('print-discount-row');
+    if (printDiscountRow) {
+        if (discountAmount > 0) {
+            printDiscountRow.classList.remove('no-discount');
+        } else {
+            printDiscountRow.classList.add('no-discount');
+        }
+    }
+    if (document.getElementById('vat-amount')) document.getElementById('vat-amount').textContent = formatVND(vatAmount);
+    if (document.getElementById('final-total')) document.getElementById('final-total').textContent = formatVND(data.totalAmount || 0);
     
     // Nếu đã thanh toán, thêm dòng trạng thái ĐÃ THANH TOÁN
     if (isPaid) {
@@ -2353,13 +2391,25 @@ async function printAndShareReceipt(data) {
         id: Date.now() + idx
     }));
     
-    if (document.getElementById('discount-val')) document.getElementById('discount-val').value = '';
+    const discountAmount = data.discountAmount !== undefined ? data.discountAmount : (data.discount !== undefined ? data.discount : Math.max(0, (data.subTotal || 0) - ((data.totalAmount || 0) - (data.vatAmount || 0))));
+    if (document.getElementById('discount-type')) document.getElementById('discount-type').value = 'money';
+    if (document.getElementById('discount-val')) document.getElementById('discount-val').value = discountAmount || '';
+    
     const vatAmount = data.vatAmount || 0;
     if (document.getElementById('vat-check')) document.getElementById('vat-check').checked = (vatAmount > 0);
     
     renderInvoice();
     
     if (document.getElementById('sub-total')) document.getElementById('sub-total').textContent = formatVND(data.subTotal || 0);
+    if (document.getElementById('print-discount')) document.getElementById('print-discount').textContent = formatVND(discountAmount);
+    const printDiscountRow = document.getElementById('print-discount-row');
+    if (printDiscountRow) {
+        if (discountAmount > 0) {
+            printDiscountRow.classList.remove('no-discount');
+        } else {
+            printDiscountRow.classList.add('no-discount');
+        }
+    }
     if (document.getElementById('vat-amount')) document.getElementById('vat-amount').textContent = formatVND(vatAmount);
     if (document.getElementById('final-total')) document.getElementById('final-total').textContent = formatVND(data.totalAmount || 0);
     
@@ -2489,21 +2539,14 @@ function editFullBill(docId, dataStrEncoded) {
             const vatChecked = (data.vatAmount && data.vatAmount > 0);
             if(document.getElementById('vat-check')) document.getElementById('vat-check').checked = vatChecked;
             
-            // Calculate discount backward:
-            // subTotal = data.subTotal
-            // totalAmount = data.totalAmount
-            // vatAmount = data.vatAmount
-            // PreTax = totalAmount - vatAmount
-            // discount = subTotal - PreTax
-            if(data.subTotal) {
-                const discount = data.subTotal - (data.totalAmount - (data.vatAmount || 0));
-                if (discount > 0) {
-                    document.getElementById('discount-type').value = 'money';
-                    document.getElementById('discount-val').value = discount;
-                } else {
-                    document.getElementById('discount-type').value = 'money';
-                    document.getElementById('discount-val').value = '';
-                }
+            // Calculate discount (stored or backward):
+            const discount = data.discountAmount !== undefined ? data.discountAmount : (data.discount !== undefined ? data.discount : (data.subTotal ? Math.max(0, data.subTotal - (data.totalAmount - (data.vatAmount || 0))) : 0));
+            if (discount > 0) {
+                if (document.getElementById('discount-type')) document.getElementById('discount-type').value = 'money';
+                if (document.getElementById('discount-val')) document.getElementById('discount-val').value = discount;
+            } else {
+                if (document.getElementById('discount-type')) document.getElementById('discount-type').value = 'money';
+                if (document.getElementById('discount-val')) document.getElementById('discount-val').value = '';
             }
 
             renderInvoice();

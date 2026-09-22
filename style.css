@@ -63,6 +63,13 @@ body {
     .print-only { 
         display: block !important; 
     }
+    .print-only.flex, #print-discount-row {
+        display: flex !important;
+    }
+    #print-discount-row.no-discount,
+    #vat-label-print.no-vat {
+        display: none !important;
+    }
 
     /* Reset background và margin để in full trang A4/A5 */
     body, #invoice-area { 
