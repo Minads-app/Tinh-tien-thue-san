@@ -627,11 +627,11 @@
     </div>
 
     <!-- Modal Thêm/Sửa Khách Hàng -->
-    <div id="customer-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex flex-col items-center justify-center p-4 z-[60]">
+    <div id="customer-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex flex-col items-center justify-center p-4 z-[75]">
         <div class="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden flex flex-col max-h-[90vh]">
-            <div class="bg-blue-600 p-4 flex justify-between items-center text-white">
-                <h2 class="text-lg font-bold" id="customer-modal-title"><i class="fa-solid fa-user-plus mr-2"></i> Thông Tin Khách Hàng</h2>
-                <button onclick="closeCustomerModal()" class="text-blue-200 hover:text-white transition group"><i class="fa-solid fa-xmark text-xl group-hover:scale-110"></i></button>
+            <div class="bg-blue-600 p-4 flex justify-between items-center text-white cursor-move select-none" title="Nhấp giữ để di chuyển popup - Nhấp đúp để về giữa">
+                <h2 class="text-lg font-bold flex items-center" id="customer-modal-title"><i class="fa-solid fa-grip-lines-vertical opacity-50 mr-2 text-xs"></i><i class="fa-solid fa-user-plus mr-2"></i> Thông Tin Khách Hàng</h2>
+                <button onclick="closeCustomerModal()" class="text-blue-200 hover:text-white transition group cursor-pointer"><i class="fa-solid fa-xmark text-xl group-hover:scale-110"></i></button>
             </div>
             <div class="p-6 space-y-4 relative overflow-y-auto">
                 <input type="hidden" id="c-edit-original-phone" value="">
@@ -691,8 +691,9 @@
     <div id="view-customer-modal" class="fixed inset-0 bg-black bg-opacity-60 hidden flex items-center justify-center p-3 md:p-4 z-[60]">
         <div class="bg-white rounded-xl shadow-2xl w-full max-w-4xl overflow-hidden flex flex-col max-h-[92vh]">
             <!-- Header Hồ sơ khách -->
-            <div class="bg-gradient-to-r from-blue-700 via-indigo-700 to-blue-800 p-4 flex justify-between items-center text-white">
+            <div class="bg-gradient-to-r from-blue-700 via-indigo-700 to-blue-800 p-4 flex justify-between items-center text-white cursor-move select-none" title="Nhấp giữ để di chuyển popup - Nhấp đúp để về giữa">
                 <div class="flex items-center space-x-3">
+                    <i class="fa-solid fa-grip-lines-vertical opacity-50 text-xs"></i>
                     <div class="w-10 h-10 rounded-full bg-white bg-opacity-20 flex items-center justify-center text-xl font-bold">
                         <i class="fa-solid fa-user"></i>
                     </div>
@@ -862,10 +863,10 @@
     </div>
 
     <!-- Modal Xem Chi Tiết Phiếu -->
-    <div id="receipt-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-50 p-3">
+    <div id="receipt-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-[75] p-3">
         <div class="bg-white rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
-            <div class="bg-indigo-600 p-4 flex justify-between items-center text-white">
-                <h2 class="text-lg font-bold"><i class="fa-solid fa-file-invoice mr-2"></i> Chi Tiết Phiếu: <span id="rm-id"></span></h2>
+            <div class="bg-indigo-600 p-4 flex justify-between items-center text-white cursor-move select-none" title="Nhấp giữ để di chuyển popup - Nhấp đúp để về giữa">
+                <h2 class="text-lg font-bold flex items-center"><i class="fa-solid fa-grip-lines-vertical opacity-50 mr-2 text-xs"></i><i class="fa-solid fa-file-invoice mr-2"></i> Chi Tiết Phiếu: <span id="rm-id" class="ml-1"></span></h2>
                 <button onclick="closeReceiptModal()" class="text-indigo-200 hover:text-white transition group cursor-pointer"><i class="fa-solid fa-xmark text-xl group-hover:scale-110"></i></button>
             </div>
             
@@ -926,11 +927,11 @@
     </div>
 
     <!-- Modal Sửa Bill -->
-    <div id="edit-bill-modal" class="fixed inset-0 bg-black bg-opacity-60 hidden flex items-center justify-center z-[70] p-4">
+    <div id="edit-bill-modal" class="fixed inset-0 bg-black bg-opacity-60 hidden flex items-center justify-center z-[80] p-4">
         <div class="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden">
-            <div class="bg-gradient-to-r from-blue-600 to-indigo-600 p-4 flex justify-between items-center text-white">
-                <h2 class="text-lg font-bold"><i class="fa-solid fa-pen-to-square mr-2"></i>Sửa Phiếu: <span id="ebm-id" class="font-mono"></span></h2>
-                <button onclick="closeEditBillModal()" class="text-blue-200 hover:text-white transition"><i class="fa-solid fa-xmark text-xl"></i></button>
+            <div class="bg-gradient-to-r from-blue-600 to-indigo-600 p-4 flex justify-between items-center text-white cursor-move select-none" title="Nhấp giữ để di chuyển popup - Nhấp đúp để về giữa">
+                <h2 class="text-lg font-bold flex items-center"><i class="fa-solid fa-grip-lines-vertical opacity-50 mr-2 text-xs"></i><i class="fa-solid fa-pen-to-square mr-2"></i>Sửa Phiếu: <span id="ebm-id" class="font-mono ml-1"></span></h2>
+                <button onclick="closeEditBillModal()" class="text-blue-200 hover:text-white transition group cursor-pointer"><i class="fa-solid fa-xmark text-xl group-hover:scale-110"></i></button>
             </div>
             <div class="p-6 space-y-4">
                 <input type="hidden" id="ebm-docid">
@@ -979,10 +980,11 @@
     </div>
 
     <!-- Modal Gia Hạn Phiếu -->
-    <div id="renew-modal" class="fixed inset-0 bg-black bg-opacity-60 hidden flex items-center justify-center z-[80] p-4">
+    <div id="renew-modal" class="fixed inset-0 bg-black bg-opacity-60 hidden flex items-center justify-center z-[85] p-4">
         <div class="bg-white rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[92vh]">
-            <div class="bg-gradient-to-r from-teal-600 to-cyan-700 p-4 flex justify-between items-center text-white">
+            <div class="bg-gradient-to-r from-teal-600 to-cyan-700 p-4 flex justify-between items-center text-white cursor-move select-none" title="Nhấp giữ để di chuyển popup - Nhấp đúp để về giữa">
                 <div class="flex items-center space-x-2.5">
+                    <i class="fa-solid fa-grip-lines-vertical opacity-50 text-xs"></i>
                     <i class="fa-solid fa-calendar-plus text-xl"></i>
                     <div>
                         <h2 class="text-base md:text-lg font-bold">Gia Hạn Phiếu Thuê Sân</h2>
@@ -991,7 +993,7 @@
                         </div>
                     </div>
                 </div>
-                <button onclick="closeRenewModal()" class="text-teal-200 hover:text-white transition group"><i class="fa-solid fa-xmark text-xl group-hover:scale-110"></i></button>
+                <button onclick="closeRenewModal()" class="text-teal-200 hover:text-white transition group cursor-pointer"><i class="fa-solid fa-xmark text-xl group-hover:scale-110"></i></button>
             </div>
 
             <div class="p-5 overflow-y-auto space-y-4">
@@ -1130,11 +1132,12 @@
     <!-- Modal Thêm / Sửa Ghi Chú Bù Sân -->
     <div id="comp-modal" class="fixed inset-0 bg-black bg-opacity-60 hidden flex items-center justify-center z-[90] p-4">
         <div class="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[92vh]">
-            <div class="bg-amber-600 p-4 flex justify-between items-center text-white">
+            <div class="bg-amber-600 p-4 flex justify-between items-center text-white cursor-move select-none" title="Nhấp giữ để di chuyển popup - Nhấp đúp để về giữa">
                 <h2 class="text-base font-bold flex items-center gap-2" id="comp-modal-title">
+                    <i class="fa-solid fa-grip-lines-vertical opacity-50 text-xs"></i>
                     <i class="fa-solid fa-calendar-xmark"></i> Ghi Chú Bù Sân Cho Khách Hợp Đồng
                 </h2>
-                <button onclick="closeCompModal()" class="text-amber-200 hover:text-white transition group"><i class="fa-solid fa-xmark text-xl group-hover:scale-110"></i></button>
+                <button onclick="closeCompModal()" class="text-amber-200 hover:text-white transition group cursor-pointer"><i class="fa-solid fa-xmark text-xl group-hover:scale-110"></i></button>
             </div>
 
             <div class="p-5 overflow-y-auto space-y-3.5 text-xs">
@@ -1244,15 +1247,16 @@
     <!-- Modal Xem Lại & Xuất Excel Hóa Đơn VAT Cho Kế Toán -->
     <div id="vat-export-modal" class="fixed inset-0 bg-black bg-opacity-60 hidden flex items-center justify-center z-[90] p-4">
         <div class="bg-white rounded-xl shadow-2xl w-full max-w-3xl overflow-hidden flex flex-col max-h-[92vh]">
-            <div class="bg-gradient-to-r from-emerald-600 to-teal-700 p-4 flex justify-between items-center text-white">
+            <div class="bg-gradient-to-r from-emerald-600 to-teal-700 p-4 flex justify-between items-center text-white cursor-move select-none" title="Nhấp giữ để di chuyển popup - Nhấp đúp để về giữa">
                 <div class="flex items-center space-x-2.5">
+                    <i class="fa-solid fa-grip-lines-vertical opacity-50 text-xs"></i>
                     <i class="fa-solid fa-file-excel text-2xl"></i>
                     <div>
                         <h2 class="text-base md:text-lg font-bold">Xuất Bảng Kê Hóa Đơn VAT Cho Kế Toán</h2>
                         <p class="text-xs text-emerald-100">Tạo file Excel (.xlsx) chuẩn mẫu xuất hóa đơn điện tử</p>
                     </div>
                 </div>
-                <button onclick="closeVatExportModal()" class="text-emerald-200 hover:text-white transition group"><i class="fa-solid fa-xmark text-xl group-hover:scale-110"></i></button>
+                <button onclick="closeVatExportModal()" class="text-emerald-200 hover:text-white transition group cursor-pointer"><i class="fa-solid fa-xmark text-xl group-hover:scale-110"></i></button>
             </div>
 
             <div class="p-5 overflow-y-auto space-y-4 text-xs">

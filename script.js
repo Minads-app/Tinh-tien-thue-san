@@ -228,6 +228,7 @@ document.addEventListener('DOMContentLoaded', () => {
     fetchSettings();
     fetchCustomers();
     setupAutocomplete();
+    initModalManager();
 
     // INIT FLATPICKR
     excludeDatePicker = flatpickr("#exclude-dates", {
@@ -2954,6 +2955,9 @@ async function deleteBill(docId, invId) {
     try {
         Swal.fire({ title: 'Đang xóa...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
         await db.collection('transactions').doc(docId).delete();
+        if (currentViewingPhone && document.getElementById('view-customer-modal') && !document.getElementById('view-customer-modal').classList.contains('hidden')) {
+            loadCustomerInvoices(currentViewingPhone);
+        }
         Swal.fire({ icon: 'success', title: 'Đã xóa phiếu!', text: `Phiếu ${invId} đã được xóa khỏi hệ thống.`, timer: 2000, showConfirmButton: false });
     } catch (e) {
         console.error('Lỗi xóa bill:', e);
@@ -3497,7 +3501,7 @@ function renderVcInvoicesTable() {
                 <button onclick="viewReceipt('${dataStr}')" class="px-2 py-1 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded text-[11px] font-bold transition mr-1" title="Xem chi tiết phiếu">
                     <i class="fa-solid fa-eye"></i> Phiếu
                 </button>
-                <button onclick="closeViewCustomerModal(); openRenewModal('${dataStr}')" class="px-2.5 py-1 bg-teal-600 hover:bg-teal-700 text-white rounded text-[11px] font-bold shadow-sm transition inline-flex items-center gap-1" title="Gia hạn phiếu này sang tháng mới">
+                <button onclick="openRenewModal('${dataStr}')" class="px-2.5 py-1 bg-teal-600 hover:bg-teal-700 text-white rounded text-[11px] font-bold shadow-sm transition inline-flex items-center gap-1" title="Gia hạn phiếu này sang tháng mới">
                     <i class="fa-solid fa-calendar-plus"></i> Gia Hạn
                 </button>
             </td>
@@ -4834,6 +4838,11 @@ async function submitRenewDirect() {
 
         closeRenewModal();
         fetchReports(); // Cập nhật lại bảng báo cáo
+        if (currentViewingPhone && document.getElementById('view-customer-modal') && !document.getElementById('view-customer-modal').classList.contains('hidden')) {
+            loadCustomerInvoices(currentViewingPhone);
+            fetchCustomerCompensations(currentViewingPhone);
+            fetchCustomers();
+        }
 
         const totalSessions = currentRenewCalculatedItems.reduce((sum, i) => sum + i.count, 0);
         let [sy, sm, sd] = startDateVal.split('-');
@@ -4958,6 +4967,201 @@ function transferRenewToBooking() {
         timer: 3500,
         showConfirmButton: true,
         confirmButtonText: 'Đã hiểu'
+    });
+}
+
+// ==========================================
+// DRAGGABLE & MULTI-MODAL STACK MANAGER
+// ==========================================
+
+const ALL_MANAGED_MODALS = [
+    'customer-modal',
+    'view-customer-modal',
+    'receipt-modal',
+    'edit-bill-modal',
+    'renew-modal',
+    'comp-modal',
+    'vat-export-modal',
+    'rule-modal'
+];
+
+let globalModalMaxZIndex = 100;
+
+function bringModalToFront(modalEl) {
+    if (!modalEl) return;
+    globalModalMaxZIndex += 2;
+    modalEl.style.zIndex = globalModalMaxZIndex;
+    syncModalStack();
+}
+
+function syncModalStack() {
+    // Lọc các modal đang mở (không có class hidden)
+    const openModals = ALL_MANAGED_MODALS
+        .map(id => document.getElementById(id))
+        .filter(el => el && !el.classList.contains('hidden'));
+
+    if (openModals.length === 0) return;
+
+    // Sắp xếp theo zIndex hiện tại tăng dần
+    openModals.sort((a, b) => {
+        const za = parseInt(window.getComputedStyle(a).zIndex, 10) || 50;
+        const zb = parseInt(window.getComputedStyle(b).zIndex, 10) || 50;
+        return za - zb;
+    });
+
+    // Modal ở dưới cùng đảm nhận nền mờ đen chặn thao tác trang chính
+    const bottomModal = openModals[0];
+    bottomModal.style.pointerEvents = 'auto';
+    bottomModal.style.backgroundColor = 'rgba(0, 0, 0, 0.6)';
+
+    // Các modal xếp chồng phía trên: nền trong suốt, không chặn click vào modal bên dưới
+    for (let i = 1; i < openModals.length; i++) {
+        const modal = openModals[i];
+        modal.style.pointerEvents = 'none';
+        modal.style.backgroundColor = 'transparent';
+        const dialog = modal.querySelector('.bg-white');
+        if (dialog) dialog.style.pointerEvents = 'auto';
+    }
+}
+
+function resetModalPosition(modalEl) {
+    if (!modalEl) return;
+    const dialog = modalEl.querySelector('.bg-white');
+    if (dialog) {
+        dialog.style.transform = 'translate(0px, 0px)';
+        dialog._dragPos = { x: 0, y: 0 };
+    }
+}
+
+function makeModalDraggable(modalId) {
+    const modalEl = document.getElementById(modalId);
+    if (!modalEl) return;
+    const dialog = modalEl.querySelector('.bg-white');
+    if (!dialog) return;
+
+    // Header handle là phần tử con đầu tiên của dialog
+    const header = dialog.firstElementChild;
+    if (!header) return;
+
+    header.style.cursor = 'move';
+    header.style.userSelect = 'none';
+    if (!header.getAttribute('title')) {
+        header.setAttribute('title', 'Nhấp giữ để di chuyển popup - Nhấp đúp để về giữa màn hình');
+    }
+
+    dialog.style.pointerEvents = 'auto';
+    dialog._dragPos = { x: 0, y: 0 };
+
+    let isDragging = false;
+    let startPointerX = 0, startPointerY = 0;
+    let startDialogX = 0, startDialogY = 0;
+    let initialRect = null;
+
+    function onPointerDown(e) {
+        // Đưa modal lên trên cùng khi nhấp
+        bringModalToFront(modalEl);
+
+        // Bỏ qua nếu nhấp vào các nút, input, textarea, link, nút đóng
+        if (e.target.closest('button, input, select, textarea, a, .cursor-pointer')) {
+            return;
+        }
+
+        // Chỉ nhận chuột trái hoặc cảm ứng đơn
+        if (e.button !== undefined && e.button !== 0) return;
+
+        isDragging = true;
+        startPointerX = e.clientX;
+        startPointerY = e.clientY;
+        startDialogX = dialog._dragPos.x || 0;
+        startDialogY = dialog._dragPos.y || 0;
+        initialRect = dialog.getBoundingClientRect();
+
+        header.style.cursor = 'grabbing';
+        dialog.style.transition = 'none';
+
+        window.addEventListener('pointermove', onPointerMove, { passive: false });
+        window.addEventListener('pointerup', onPointerUp);
+        window.addEventListener('pointercancel', onPointerUp);
+        e.preventDefault();
+    }
+
+    function onPointerMove(e) {
+        if (!isDragging || !initialRect) return;
+        const dx = e.clientX - startPointerX;
+        const dy = e.clientY - startPointerY;
+
+        const winW = window.innerWidth;
+        const winH = window.innerHeight;
+
+        let targetX = startDialogX + dx;
+        let targetY = startDialogY + dy;
+
+        // Giới hạn biên an toàn: không kéo tiêu đề ra ngoài màn hình
+        const predLeft = initialRect.left + dx;
+        const predRight = initialRect.right + dx;
+        const predTop = initialRect.top + dy;
+
+        if (predRight < 100) targetX = startDialogX + (100 - initialRect.right);
+        if (predLeft > winW - 100) targetX = startDialogX + (winW - 100 - initialRect.left);
+        if (predTop < 5) targetY = startDialogY + (5 - initialRect.top);
+        if (predTop > winH - 60) targetY = startDialogY + (winH - 60 - initialRect.top);
+
+        dialog._dragPos.x = targetX;
+        dialog._dragPos.y = targetY;
+        dialog.style.transform = `translate(${targetX}px, ${targetY}px)`;
+    }
+
+    function onPointerUp() {
+        if (!isDragging) return;
+        isDragging = false;
+        header.style.cursor = 'move';
+        window.removeEventListener('pointermove', onPointerMove);
+        window.removeEventListener('pointerup', onPointerUp);
+        window.removeEventListener('pointercancel', onPointerUp);
+    }
+
+    header.addEventListener('pointerdown', onPointerDown);
+
+    // Nhấp đúp chuột lên header để đưa modal về lại chính giữa
+    header.addEventListener('dblclick', (e) => {
+        if (e.target.closest('button, input, select, textarea, a, .cursor-pointer')) return;
+        dialog.style.transition = 'transform 0.25s ease-out';
+        dialog.style.transform = 'translate(0px, 0px)';
+        dialog._dragPos = { x: 0, y: 0 };
+    });
+
+    // Khi nhấp vào bất kỳ đâu trong dialog, nâng modal lên mặt trước
+    dialog.addEventListener('pointerdown', () => {
+        bringModalToFront(modalEl);
+    });
+}
+
+function initModalManager() {
+    ALL_MANAGED_MODALS.forEach(id => {
+        makeModalDraggable(id);
+
+        const modalEl = document.getElementById(id);
+        if (!modalEl) return;
+
+        // Theo dõi thay đổi class để tự động đồng bộ hóa lớp phủ và z-index
+        let wasHidden = modalEl.classList.contains('hidden');
+        const observer = new MutationObserver((mutations) => {
+            mutations.forEach(m => {
+                if (m.attributeName === 'class') {
+                    const isHidden = modalEl.classList.contains('hidden');
+                    if (wasHidden && !isHidden) {
+                        // Vừa mới mở modal
+                        resetModalPosition(modalEl);
+                        bringModalToFront(modalEl);
+                    } else if (!wasHidden && isHidden) {
+                        // Vừa mới đóng modal
+                        syncModalStack();
+                    }
+                    wasHidden = isHidden;
+                }
+            });
+        });
+        observer.observe(modalEl, { attributes: true, attributeFilter: ['class'] });
     });
 }
 
