@@ -21,8 +21,8 @@
     <script src="https://www.gstatic.com/firebasejs/10.9.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.9.0/firebase-firestore-compat.js"></script>
 
-    <!-- SheetJS for Excel export -->
-    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <!-- xlsx-js-style for Excel export with borders, fonts and formatting -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 
     <link rel="stylesheet" href="style.css">
 </head>
@@ -673,9 +673,13 @@
                                 <input type="text" id="c-tax-code" class="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500 outline-none text-sm font-mono bg-white" placeholder="VD: 0101234567">
                             </div>
                             <div>
-                                <label class="block text-xs font-semibold text-gray-500 mb-1">Địa chỉ thuế</label>
-                                <input type="text" id="c-tax-address" class="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500 outline-none text-sm bg-white" placeholder="Địa chỉ ĐKKD">
+                                <label class="block text-xs font-semibold text-gray-500 mb-1">Email nhận HĐ VAT</label>
+                                <input type="email" id="c-tax-email" class="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500 outline-none text-sm bg-white" placeholder="VD: ketoan@congty.com">
                             </div>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-gray-500 mb-1">Địa chỉ thuế</label>
+                            <input type="text" id="c-tax-address" class="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500 outline-none text-sm bg-white" placeholder="Địa chỉ ĐKKD">
                         </div>
                     </div>
                 </div>
@@ -733,6 +737,7 @@
                         <div class="flex justify-between"><span class="text-gray-600">Công ty:</span> <b id="vc-company" class="text-gray-800 text-right truncate max-w-[200px]" title="">---</b></div>
                         <div class="flex justify-between"><span class="text-gray-600">Mã số thuế:</span> <b id="vc-tax-code" class="font-mono text-blue-700 font-bold">---</b></div>
                         <div class="flex justify-between"><span class="text-gray-600">Địa chỉ thuế:</span> <span id="vc-tax-address" class="text-gray-700 text-right truncate max-w-[200px]" title="">---</span></div>
+                        <div class="flex justify-between"><span class="text-gray-600">Email nhận HĐ:</span> <span id="vc-tax-email" class="font-mono text-blue-700 font-semibold text-right truncate max-w-[200px]" title="">---</span></div>
                     </div>
                 </div>
 
@@ -1245,114 +1250,156 @@
     </div>
 
     <!-- Modal Xem Lại & Xuất Excel Hóa Đơn VAT Cho Kế Toán -->
-    <div id="vat-export-modal" class="fixed inset-0 bg-black bg-opacity-60 hidden flex items-center justify-center z-[90] p-4">
-        <div class="bg-white rounded-xl shadow-2xl w-full max-w-3xl overflow-hidden flex flex-col max-h-[92vh]">
+    <div id="vat-export-modal" class="fixed inset-0 bg-black bg-opacity-60 hidden flex items-center justify-center z-[90] p-3 md:p-4">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-4xl overflow-hidden flex flex-col max-h-[92vh]">
             <div class="bg-gradient-to-r from-emerald-600 to-teal-700 p-4 flex justify-between items-center text-white cursor-move select-none" title="Nhấp giữ để di chuyển popup - Nhấp đúp để về giữa">
                 <div class="flex items-center space-x-2.5">
                     <i class="fa-solid fa-grip-lines-vertical opacity-50 text-xs"></i>
                     <i class="fa-solid fa-file-excel text-2xl"></i>
                     <div>
                         <h2 class="text-base md:text-lg font-bold">Xuất Bảng Kê Hóa Đơn VAT Cho Kế Toán</h2>
-                        <p class="text-xs text-emerald-100">Tạo file Excel (.xlsx) chuẩn mẫu xuất hóa đơn điện tử</p>
+                        <p class="text-xs text-emerald-100">Chuẩn hóa cấu trúc và kiểu dáng theo đúng mẫu hóa đơn điện tử</p>
                     </div>
                 </div>
                 <button onclick="closeVatExportModal()" class="text-emerald-200 hover:text-white transition group cursor-pointer"><i class="fa-solid fa-xmark text-xl group-hover:scale-110"></i></button>
             </div>
 
-            <div class="p-5 overflow-y-auto space-y-4 text-xs">
-                <!-- Thông tin khách / Công ty (Lấy từ dữ liệu khách) -->
-                <div class="bg-emerald-50/60 border border-emerald-200 p-4 rounded-lg space-y-3">
+            <div class="p-4 md:p-5 overflow-y-auto space-y-4 text-xs">
+                <!-- 1. Thông tin người mua / Đơn vị mua hàng (5 dòng đầu theo mẫu) -->
+                <div class="bg-emerald-50/50 border border-emerald-200 p-3.5 rounded-lg space-y-3">
                     <h3 class="text-xs font-bold text-emerald-800 uppercase flex items-center">
                         <i class="fa-solid fa-building mr-1.5 text-emerald-600"></i> Thông Tin Khách Hàng / Đơn Vị Mua Hàng
                     </h3>
-                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div class="sm:col-span-2">
-                            <label class="block font-semibold text-gray-700 mb-1">Tên Công Ty / Đơn Vị (*)</label>
-                            <input type="text" id="ve-company" class="w-full px-3 py-2 border rounded bg-white text-xs font-bold focus:ring-1 focus:ring-emerald-500 outline-none" placeholder="Tên công ty nhận hóa đơn">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                        <div>
+                            <label class="block font-semibold text-gray-700 mb-1">Họ tên người mua hàng (Buyer)</label>
+                            <input type="text" id="ve-buyer-name" class="w-full px-3 py-1.5 border rounded bg-white text-xs focus:ring-1 focus:ring-emerald-500 outline-none" placeholder="Họ tên người mua hàng">
                         </div>
                         <div>
-                            <label class="block font-semibold text-gray-700 mb-1">Mã Số Thuế (*)</label>
-                            <input type="text" id="ve-tax-code" class="w-full px-3 py-2 border rounded bg-white text-xs font-mono font-bold text-blue-700 focus:ring-1 focus:ring-emerald-500 outline-none" placeholder="Mã số thuế">
+                            <label class="block font-semibold text-gray-700 mb-1">Tên đơn vị (Company's name) (*)</label>
+                            <input type="text" id="ve-company" class="w-full px-3 py-1.5 border rounded bg-white text-xs font-bold focus:ring-1 focus:ring-emerald-500 outline-none" placeholder="Công Ty TNHH...">
                         </div>
                         <div>
-                            <label class="block font-semibold text-gray-700 mb-1">Người Liên Hệ / SĐT</label>
-                            <input type="text" id="ve-contact" class="w-full px-3 py-2 border rounded bg-white text-xs focus:ring-1 focus:ring-emerald-500 outline-none" placeholder="Họ tên người mua & SĐT">
+                            <label class="block font-semibold text-gray-700 mb-1">Mã số thuế (Tax code) (*)</label>
+                            <input type="text" id="ve-tax-code" class="w-full px-3 py-1.5 border rounded bg-white text-xs font-mono font-bold text-blue-700 focus:ring-1 focus:ring-emerald-500 outline-none" placeholder="Mã số thuế">
+                        </div>
+                        <div>
+                            <label class="block font-semibold text-gray-700 mb-1">Email nhận hóa đơn (*)</label>
+                            <input type="email" id="ve-email" class="w-full px-3 py-1.5 border rounded bg-white text-xs font-mono text-emerald-800 focus:ring-1 focus:ring-emerald-500 outline-none" placeholder="ketoan@congty.com">
                         </div>
                         <div class="sm:col-span-2">
-                            <label class="block font-semibold text-gray-700 mb-1">Địa Chỉ Thuế / Đăng Ký Kinh Doanh</label>
-                            <input type="text" id="ve-tax-address" class="w-full px-3 py-2 border rounded bg-white text-xs focus:ring-1 focus:ring-emerald-500 outline-none" placeholder="Địa chỉ ĐKKD">
+                            <label class="block font-semibold text-gray-700 mb-1">Địa chỉ (Address) (*)</label>
+                            <input type="text" id="ve-tax-address" class="w-full px-3 py-1.5 border rounded bg-white text-xs focus:ring-1 focus:ring-emerald-500 outline-none" placeholder="Địa chỉ đăng ký kinh doanh">
                         </div>
                     </div>
                 </div>
 
-                <!-- Nội dung hàng hóa / dịch vụ -->
-                <div class="bg-gray-50 border p-4 rounded-lg space-y-3">
-                    <h3 class="text-xs font-bold text-gray-700 uppercase flex items-center">
-                        <i class="fa-solid fa-tag mr-1.5 text-emerald-600"></i> Nội Dung Xuất Hóa Đơn (Có thể xem và chỉnh sửa)
-                    </h3>
-                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                        <div class="sm:col-span-2">
-                            <label class="block font-semibold text-gray-700 mb-1">Tên Hàng Hóa, Dịch Vụ (*)</label>
-                            <input type="text" id="ve-item-name" class="w-full px-3 py-2 border rounded bg-white text-xs font-bold text-gray-800 focus:ring-1 focus:ring-emerald-500 outline-none" placeholder="VD: Dịch vụ thuê sân thể thao...">
-                        </div>
-                        <div>
-                            <label class="block font-semibold text-gray-700 mb-1">Thuế Suất VAT</label>
-                            <select id="ve-vat-rate" onchange="recalculateVatPreview()" class="w-full px-3 py-2 border rounded bg-white text-xs font-bold text-indigo-700 focus:ring-1 focus:ring-emerald-500 outline-none">
-                                <option value="10">10%</option>
-                                <option value="8">8%</option>
-                                <option value="0">0%</option>
-                                <option value="none">Không chịu thuế</option>
-                            </select>
-                        </div>
-                        <div class="sm:col-span-3">
-                            <label class="block font-semibold text-gray-700 mb-1">Diễn Giải Chi Tiết / Kỳ Thuê</label>
-                            <input type="text" id="ve-item-desc" class="w-full px-3 py-2 border rounded bg-white text-xs focus:ring-1 focus:ring-emerald-500 outline-none" placeholder="VD: Thuê sân kỳ tháng 10/2026...">
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Danh sách phiếu được chọn xuất -->
+                <!-- 2. Bảng chi tiết dịch vụ xuất hóa đơn (theo mẫu Excel) -->
                 <div>
-                    <h3 class="text-xs font-bold text-gray-700 uppercase mb-2 flex items-center justify-between">
-                        <span><i class="fa-solid fa-receipt mr-1 text-emerald-600"></i> Các Phiếu Thu Sẽ Xuất Kèm (<span id="ve-invoices-count">0</span> phiếu)</span>
-                    </h3>
-                    <div class="border rounded-lg overflow-x-auto max-h-48">
+                    <div class="flex justify-between items-center mb-1.5">
+                        <h3 class="text-xs font-bold text-gray-700 uppercase flex items-center">
+                            <i class="fa-solid fa-list-check mr-1.5 text-emerald-600"></i> Bảng Chi Tiết Hàng Hóa, Dịch Vụ
+                        </h3>
+                        <span class="text-[11px] text-gray-500 italic">* Số lượng = Thành tiền / Đơn giá (Giá 1 buổi). Riêng số tiền được khóa cố định.</span>
+                    </div>
+
+                    <div class="border rounded-lg overflow-x-auto">
                         <table class="w-full text-left text-xs border-collapse">
                             <thead>
                                 <tr class="bg-gray-100 text-gray-700 uppercase font-semibold border-b">
-                                    <th class="p-2 border">Mã Phiếu</th>
-                                    <th class="p-2 border">Ngày Thuê / Tạo</th>
-                                    <th class="p-2 border text-right">Tiền Hàng (Trước VAT)</th>
-                                    <th class="p-2 border text-right">Tiền Thuế VAT</th>
-                                    <th class="p-2 border text-right">Tổng Thanh Toán</th>
+                                    <th class="p-2 border text-center w-10">STT</th>
+                                    <th class="p-2 border text-center min-w-[240px]">Tên hàng</th>
+                                    <th class="p-2 border text-center w-20">ĐVTính</th>
+                                    <th class="p-2 border text-center w-24">Số Lượng</th>
+                                    <th class="p-2 border text-center w-32">Đơn Giá (1 buổi)</th>
+                                    <th class="p-2 border text-right w-36">Thành Tiền (🔒)</th>
                                 </tr>
                             </thead>
-                            <tbody id="ve-preview-table-body" class="bg-white">
-                                <!-- Populated dynamically -->
+                            <tbody id="ve-items-table-body" class="bg-white">
+                                <!-- Populated dynamically by script.js -->
                             </tbody>
+                            <tfoot class="border-t font-semibold">
+                                <tr class="bg-gray-50 border-b">
+                                    <td colspan="5" class="p-2 border text-center text-gray-700 font-bold uppercase">Cộng</td>
+                                    <td class="p-2 border text-right font-bold text-gray-800" id="ve-sum-pretax">0 ₫</td>
+                                </tr>
+                                <tr class="bg-gray-50 border-b">
+                                    <td colspan="5" class="p-2 border text-center text-gray-700 font-semibold">
+                                        <div class="inline-flex items-center gap-2">
+                                            <span>Thuế suất:</span>
+                                            <select id="ve-vat-rate" onchange="recalculateVatGridTotals()" class="border rounded px-2 py-0.5 font-bold text-indigo-700 bg-white text-xs outline-none">
+                                                <option value="10">VAT 10%</option>
+                                                <option value="8">VAT 8%</option>
+                                                <option value="0">VAT 0%</option>
+                                                <option value="none">KCT (Không chịu thuế)</option>
+                                            </select>
+                                        </div>
+                                    </td>
+                                    <td class="p-2 border text-right font-bold text-gray-800" id="ve-sum-vat">0 ₫</td>
+                                </tr>
+                                <tr class="bg-emerald-50/70 border-b">
+                                    <td colspan="5" class="p-2.5 border text-center font-bold text-emerald-900 uppercase text-xs">THÀNH TIỀN</td>
+                                    <td class="p-2.5 border text-right font-bold text-emerald-800 text-sm" id="ve-sum-total">0 ₫</td>
+                                </tr>
+                            </tfoot>
                         </table>
                     </div>
                 </div>
 
-                <!-- Tổng kết & Tùy chọn -->
-                <div class="bg-emerald-50 border border-emerald-300 p-3.5 rounded-lg flex flex-col sm:flex-row justify-between items-center gap-3">
-                    <label class="inline-flex items-center text-xs font-semibold text-emerald-900 cursor-pointer">
+                <!-- 3. Tùy chọn đánh dấu xuất VAT -->
+                <div class="bg-gray-50 border p-3 rounded-lg flex items-center justify-between">
+                    <label class="inline-flex items-center text-xs font-semibold text-gray-700 cursor-pointer">
                         <input type="checkbox" id="ve-auto-mark-checked" checked class="rounded text-emerald-600 mr-2">
-                        Tự động đánh dấu các phiếu này là <b>"Đã xuất hóa đơn VAT"</b> sau khi tải file
+                        Tự động đánh dấu các phiếu đã chọn là <b>"Đã xuất hóa đơn VAT"</b>
                     </label>
-
-                    <div class="text-right">
-                        <div class="text-[11px] text-gray-600">Tổng Tiền Thanh Toán:</div>
-                        <div id="ve-final-total-display" class="text-lg font-bold text-emerald-800">0 ₫</div>
-                    </div>
+                    <span class="text-[11px] text-gray-400 italic">File xuất ra định dạng chuẩn Excel .xlsx</span>
                 </div>
             </div>
 
-            <div class="bg-gray-50 border-t p-3.5 flex justify-end space-x-2">
+            <div class="bg-gray-50 border-t p-3.5 flex justify-end items-center space-x-2">
+                <button type="button" onclick="previewVatInvoiceModal()" class="px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded text-xs font-bold transition flex items-center gap-1.5 shadow-sm">
+                    <i class="fa-solid fa-eye text-sm"></i> Xem trước hóa đơn VAT
+                </button>
                 <button onclick="closeVatExportModal()" class="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded text-xs font-semibold transition">Đóng</button>
                 <button onclick="executeExportVatExcel()" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-xs font-bold shadow flex items-center gap-1.5 transition">
                     <i class="fa-solid fa-file-arrow-down text-sm"></i> Tải File Excel (.xlsx)
                 </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Xem Trước Bảng Kê Hóa Đơn VAT (Preview Form) -->
+    <div id="vat-preview-modal" class="fixed inset-0 bg-black bg-opacity-70 hidden flex items-center justify-center z-[95] p-3 md:p-4">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-4xl overflow-hidden flex flex-col max-h-[92vh]">
+            <div class="bg-gradient-to-r from-indigo-700 to-blue-800 p-4 flex justify-between items-center text-white cursor-move select-none" title="Nhấp giữ để di chuyển popup - Nhấp đúp để về giữa">
+                <div class="flex items-center space-x-2.5">
+                    <i class="fa-solid fa-grip-lines-vertical opacity-50 text-xs"></i>
+                    <i class="fa-solid fa-file-invoice text-2xl text-indigo-200"></i>
+                    <div>
+                        <h2 class="text-base md:text-lg font-bold">Xem Trước Bảng Kê Hóa Đơn VAT</h2>
+                        <p class="text-xs text-indigo-100">Mô phỏng chính xác mẫu bảng kê sẽ xuất ra file Excel (.xlsx)</p>
+                    </div>
+                </div>
+                <button onclick="closeVatPreviewModal()" class="text-indigo-200 hover:text-white transition group cursor-pointer"><i class="fa-solid fa-xmark text-xl group-hover:scale-110"></i></button>
+            </div>
+
+            <!-- Khung giấy mô phỏng Excel -->
+            <div class="p-4 md:p-6 overflow-y-auto bg-gray-100 flex justify-center">
+                <div id="vat-preview-paper" class="w-full bg-white shadow border border-gray-300 p-6 md:p-8 rounded text-gray-900" style="font-family: 'Times New Roman', Times, serif;">
+                    <!-- Nội dung bảng kê được render động bởi script.js -->
+                </div>
+            </div>
+
+            <div class="bg-gray-50 border-t p-3.5 flex justify-between items-center">
+                <button onclick="printVatPreview()" class="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 border rounded text-xs font-semibold transition flex items-center gap-1.5">
+                    <i class="fa-solid fa-print"></i> In / Xuất PDF
+                </button>
+                <div class="flex items-center space-x-2">
+                    <button onclick="closeVatPreviewModal()" class="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded text-xs font-semibold transition">Đóng xem trước</button>
+                    <button onclick="executeExportVatExcel()" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-xs font-bold shadow flex items-center gap-1.5 transition">
+                        <i class="fa-solid fa-file-arrow-down text-sm"></i> Tải File Excel (.xlsx)
+                    </button>
+                </div>
             </div>
         </div>
     </div>

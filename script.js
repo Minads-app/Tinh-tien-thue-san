@@ -3107,6 +3107,7 @@ function openAddCustomerModal() {
     document.getElementById('c-company').value = '';
     if (document.getElementById('c-tax-code')) document.getElementById('c-tax-code').value = '';
     if (document.getElementById('c-tax-address')) document.getElementById('c-tax-address').value = '';
+    if (document.getElementById('c-tax-email')) document.getElementById('c-tax-email').value = '';
     document.getElementById('c-gender').value = 'Anh';
     document.getElementById('customer-modal').classList.remove('hidden');
 }
@@ -3128,6 +3129,7 @@ function openEditCustomerModal(phoneId) {
     document.getElementById('c-company').value = cust.company || '';
     if (document.getElementById('c-tax-code')) document.getElementById('c-tax-code').value = cust.taxCode || '';
     if (document.getElementById('c-tax-address')) document.getElementById('c-tax-address').value = cust.taxAddress || '';
+    if (document.getElementById('c-tax-email')) document.getElementById('c-tax-email').value = cust.taxEmail || '';
     document.getElementById('c-gender').value = cust.gender || 'Anh';
 
     document.getElementById('customer-modal').classList.remove('hidden');
@@ -3148,6 +3150,7 @@ async function saveCustomerModal() {
     const company = document.getElementById('c-company').value.trim();
     const taxCode = document.getElementById('c-tax-code') ? document.getElementById('c-tax-code').value.trim() : '';
     const taxAddress = document.getElementById('c-tax-address') ? document.getElementById('c-tax-address').value.trim() : '';
+    const taxEmail = document.getElementById('c-tax-email') ? document.getElementById('c-tax-email').value.trim() : '';
 
     if (!phone || !name) {
         Swal.fire('Lỗi', 'Vui lòng nhập đủ Số điện thoại và Họ tên!', 'error');
@@ -3179,6 +3182,7 @@ async function saveCustomerModal() {
                 company: company,
                 taxCode: taxCode,
                 taxAddress: taxAddress,
+                taxEmail: taxEmail,
                 createdAt: firebase.firestore.FieldValue.serverTimestamp(),
                 lastVisit: firebase.firestore.FieldValue.serverTimestamp(),
                 totalSpent: 0,
@@ -3195,7 +3199,8 @@ async function saveCustomerModal() {
                 team: team,
                 company: company,
                 taxCode: taxCode,
-                taxAddress: taxAddress
+                taxAddress: taxAddress,
+                taxEmail: taxEmail
             };
 
             if (phone === rawOriginalPhone) {
@@ -3333,6 +3338,10 @@ async function viewCustomer(phoneId) {
     if (el('vc-tax-address')) {
         el('vc-tax-address').textContent = cust.taxAddress || '---';
         el('vc-tax-address').title = cust.taxAddress || '';
+    }
+    if (el('vc-tax-email')) {
+        el('vc-tax-email').textContent = cust.taxEmail || '---';
+        el('vc-tax-email').title = cust.taxEmail || '';
     }
 
     el('vc-tickets').textContent = cust.ticketCount || 0;
@@ -3589,9 +3598,29 @@ async function toggleInvoiceVatStatus(targetDocId, currentStatus) {
 // XUẤT EXCEL HÓA ĐƠN VAT CHO KẾ TOÁN (SHEETJS)
 // ==========================================
 
+// ==========================================
+// XUẤT EXCEL & XEM TRƯỚC HÓA ĐƠN VAT CHO KẾ TOÁN (XLSX-JS-STYLE)
+// ==========================================
+
+let currentVatGridRows = [];
+
+function escapeVatHtml(str) {
+    if (!str) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+function formatNumberVn(n) {
+    return Number(n || 0).toLocaleString('vi-VN');
+}
+
 function openVatExportModalForSelected() {
     if (selectedVatInvoiceIds.size === 0) {
-        Swal.fire('Chưa chọn phiếu', 'Vui lòng tích chọn ít nhất 1 phiếu thanh toán để xuất Excel gửi kế toán!', 'warning');
+        Swal.fire('Chưa chọn phiếu', 'Vui lòng tích chọn ít nhất 1 phiếu thanh toán để xuất hóa đơn VAT!', 'warning');
         return;
     }
 
@@ -3601,292 +3630,531 @@ function openVatExportModalForSelected() {
     const el = (id) => document.getElementById(id);
     if (!el('vat-export-modal')) return;
 
-    // Tự động nạp thông tin Doanh nghiệp / Khách
-    el('ve-company').value = (cust && cust.company) ? cust.company : (cust ? cust.name : '');
+    // 1. Điền thông tin Người mua / Đơn vị mua hàng (5 dòng đầu)
+    el('ve-buyer-name').value = cust ? (cust.name || '') : '';
+    el('ve-company').value = (cust && cust.company) ? cust.company : (cust ? (cust.name || '') : '');
     el('ve-tax-code').value = (cust && cust.taxCode) ? cust.taxCode : '';
     el('ve-tax-address').value = (cust && cust.taxAddress) ? cust.taxAddress : '';
-    el('ve-contact').value = `${cust ? cust.name : ''} - ${currentViewingPhone || ''}`;
+    el('ve-email').value = (cust && (cust.taxEmail || cust.email)) ? (cust.taxEmail || cust.email) : '';
 
-    // Trích xuất các môn thể thao / loại sân từ các phiếu được chọn (VD: Bóng đá, Bóng rổ, Cầu lông...)
-    const sportsSet = new Set();
-    selectedTransactions.forEach(t => {
-        if (t.items && Array.isArray(t.items)) {
-            t.items.forEach(item => {
-                let name = item.name || '';
-                let sportName = '';
-                if (name.includes('[')) {
-                    sportName = name.split('[')[0].trim();
-                } else if (name.includes('-')) {
-                    sportName = name.split('-')[0].trim();
-                } else {
-                    sportName = name.trim();
-                }
-                if (sportName) {
-                    sportsSet.add(sportName);
-                }
-            });
-        }
-    });
+    // 2. Thiết lập thuế suất mặc định (10%)
+    el('ve-vat-rate').value = '10';
+    const vatRate = 0.10;
 
-    let sportDisplay = '';
-    if (sportsSet.size > 0) {
-        const sportsList = Array.from(sportsSet).map(s => {
-            let clean = s.trim();
-            clean = clean.replace(/^sân\s+/i, ''); // Bỏ chữ "sân" ở đầu nếu có
-            return clean.toLowerCase();
-        });
-        sportDisplay = sportsList.join(', ');
-    }
-
-    // Nội dung hóa đơn mặc định: "Dịch vụ thuê sân <môn thể thao>" (VD: Dịch vụ thuê sân bóng đá)
-    if (sportDisplay) {
-        el('ve-item-name').value = `Dịch vụ thuê sân ${sportDisplay}`;
-    } else {
-        el('ve-item-name').value = `Dịch vụ thuê sân thể thao`;
-    }
-
-    // Diễn giải kỳ thuê
-    const dateRanges = [];
-    selectedTransactions.forEach(t => {
-        if (t.startDate && t.endDate) {
-            let [sy, sm, sd] = t.startDate.split('-');
-            let [ey, em, ed] = t.endDate.split('-');
-            dateRanges.push(`${sd}/${sm} - ${ed}/${em}/${ey}`);
-        }
-    });
-    el('ve-item-desc').value = dateRanges.length > 0 ? `Kỳ thuê: ${dateRanges.join(', ')}` : `Dịch vụ thể thao tháng ${new Date().getMonth() + 1}/${new Date().getFullYear()}`;
-
-    // Render xem trước danh sách phiếu
-    el('ve-invoices-count').textContent = selectedTransactions.length;
-    recalculateVatPreview();
-
-    el('vat-export-modal').classList.remove('hidden');
-}
-
-function recalculateVatPreview() {
-    const el = (id) => document.getElementById(id);
-    const selectedTransactions = currentViewingCustomerInvoices.filter(t => selectedVatInvoiceIds.has(t.id || t.docId));
-    const tbody = el('ve-preview-table-body');
-    if (!tbody) return;
-
-    const rateVal = el('ve-vat-rate').value;
-    const vatRate = rateVal === 'none' ? 0 : (parseFloat(rateVal) / 100);
-
-    tbody.innerHTML = '';
-    let grandPreTax = 0;
-    let grandVat = 0;
-    let grandTotal = 0;
+    // 3. Khởi tạo danh sách dòng dịch vụ xuất hóa đơn từ các phiếu được chọn
+    currentVatGridRows = [];
 
     selectedTransactions.forEach(t => {
-        const invId = t.id || `CŨ-${(t.docId || '').slice(0,6).toUpperCase()}`;
         const total = t.totalAmount || 0;
-        
         let preTax = 0;
         let vat = 0;
 
-        if (vatRate === 0) {
-            preTax = total;
-            vat = 0;
+        if (t.vatAmount && t.vatAmount > 0) {
+            vat = t.vatAmount;
+            preTax = t.subTotal || (total - vat);
         } else {
-            // Nếu phiếu gốc đã có thuế VAT
-            if (t.vatAmount && t.vatAmount > 0) {
-                vat = t.vatAmount;
-                preTax = t.subTotal || (total - vat);
-            } else {
-                // Tính ngược lại tiền trước thuế và tiền thuế từ tổng thanh toán
-                preTax = Math.round(total / (1 + vatRate));
-                vat = total - preTax;
-            }
+            // Phiếu chưa bao gồm VAT: tính ngược tiền trước thuế từ tổng thanh toán theo tỷ lệ thuế suất
+            preTax = Math.round(total / (1 + vatRate));
+            vat = total - preTax;
         }
 
-        grandPreTax += preTax;
-        grandVat += vat;
-        grandTotal += total;
+        // Đếm tổng số buổi trong phiếu
+        let sessionCount = 0;
+        const sportsInTicket = new Set();
+        if (t.items && Array.isArray(t.items)) {
+            t.items.forEach(it => {
+                sessionCount += (Number(it.count) || 1);
+                let nm = it.name || '';
+                let sp = nm.includes('[') ? nm.split('[')[0].trim() : (nm.includes('-') ? nm.split('-')[0].trim() : nm.trim());
+                if (sp) sportsInTicket.add(sp.replace(/^sân\s+/i, '').toLowerCase());
+            });
+        }
+        if (sessionCount <= 0) sessionCount = 1;
 
-        let dateStr = t.startDate ? `${t.startDate} - ${t.endDate}` : '---';
+        const sportStr = sportsInTicket.size > 0 ? Array.from(sportsInTicket).join(', ') : 'thể thao';
 
+        // Xác định tháng/kỳ thuê
+        let monthStr = '';
+        if (t.startDate) {
+            const parts = t.startDate.split('-');
+            if (parts.length >= 2) monthStr = ` tháng ${parts[1]}/${parts[0]}`;
+        }
+        if (!monthStr) {
+            const now = new Date();
+            monthStr = ` tháng ${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()}`;
+        }
+
+        const itemName = `Dịch vụ thuê sân ${sportStr}${monthStr}`;
+        const unitPrice = sessionCount > 0 ? Math.round(preTax / sessionCount) : preTax;
+
+        currentVatGridRows.push({
+            id: 'vat_row_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
+            name: itemName,
+            unit: 'buổi',
+            count: sessionCount,
+            price: unitPrice,
+            total: preTax, // Thành tiền (LOCKED - Read only)
+            originalTotalAmount: total,
+            originalVatAmount: t.vatAmount || 0,
+            originalSubTotal: t.subTotal || 0,
+            originInvoiceId: t.id || t.docId
+        });
+    });
+
+    renderVatItemsGrid();
+    el('vat-export-modal').classList.remove('hidden');
+    bringModalToFront(el('vat-export-modal'));
+}
+
+function renderVatItemsGrid() {
+    const tbody = document.getElementById('ve-items-table-body');
+    if (!tbody) return;
+
+    tbody.innerHTML = '';
+    currentVatGridRows.forEach((row, index) => {
         const tr = document.createElement('tr');
-        tr.className = "border-b text-xs";
+        tr.className = "border-b hover:bg-emerald-50/30 transition text-xs";
         tr.innerHTML = `
-            <td class="p-2 border font-mono font-bold text-indigo-700">${invId}</td>
-            <td class="p-2 border text-gray-600">${dateStr}</td>
-            <td class="p-2 border text-right font-medium text-gray-800">${formatVND(preTax)}</td>
-            <td class="p-2 border text-right text-orange-600 font-bold">${formatVND(vat)}</td>
-            <td class="p-2 border text-right font-bold text-emerald-700">${formatVND(total)}</td>
+            <td class="p-2 border text-center font-bold text-gray-500">${index + 1}</td>
+            <td class="p-2 border">
+                <input type="text" value="${escapeVatHtml(row.name)}" class="w-full px-2 py-1.5 border border-gray-300 rounded bg-white text-xs text-gray-800 font-medium focus:ring-1 focus:ring-emerald-500 outline-none" oninput="updateVatGridRowField(${index}, 'name', this.value)" placeholder="Tên hàng hóa, dịch vụ">
+            </td>
+            <td class="p-2 border">
+                <input type="text" value="${escapeVatHtml(row.unit || 'buổi')}" class="w-full px-1.5 py-1.5 border border-gray-300 rounded bg-white text-center text-xs text-gray-800 focus:ring-1 focus:ring-emerald-500 outline-none" oninput="updateVatGridRowField(${index}, 'unit', this.value)" placeholder="ĐVT">
+            </td>
+            <td class="p-2 border">
+                <input type="number" step="any" min="0.01" value="${row.count}" class="w-full px-1.5 py-1.5 border border-gray-300 rounded bg-white text-center font-bold text-xs text-gray-800 focus:ring-1 focus:ring-emerald-500 outline-none" oninput="onVatGridCountChange(${index}, this.value)" title="Số lượng = Thành tiền / Đơn giá">
+            </td>
+            <td class="p-2 border">
+                <input type="text" value="${formatNumberVn(row.price)}" class="w-full px-2 py-1.5 border border-gray-300 rounded bg-white text-right font-mono font-bold text-xs text-blue-700 focus:ring-1 focus:ring-emerald-500 outline-none" onchange="onVatGridPriceChange(${index}, this.value)" oninput="this.value = this.value.replace(/[^0-9]/g, '')" title="Đơn giá 1 buổi. Sửa đơn giá sẽ tự động tính lại số lượng">
+            </td>
+            <td class="p-2 border text-right">
+                <div class="font-bold text-gray-800 font-mono py-1.5 px-2 bg-gray-100/70 border border-gray-200 rounded text-xs select-none" title="Số tiền gốc cố định theo phiếu (không được sửa)">${formatVND(row.total)}</div>
+            </td>
         `;
         tbody.appendChild(tr);
     });
 
-    el('ve-final-total-display').textContent = formatVND(grandTotal);
+    recalculateVatGridTotals();
+}
+
+function updateVatGridRowField(index, field, value) {
+    if (currentVatGridRows[index]) {
+        currentVatGridRows[index][field] = value;
+    }
+}
+
+function onVatGridPriceChange(index, rawVal) {
+    const row = currentVatGridRows[index];
+    if (!row) return;
+
+    const price = parseInt(String(rawVal).replace(/[^0-9]/g, ''), 10) || 0;
+    if (price <= 0) {
+        Swal.fire('Lưu ý', 'Đơn giá phải lớn hơn 0!', 'warning');
+        renderVatItemsGrid();
+        return;
+    }
+
+    row.price = price;
+    // Công thức: Số lượng = Thành tiền / Đơn giá
+    const calculatedCount = row.total / price;
+    row.count = Math.round(calculatedCount * 100) / 100;
+
+    renderVatItemsGrid();
+}
+
+function onVatGridCountChange(index, rawVal) {
+    const row = currentVatGridRows[index];
+    if (!row) return;
+
+    const count = parseFloat(rawVal) || 0;
+    if (count <= 0) {
+        Swal.fire('Lưu ý', 'Số lượng phải lớn hơn 0!', 'warning');
+        renderVatItemsGrid();
+        return;
+    }
+
+    row.count = count;
+    // Công thức: Đơn giá = Thành tiền / Số lượng
+    row.price = Math.round(row.total / count);
+
+    renderVatItemsGrid();
+}
+
+function recalculateVatGridTotals() {
+    const el = (id) => document.getElementById(id);
+    const rateVal = el('ve-vat-rate') ? el('ve-vat-rate').value : '10';
+    const vatRate = rateVal === 'none' ? 0 : (parseFloat(rateVal) / 100);
+
+    // Cập nhật lại tiền trước thuế của từng dòng nếu người dùng thay đổi thuế suất
+    currentVatGridRows.forEach(row => {
+        const origTotal = row.originalTotalAmount || row.total;
+        let preTax = 0;
+        if (row.originalVatAmount && row.originalVatAmount > 0) {
+            preTax = row.originalSubTotal || (origTotal - row.originalVatAmount);
+        } else if (vatRate === 0) {
+            preTax = origTotal;
+        } else {
+            preTax = Math.round(origTotal / (1 + vatRate));
+        }
+        row.total = preTax;
+        if (row.price > 0) {
+            row.count = Math.round((row.total / row.price) * 100) / 100;
+        } else if (row.count > 0) {
+            row.price = Math.round(row.total / row.count);
+        }
+    });
+
+    // Render lại số tiền vào table body nếu có
+    const tbody = document.getElementById('ve-items-table-body');
+    if (tbody && tbody.children.length === currentVatGridRows.length) {
+        currentVatGridRows.forEach((row, idx) => {
+            const tr = tbody.children[idx];
+            if (tr) {
+                const countInput = tr.children[3]?.querySelector('input');
+                if (countInput && document.activeElement !== countInput) countInput.value = row.count;
+                const priceInput = tr.children[4]?.querySelector('input');
+                if (priceInput && document.activeElement !== priceInput) priceInput.value = formatNumberVn(row.price);
+                const totalDisplay = tr.children[5]?.querySelector('div');
+                if (totalDisplay) totalDisplay.textContent = formatVND(row.total);
+            }
+        });
+    }
+
+    const sumPreTax = currentVatGridRows.reduce((sum, r) => sum + (Number(r.total) || 0), 0);
+    const sumVat = vatRate > 0 ? Math.round(sumPreTax * vatRate) : 0;
+    const sumTotal = sumPreTax + sumVat;
+
+    if (el('ve-sum-pretax')) el('ve-sum-pretax').textContent = formatVND(sumPreTax);
+    if (el('ve-sum-vat')) el('ve-sum-vat').textContent = formatVND(sumVat);
+    if (el('ve-sum-total')) el('ve-sum-total').textContent = formatVND(sumTotal);
 }
 
 function closeVatExportModal() {
     const modal = document.getElementById('vat-export-modal');
     if (modal) modal.classList.add('hidden');
+    syncModalStack();
 }
+
+// ---------------------------------------------------------
+// XEM TRƯỚC HÓA ĐƠN VAT (PREVIEW INVOICE MODAL)
+// ---------------------------------------------------------
+
+function previewVatInvoiceModal() {
+    const el = (id) => document.getElementById(id);
+    const buyerName = el('ve-buyer-name') ? el('ve-buyer-name').value.trim() : '';
+    const companyName = el('ve-company') ? el('ve-company').value.trim() : '';
+    const taxCode = el('ve-tax-code') ? el('ve-tax-code').value.trim() : '';
+    const taxAddress = el('ve-tax-address') ? el('ve-tax-address').value.trim() : '';
+    const taxEmail = el('ve-email') ? el('ve-email').value.trim() : '';
+    const rateVal = el('ve-vat-rate') ? el('ve-vat-rate').value : '10';
+    const vatRate = rateVal === 'none' ? 0 : (parseFloat(rateVal) / 100);
+
+    const sumPreTax = currentVatGridRows.reduce((sum, r) => sum + (Number(r.total) || 0), 0);
+    const sumVat = vatRate > 0 ? Math.round(sumPreTax * vatRate) : 0;
+    const sumTotal = sumPreTax + sumVat;
+    const vatLabel = rateVal === 'none' ? 'KCT' : (rateVal === '0' ? 'VAT 0%' : `VAT ${rateVal}%`);
+
+    const paper = el('vat-preview-paper');
+    if (!paper) return;
+
+    paper.innerHTML = `
+        <div class="space-y-4">
+            <!-- 5 Dòng thông tin người mua (khớp 100% ảnh mẫu) -->
+            <div class="space-y-1.5 text-[14px] text-gray-900 border-b border-gray-300 pb-3">
+                <div><span class="font-normal">Họ tên người mua hàng (Buyer):</span> <span class="font-semibold">${escapeVatHtml(buyerName)}</span></div>
+                <div><span class="font-normal">Tên đơn vị (Company's name):</span> <span class="font-bold">${escapeVatHtml(companyName)}</span></div>
+                <div><span class="font-normal">Mã số thuế (Tax code):</span> <span class="font-semibold font-mono">${escapeVatHtml(taxCode)}</span></div>
+                <div><span class="font-normal">Địa chỉ (Address):</span> <span class="font-normal">${escapeVatHtml(taxAddress)}</span></div>
+                <div><span class="font-normal">Email nhận hóa đơn:</span> <span class="font-normal font-mono text-emerald-800">${escapeVatHtml(taxEmail)}</span></div>
+            </div>
+
+            <!-- Bảng dịch vụ khung kẻ chuẩn Excel theo mẫu -->
+            <div class="overflow-x-auto">
+                <table class="w-full border-collapse border border-gray-900 text-[13px]">
+                    <thead>
+                        <tr class="font-bold border border-gray-900 bg-gray-50">
+                            <th class="border border-gray-900 p-2 text-center w-12">STT</th>
+                            <th class="border border-gray-900 p-2 text-center">Tên hàng</th>
+                            <th class="border border-gray-900 p-2 text-center w-20">ĐVTính</th>
+                            <th class="border border-gray-900 p-2 text-center w-20">Số Lượng</th>
+                            <th class="border border-gray-900 p-2 text-center w-28">Đơn Giá</th>
+                            <th class="border border-gray-900 p-2 text-center w-32">Thành Tiền</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${currentVatGridRows.map((r, i) => `
+                            <tr>
+                                <td class="border border-gray-900 p-2 text-center font-normal">${i + 1}</td>
+                                <td class="border border-gray-900 p-2 text-left font-normal">${escapeVatHtml(r.name)}</td>
+                                <td class="border border-gray-900 p-2 text-center font-normal">${escapeVatHtml(r.unit || 'buổi')}</td>
+                                <td class="border border-gray-900 p-2 text-center font-normal">${r.count}</td>
+                                <td class="border border-gray-900 p-2 text-right font-normal">${formatNumberVn(r.price)}</td>
+                                <td class="border border-gray-900 p-2 text-right font-normal">${formatNumberVn(r.total)}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                    <tfoot>
+                        <tr>
+                            <td colspan="5" class="border border-gray-900 p-2 text-center font-normal">Cộng</td>
+                            <td class="border border-gray-900 p-2 text-right font-normal">${formatNumberVn(sumPreTax)}</td>
+                        </tr>
+                        <tr>
+                            <td colspan="5" class="border border-gray-900 p-2 text-center font-normal">${vatLabel}</td>
+                            <td class="border border-gray-900 p-2 text-right font-normal">${formatNumberVn(sumVat)}</td>
+                        </tr>
+                        <tr class="font-bold">
+                            <td colspan="5" class="border border-gray-900 p-2 text-center">THÀNH TIỀN</td>
+                            <td class="border border-gray-900 p-2 text-right font-bold">${formatNumberVn(sumTotal)}</td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        </div>
+    `;
+
+    el('vat-preview-modal').classList.remove('hidden');
+    bringModalToFront(el('vat-preview-modal'));
+}
+
+function closeVatPreviewModal() {
+    const modal = document.getElementById('vat-preview-modal');
+    if (modal) modal.classList.add('hidden');
+    syncModalStack();
+}
+
+function printVatPreview() {
+    const paper = document.getElementById('vat-preview-paper');
+    if (!paper) return;
+
+    const printWin = window.open('', '_blank', 'width=850,height=750');
+    if (!printWin) {
+        window.print();
+        return;
+    }
+
+    printWin.document.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Bảng Kê Hóa Đơn VAT</title>
+            <style>
+                body { font-family: 'Times New Roman', Times, serif; padding: 25px; margin: 0; color: #000; }
+                table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+                th, td { border: 1px solid #000; padding: 6px 8px; font-size: 13px; }
+                th { text-align: center; font-weight: bold; }
+                .text-center { text-align: center; }
+                .text-right { text-align: right; }
+                .text-left { text-align: left; }
+                .font-bold { font-weight: bold; }
+                .font-normal { font-weight: normal; }
+            </style>
+        </head>
+        <body>
+            ${paper.innerHTML}
+        </body>
+        </html>
+    `);
+    printWin.document.close();
+    printWin.focus();
+    setTimeout(() => {
+        printWin.print();
+        printWin.close();
+    }, 350);
+}
+
+// ---------------------------------------------------------
+// XUẤT FILE EXCEL (.XLSX) CHUẨN ĐÚNG THEO ẢNH MẪU
+// ---------------------------------------------------------
 
 async function executeExportVatExcel() {
     if (typeof XLSX === 'undefined') {
-        Swal.fire('Lỗi', 'Thư viện xuất Excel (SheetJS) chưa được tải hoàn tất. Vui lòng thử lại sau vài giây!', 'error');
+        Swal.fire('Lỗi', 'Thư viện xuất Excel (xlsx-js-style) chưa được nạp. Vui lòng tải lại trang!', 'error');
         return;
     }
 
     const el = (id) => document.getElementById(id);
     const selectedTransactions = currentViewingCustomerInvoices.filter(t => selectedVatInvoiceIds.has(t.id || t.docId));
-    if (selectedTransactions.length === 0) return;
+    if (selectedTransactions.length === 0 || currentVatGridRows.length === 0) {
+        Swal.fire('Lỗi', 'Không có dữ liệu phiếu để xuất hóa đơn!', 'error');
+        return;
+    }
 
-    const companyName = el('ve-company').value.trim();
-    const taxCode = el('ve-tax-code').value.trim();
-    const taxAddress = el('ve-tax-address').value.trim();
-    const contactPerson = el('ve-contact').value.trim();
-    const serviceName = el('ve-item-name').value.trim();
-    const serviceDesc = el('ve-item-desc').value.trim();
-    const vatRateStr = el('ve-vat-rate').value;
-    const vatRate = vatRateStr === 'none' ? 0 : (parseFloat(vatRateStr) / 100);
-    const autoMark = el('ve-auto-mark-checked').checked;
+    const buyerName = el('ve-buyer-name') ? el('ve-buyer-name').value.trim() : '';
+    const companyName = el('ve-company') ? el('ve-company').value.trim() : '';
+    const taxCode = el('ve-tax-code') ? el('ve-tax-code').value.trim() : '';
+    const taxAddress = el('ve-tax-address') ? el('ve-tax-address').value.trim() : '';
+    const taxEmail = el('ve-email') ? el('ve-email').value.trim() : '';
+    const rateVal = el('ve-vat-rate') ? el('ve-vat-rate').value : '10';
+    const vatRate = rateVal === 'none' ? 0 : (parseFloat(rateVal) / 100);
+    const autoMark = el('ve-auto-mark-checked') ? el('ve-auto-mark-checked').checked : true;
 
     if (!companyName) {
-        Swal.fire('Lỗi', 'Vui lòng nhập Tên Công ty / Đơn vị mua hàng!', 'error');
+        Swal.fire('Lưu ý', 'Vui lòng nhập Tên đơn vị / Tên công ty mua hàng!', 'warning');
         return;
     }
 
     try {
-        Swal.fire({ title: 'Đang tạo file Excel...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+        Swal.fire({ title: 'Đang tạo file Excel chuẩn...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
 
-        const d = new Date();
-        const exportDateStr = `${d.getDate().toString().padStart(2,'0')}/${(d.getMonth()+1).toString().padStart(2,'0')}/${d.getFullYear()}`;
+        // Tính toán các tổng
+        const sumPreTax = currentVatGridRows.reduce((sum, r) => sum + (Number(r.total) || 0), 0);
+        const sumVat = vatRate > 0 ? Math.round(sumPreTax * vatRate) : 0;
+        const sumTotal = sumPreTax + sumVat;
+        const vatLabel = rateVal === 'none' ? 'KCT' : (rateVal === '0' ? 'VAT 0%' : `VAT ${rateVal}%`);
 
-        // Cấu trúc dữ liệu theo bảng chuẩn kế toán
-        const rows = [];
+        // Dữ liệu ma trận theo đúng 100% mẫu trong ảnh
+        const aoa = [
+            [`Họ tên người mua hàng (Buyer): ${buyerName}`],
+            [`Tên đơn vị (Company's name): ${companyName}`],
+            [`Mã số thuế (Tax code): ${taxCode}`],
+            [`Địa chỉ (Address): ${taxAddress}`],
+            [`Email nhận hóa đơn: ${taxEmail}`],
+            ['STT', 'Tên hàng', 'ĐVTính', 'Số Lượng', 'Đơn Giá', 'Thành Tiền']
+        ];
 
-        // Thông tin đơn vị bán hàng
-        rows.push([siteSettings.venueName || 'ĐƠN VỊ CUNG CẤP DỊCH VỤ THỂ THAO']);
-        rows.push(['Địa chỉ:', siteSettings.venueAddress || '']);
-        rows.push([]);
-
-        // Tiêu đề
-        rows.push(['BẢNG KÊ CHI TIẾT DỊCH VỤ XUẤT HÓA ĐƠN VAT']);
-        rows.push([`Ngày lập: ${exportDateStr}`]);
-        rows.push([]);
-
-        // Thông tin khách hàng / đơn vị mua hàng
-        rows.push(['THÔNG TIN ĐƠN VỊ MUA HÀNG:']);
-        rows.push(['Tên đơn vị:', companyName]);
-        rows.push(['Mã số thuế:', taxCode || '---']);
-        rows.push(['Địa chỉ thuế:', taxAddress || '---']);
-        rows.push(['Người liên hệ:', contactPerson || '---']);
-        rows.push(['Nội dung hóa đơn:', serviceName]);
-        rows.push(['Diễn giải / Kỳ:', serviceDesc]);
-        rows.push([]);
-
-        // Header bảng dịch vụ
-        rows.push([
-            'STT',
-            'Mã Phiếu',
-            'Kỳ / Thời Gian Thuê',
-            'Tên Hàng Hóa, Dịch Vụ',
-            'ĐVT',
-            'Số Lượng',
-            'Đơn Giá (Chưa VAT)',
-            'Thành Tiền Chưa VAT',
-            'Thuế Suất VAT',
-            'Tiền Thuế VAT',
-            'Tổng Tiền Thanh Toán'
-        ]);
-
-        let sumPreTax = 0;
-        let sumVat = 0;
-        let sumTotal = 0;
-
-        selectedTransactions.forEach((t, index) => {
-            const invId = t.id || `CŨ-${(t.docId || '').slice(0,6).toUpperCase()}`;
-            const total = t.totalAmount || 0;
-            
-            let preTax = 0;
-            let vat = 0;
-
-            if (vatRate === 0) {
-                preTax = total;
-                vat = 0;
-            } else if (t.vatAmount && t.vatAmount > 0) {
-                vat = t.vatAmount;
-                preTax = t.subTotal || (total - vat);
-            } else {
-                preTax = Math.round(total / (1 + vatRate));
-                vat = total - preTax;
-            }
-
-            sumPreTax += preTax;
-            sumVat += vat;
-            sumTotal += total;
-
-            let period = (t.startDate && t.endDate) ? `${t.startDate} đến ${t.endDate}` : 'Dịch vụ thuê sân';
-
-            rows.push([
-                index + 1,
-                invId,
-                period,
-                serviceName,
-                'Tháng',
-                1,
-                preTax,
-                preTax,
-                vatRateStr === 'none' ? 'KCT' : `${vatRate * 100}%`,
-                vat,
-                total
+        currentVatGridRows.forEach((r, idx) => {
+            aoa.push([
+                idx + 1,
+                r.name || '',
+                r.unit || 'buổi',
+                Number(r.count) || 0,
+                Number(r.price) || 0,
+                Number(r.total) || 0
             ]);
         });
 
-        // Dòng tổng cộng
-        rows.push([]);
-        rows.push([
-            '',
-            'TỔNG CỘNG',
-            '',
-            '',
-            '',
-            selectedTransactions.length,
-            '',
-            sumPreTax,
-            '',
-            sumVat,
-            sumTotal
-        ]);
+        aoa.push(['Cộng', '', '', '', '', Number(sumPreTax)]);
+        aoa.push([vatLabel, '', '', '', '', Number(sumVat)]);
+        aoa.push(['THÀNH TIỀN', '', '', '', '', Number(sumTotal)]);
 
-        rows.push([]);
-        rows.push(['(Số tiền bằng chữ: ' + formatVND(sumTotal) + ')']);
-        rows.push([]);
-        rows.push(['', '', 'Người Lập Bảng', '', '', '', '', '', 'Kế Toán Trưởng']);
-        rows.push(['', '', '(Ký, ghi rõ họ tên)', '', '', '', '', '', '(Ký, ghi rõ họ tên)']);
+        const ws = XLSX.utils.aoa_to_sheet(aoa);
 
-        // Tạo WorkSheet và WorkBook
-        const ws = XLSX.utils.aoa_to_sheet(rows);
+        // Định dạng font Times New Roman và viền ô chuẩn kế toán
+        const fontStandard = { name: 'Times New Roman', sz: 11, color: { rgb: '000000' } };
+        const fontBold = { name: 'Times New Roman', sz: 11, bold: true, color: { rgb: '000000' } };
+        const borderThin = {
+            top: { style: 'thin', color: { rgb: '000000' } },
+            bottom: { style: 'thin', color: { rgb: '000000' } },
+            left: { style: 'thin', color: { rgb: '000000' } },
+            right: { style: 'thin', color: { rgb: '000000' } }
+        };
 
-        // Thiết lập độ rộng cột
+        // 1. Dòng 0 đến 4: Thông tin người mua
+        for (let r = 0; r < 5; r++) {
+            const ref = XLSX.utils.encode_cell({ r: r, c: 0 });
+            if (ws[ref]) {
+                ws[ref].s = {
+                    font: fontStandard,
+                    alignment: { horizontal: 'left', vertical: 'center' }
+                };
+            }
+        }
+
+        // 2. Dòng 5: Tiêu đề bảng dịch vụ (Header)
+        for (let c = 0; c < 6; c++) {
+            const ref = XLSX.utils.encode_cell({ r: 5, c: c });
+            if (!ws[ref]) ws[ref] = { v: '', t: 's' };
+            ws[ref].s = {
+                font: fontBold,
+                alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
+                border: borderThin
+            };
+        }
+
+        // 3. Các dòng dịch vụ (Item rows)
+        const numItems = currentVatGridRows.length;
+        for (let i = 0; i < numItems; i++) {
+            const r = 6 + i;
+            // STT (Cột 0)
+            const ref0 = XLSX.utils.encode_cell({ r: r, c: 0 });
+            if (ws[ref0]) {
+                ws[ref0].s = { font: fontStandard, alignment: { horizontal: 'center', vertical: 'center' }, border: borderThin };
+            }
+            // Tên hàng (Cột 1)
+            const ref1 = XLSX.utils.encode_cell({ r: r, c: 1 });
+            if (ws[ref1]) {
+                ws[ref1].s = { font: fontStandard, alignment: { horizontal: 'left', vertical: 'center', wrapText: true }, border: borderThin };
+            }
+            // ĐVTính (Cột 2)
+            const ref2 = XLSX.utils.encode_cell({ r: r, c: 2 });
+            if (ws[ref2]) {
+                ws[ref2].s = { font: fontStandard, alignment: { horizontal: 'center', vertical: 'center' }, border: borderThin };
+            }
+            // Số Lượng (Cột 3)
+            const ref3 = XLSX.utils.encode_cell({ r: r, c: 3 });
+            if (ws[ref3]) {
+                ws[ref3].s = { font: fontStandard, alignment: { horizontal: 'center', vertical: 'center' }, border: borderThin };
+            }
+            // Đơn Giá (Cột 4)
+            const ref4 = XLSX.utils.encode_cell({ r: r, c: 4 });
+            if (ws[ref4]) {
+                ws[ref4].z = '#,##0';
+                ws[ref4].s = { font: fontStandard, alignment: { horizontal: 'right', vertical: 'center' }, border: borderThin };
+            }
+            // Thành Tiền (Cột 5)
+            const ref5 = XLSX.utils.encode_cell({ r: r, c: 5 });
+            if (ws[ref5]) {
+                ws[ref5].z = '#,##0';
+                ws[ref5].s = { font: fontStandard, alignment: { horizontal: 'right', vertical: 'center' }, border: borderThin };
+            }
+        }
+
+        // 4. Các dòng tổng cộng (Cộng, VAT, THÀNH TIỀN)
+        const rowCong = 6 + numItems;
+        const rowVat = rowCong + 1;
+        const rowThanhTien = rowCong + 2;
+
+        ws['!merges'] = [
+            { s: { r: rowCong, c: 0 }, e: { r: rowCong, c: 4 } },
+            { s: { r: rowVat, c: 0 }, e: { r: rowVat, c: 4 } },
+            { s: { r: rowThanhTien, c: 0 }, e: { r: rowThanhTien, c: 4 } }
+        ];
+
+        [
+            { row: rowCong, font: fontStandard },
+            { row: rowVat, font: fontStandard },
+            { row: rowThanhTien, font: fontBold }
+        ].forEach(summary => {
+            for (let c = 0; c <= 4; c++) {
+                const ref = XLSX.utils.encode_cell({ r: summary.row, c: c });
+                if (!ws[ref]) ws[ref] = { v: '', t: 's' };
+                ws[ref].s = {
+                    font: summary.font,
+                    alignment: { horizontal: 'center', vertical: 'center' },
+                    border: borderThin
+                };
+            }
+            const refNum = XLSX.utils.encode_cell({ r: summary.row, c: 5 });
+            if (!ws[refNum]) ws[refNum] = { v: 0, t: 'n' };
+            ws[refNum].z = '#,##0';
+            ws[refNum].s = {
+                font: summary.font,
+                alignment: { horizontal: 'right', vertical: 'center' },
+                border: borderThin
+            };
+        });
+
+        // Thiết lập độ rộng cột cân đối
         ws['!cols'] = [
-            { wch: 6 },  // STT
-            { wch: 22 }, // Mã Phiếu
-            { wch: 26 }, // Kỳ thuê
-            { wch: 35 }, // Tên dịch vụ
-            { wch: 10 }, // ĐVT
-            { wch: 10 }, // Số lượng
-            { wch: 18 }, // Đơn giá
-            { wch: 20 }, // Thành tiền chưa VAT
-            { wch: 14 }, // Thuế suất
-            { wch: 18 }, // Tiền VAT
-            { wch: 22 }  // Tổng cộng
+            { wch: 8 },  // STT
+            { wch: 44 }, // Tên hàng
+            { wch: 10 }, // ĐVTính
+            { wch: 12 }, // Số Lượng
+            { wch: 16 }, // Đơn Giá
+            { wch: 18 }  // Thành Tiền
         ];
 
         const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, 'BangKe_HoaDon_VAT');
+        XLSX.utils.book_append_sheet(wb, ws, 'HoaDonVAT');
 
-        // Tên file xuất ra
+        const d = new Date();
         const safeCustName = removeVietnameseTones(companyName || 'Khach').replace(/[^a-zA-Z0-9]/g, '_');
-        const filename = `Bang_Ke_Hoa_Don_VAT_${safeCustName}_${d.getFullYear()}${(d.getMonth()+1).toString().padStart(2,'0')}${d.getDate().toString().padStart(2,'0')}.xlsx`;
+        const filename = `Hoa_Don_VAT_${safeCustName}_${d.getFullYear()}${(d.getMonth()+1).toString().padStart(2,'0')}${d.getDate().toString().padStart(2,'0')}.xlsx`;
 
         XLSX.writeFile(wb, filename);
 
-        // Tự động đánh dấu đã xuất VAT nếu được chọn
+        // Đánh dấu đã xuất VAT trong database nếu có tích chọn
         if (autoMark && db) {
             const batch = db.batch();
             selectedTransactions.forEach(t => {
@@ -3907,24 +4175,24 @@ async function executeExportVatExcel() {
             renderVcInvoicesTable();
         }
 
+        closeVatPreviewModal();
         closeVatExportModal();
+
         Swal.fire({
             icon: 'success',
-            title: 'Xuất Excel Thành Công!',
-            html: `Đã tải xuống file <b>${filename}</b>.<br>Kế toán có thể mở xem và lập hóa đơn điện tử cho khách ngay.`,
+            title: 'Xuất File Excel Thành Công!',
+            html: `Đã tạo file chuẩn: <b>${filename}</b>.<br>Kế toán có thể nạp trực tiếp vào phần mềm hóa đơn điện tử.`,
             confirmButtonColor: '#059669',
             confirmButtonText: 'Đã hiểu'
         });
 
     } catch (err) {
-        console.error("Lỗi xuất Excel:", err);
+        console.error("Lỗi xuất Excel VAT:", err);
         Swal.fire('Lỗi', 'Không thể tạo file Excel: ' + err.message, 'error');
     }
 }
 
-// =========================================================================
-// QUẢN LÝ GHI CHÚ BÙ SÂN CHO KHÁCH HỢP ĐỒNG (COMPENSATIONS)
-// =========================================================================
+
 
 async function fetchCustomerCompensations(phoneId) {
     if (!db || !phoneId) return;
@@ -4982,6 +5250,7 @@ const ALL_MANAGED_MODALS = [
     'renew-modal',
     'comp-modal',
     'vat-export-modal',
+    'vat-preview-modal',
     'rule-modal'
 ];
 
