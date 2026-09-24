@@ -21,6 +21,9 @@
     <script src="https://www.gstatic.com/firebasejs/10.9.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.9.0/firebase-firestore-compat.js"></script>
 
+    <!-- SheetJS for Excel export -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -684,120 +687,174 @@
         </div>
     </div>
 
-    <!-- Modal Xem Chi Tiết Khách Hàng -->
-    <div id="view-customer-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center p-4 z-[60]">
-        <div class="bg-white rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
-            <div class="bg-gradient-to-r from-blue-700 to-indigo-700 p-4 flex justify-between items-center text-white">
+    <!-- Modal Xem Chi Tiết & Quản Lý Khách Hàng Toàn Diện -->
+    <div id="view-customer-modal" class="fixed inset-0 bg-black bg-opacity-60 hidden flex items-center justify-center p-3 md:p-4 z-[60]">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-4xl overflow-hidden flex flex-col max-h-[92vh]">
+            <!-- Header Hồ sơ khách -->
+            <div class="bg-gradient-to-r from-blue-700 via-indigo-700 to-blue-800 p-4 flex justify-between items-center text-white">
                 <div class="flex items-center space-x-3">
                     <div class="w-10 h-10 rounded-full bg-white bg-opacity-20 flex items-center justify-center text-xl font-bold">
                         <i class="fa-solid fa-user"></i>
                     </div>
                     <div>
-                        <h2 class="text-lg font-bold" id="vc-title">Hồ Sơ Khách Hàng</h2>
-                        <div class="text-xs text-blue-100 flex items-center gap-2">
-                            <span>Mã KH: <b id="vc-code" class="font-mono bg-blue-800 bg-opacity-50 px-1.5 py-0.5 rounded">---</b></span>
+                        <div class="flex items-center gap-2">
+                            <h2 class="text-lg font-bold" id="vc-title">Hồ Sơ Khách Hàng</h2>
+                            <span id="vc-gender-badge" class="text-[11px] bg-blue-600 bg-opacity-70 px-2 py-0.5 rounded font-medium">Anh</span>
+                        </div>
+                        <div class="text-xs text-blue-100 flex items-center gap-3 mt-0.5">
+                            <span>Mã KH: <b id="vc-code" class="font-mono bg-blue-900 bg-opacity-50 px-1.5 py-0.5 rounded">---</b></span>
+                            <span>SĐT: <b id="vc-phone-header" class="font-mono">---</b></span>
                         </div>
                     </div>
                 </div>
                 <button onclick="closeViewCustomerModal()" class="text-blue-200 hover:text-white transition group"><i class="fa-solid fa-xmark text-xl group-hover:scale-110"></i></button>
             </div>
 
-            <div class="p-6 overflow-y-auto space-y-5">
-                <!-- Thẻ thông tin khách -->
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-gray-50 p-4 rounded-lg border">
-                    <div>
-                        <span class="text-xs text-gray-500 font-semibold uppercase">Họ và tên</span>
-                        <div id="vc-name" class="text-base font-bold text-gray-800 mt-0.5">---</div>
+            <div class="p-4 md:p-6 overflow-y-auto space-y-4">
+                <!-- Thẻ Thông tin tóm tắt & Doanh nghiệp -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <!-- Khách hàng -->
+                    <div class="bg-gray-50 p-3.5 rounded-lg border text-xs space-y-1.5">
+                        <div class="flex justify-between items-center border-b pb-1.5">
+                            <span class="font-bold text-gray-700 uppercase flex items-center"><i class="fa-solid fa-id-card text-blue-600 mr-1.5"></i> Thông Tin Khách</span>
+                            <button id="vc-edit-btn" class="text-blue-600 hover:underline text-[11px] font-semibold"><i class="fa-solid fa-pen mr-1"></i>Sửa hồ sơ</button>
+                        </div>
+                        <div class="flex justify-between"><span class="text-gray-500">Họ và tên:</span> <b id="vc-name" class="text-gray-800 text-sm">---</b></div>
+                        <div class="flex justify-between"><span class="text-gray-500">Điện thoại:</span> <a id="vc-phone-link" href="#" class="font-mono font-bold text-blue-600 hover:underline"><span id="vc-phone">---</span></a></div>
+                        <div class="flex justify-between"><span class="text-gray-500">Đơn vị / Đội bóng:</span> <span id="vc-team" class="font-medium text-gray-700">---</span></div>
                     </div>
-                    <div>
-                        <span class="text-xs text-gray-500 font-semibold uppercase">Số điện thoại</span>
-                        <div class="mt-0.5"><a id="vc-phone-link" href="#" class="text-base font-bold font-mono text-blue-600 hover:underline"><i class="fa-solid fa-phone text-xs mr-1"></i> <span id="vc-phone">---</span></a></div>
-                    </div>
-                    <div>
-                        <span class="text-xs text-gray-500 font-semibold uppercase">Danh xưng</span>
-                        <div id="vc-gender" class="text-sm font-medium text-gray-700 mt-0.5">---</div>
-                    </div>
-                    <div>
-                        <span class="text-xs text-gray-500 font-semibold uppercase">Đơn vị / Đội bóng</span>
-                        <div id="vc-team" class="text-sm font-medium text-gray-700 mt-0.5">---</div>
+
+                    <!-- Doanh nghiệp / Thuế -->
+                    <div class="bg-blue-50/70 p-3.5 rounded-lg border border-blue-200 text-xs space-y-1.5">
+                        <div class="border-b border-blue-200 pb-1.5 flex justify-between items-center">
+                            <span class="font-bold text-blue-800 uppercase flex items-center"><i class="fa-solid fa-building text-blue-600 mr-1.5"></i> Thông Tin Xuất Hóa Đơn VAT</span>
+                        </div>
+                        <div class="flex justify-between"><span class="text-gray-600">Công ty:</span> <b id="vc-company" class="text-gray-800 text-right truncate max-w-[200px]" title="">---</b></div>
+                        <div class="flex justify-between"><span class="text-gray-600">Mã số thuế:</span> <b id="vc-tax-code" class="font-mono text-blue-700 font-bold">---</b></div>
+                        <div class="flex justify-between"><span class="text-gray-600">Địa chỉ thuế:</span> <span id="vc-tax-address" class="text-gray-700 text-right truncate max-w-[200px]" title="">---</span></div>
                     </div>
                 </div>
 
-                <!-- Thẻ thông tin doanh nghiệp -->
-                <div class="bg-blue-50/60 p-4 rounded-lg border border-blue-100 space-y-2">
-                    <div class="text-xs font-bold text-blue-800 uppercase flex items-center">
-                        <i class="fa-solid fa-building mr-1.5 text-blue-600"></i> Thông Tin Doanh Nghiệp
+                <!-- Thống kê nhanh -->
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                    <div class="bg-blue-50 border border-blue-200 p-2.5 rounded-lg text-center">
+                        <div class="text-[11px] text-blue-600 font-bold uppercase">Lượt thuê</div>
+                        <div id="vc-tickets" class="text-lg font-bold text-blue-800 mt-0.5">0</div>
                     </div>
-                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-                        <div>
-                            <span class="text-gray-500 font-semibold uppercase block">Tên Công Ty</span>
-                            <div id="vc-company" class="text-sm font-bold text-gray-800 mt-0.5">---</div>
-                        </div>
-                        <div>
-                            <span class="text-gray-500 font-semibold uppercase block">Mã Số Thuế</span>
-                            <div id="vc-tax-code" class="text-sm font-mono font-bold text-blue-700 mt-0.5">---</div>
-                        </div>
-                        <div>
-                            <span class="text-gray-500 font-semibold uppercase block">Địa Chỉ Thuế</span>
-                            <div id="vc-tax-address" class="text-sm font-medium text-gray-700 mt-0.5">---</div>
-                        </div>
+                    <div class="bg-green-50 border border-green-200 p-2.5 rounded-lg text-center">
+                        <div class="text-[11px] text-green-600 font-bold uppercase">Tổng chi tiêu</div>
+                        <div id="vc-spent" class="text-lg font-bold text-green-700 mt-0.5">0 ₫</div>
                     </div>
-                </div>
-
-                <!-- Thống kê doanh thu / lượt chơi -->
-                <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    <div class="bg-blue-50 border border-blue-200 p-3 rounded-lg text-center">
-                        <div class="text-xs text-blue-600 font-bold uppercase">Lượt thuê</div>
-                        <div id="vc-tickets" class="text-xl font-bold text-blue-800 mt-1">0</div>
+                    <div class="bg-amber-50 border border-amber-200 p-2.5 rounded-lg text-center">
+                        <div class="text-[11px] text-amber-700 font-bold uppercase">Buổi chờ bù</div>
+                        <div id="vc-pending-comp-stat" class="text-lg font-bold text-amber-700 mt-0.5">0 buổi</div>
                     </div>
-                    <div class="bg-green-50 border border-green-200 p-3 rounded-lg text-center">
-                        <div class="text-xs text-green-600 font-bold uppercase">Tổng chi tiêu</div>
-                        <div id="vc-spent" class="text-xl font-bold text-green-700 mt-1">0 ₫</div>
-                    </div>
-                    <div class="bg-purple-50 border border-purple-200 p-3 rounded-lg text-center">
-                        <div class="text-xs text-purple-600 font-bold uppercase">Chơi gần nhất</div>
-                        <div id="vc-last-visit" class="text-xs font-bold text-purple-800 mt-1.5">---</div>
-                    </div>
-                    <div class="bg-amber-50 border border-amber-200 p-3 rounded-lg text-center">
-                        <div class="text-xs text-amber-600 font-bold uppercase">Ngày tạo</div>
-                        <div id="vc-created-at" class="text-xs font-bold text-amber-800 mt-1.5">---</div>
+                    <div class="bg-purple-50 border border-purple-200 p-2.5 rounded-lg text-center">
+                        <div class="text-[11px] text-purple-600 font-bold uppercase">Chơi gần nhất</div>
+                        <div id="vc-last-visit" class="text-xs font-bold text-purple-800 mt-1">---</div>
                     </div>
                 </div>
 
-                <!-- Lịch sử các phiếu thuê -->
-                <div>
-                    <h3 class="text-sm font-bold text-gray-800 uppercase mb-3 flex items-center">
-                        <i class="fa-solid fa-clock-rotate-left mr-2 text-indigo-600"></i> Lịch Sử Đặt Sân / Phiếu Thu
-                    </h3>
-                    <div class="border rounded-lg overflow-x-auto max-h-56">
+                <!-- NAVIGATION TABS TRONG MODAL -->
+                <div class="border-b border-gray-200 flex space-x-6 text-sm font-semibold">
+                    <button id="vc-tab-btn-invoices" onclick="switchVcSubTab('invoices')" class="pb-2.5 border-b-2 border-blue-600 text-blue-600 flex items-center gap-1.5 transition">
+                        <i class="fa-solid fa-clock-rotate-left"></i> Lịch Sử Đặt Sân & Xuất VAT 
+                        <span id="vc-badge-invoices" class="ml-1 text-[11px] bg-blue-100 text-blue-700 px-1.5 py-0.2 rounded-full">0</span>
+                    </button>
+                    <button id="vc-tab-btn-compensations" onclick="switchVcSubTab('compensations')" class="pb-2.5 border-b-2 border-transparent text-gray-500 hover:text-gray-800 flex items-center gap-1.5 transition">
+                        <i class="fa-solid fa-cloud-sun-rain"></i> Nhật Ký Bù Sân (Khách Hợp Đồng)
+                        <span id="vc-badge-compensations" class="ml-1 text-[11px] bg-amber-100 text-amber-700 px-1.5 py-0.2 rounded-full font-bold">0</span>
+                    </button>
+                </div>
+
+                <!-- SUBTAB 1: LỊCH SỬ ĐẶT SÂN & XUẤT HÓA ĐƠN VAT -->
+                <div id="vc-tab-content-invoices" class="space-y-3">
+                    <!-- Thanh công cụ lọc & Xuất Excel VAT -->
+                    <div class="flex flex-wrap items-center justify-between gap-2 bg-gray-50 p-2.5 rounded-lg border">
+                        <div class="flex items-center gap-3 text-xs">
+                            <label class="inline-flex items-center font-semibold text-gray-700 cursor-pointer">
+                                <input type="checkbox" id="vc-select-all-invoices" onchange="toggleSelectAllInvoices(this.checked)" class="rounded text-blue-600 mr-1.5">
+                                Chọn tất cả (<span id="vc-selected-count">0</span>)
+                            </label>
+                            <span class="text-gray-300">|</span>
+                            <div class="flex items-center gap-1">
+                                <span class="text-gray-500">Lọc VAT:</span>
+                                <select id="vc-filter-vat" onchange="filterVcInvoicesTable()" class="border rounded px-2 py-1 text-xs bg-white">
+                                    <option value="all">Tất cả phiếu</option>
+                                    <option value="not_exported">Chưa xuất VAT</option>
+                                    <option value="exported">Đã xuất VAT</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <button onclick="openVatExportModalForSelected()" id="vc-export-excel-btn" class="bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-1.5 rounded-lg text-xs font-bold shadow transition flex items-center gap-1.5">
+                            <i class="fa-solid fa-file-excel text-sm"></i> Xuất Excel HĐ VAT (<span id="vc-btn-count">0</span>)
+                        </button>
+                    </div>
+
+                    <!-- Bảng danh sách phiếu thuê -->
+                    <div class="border rounded-lg overflow-x-auto max-h-72">
                         <table class="w-full text-left text-xs border-collapse">
                             <thead>
-                                <tr class="bg-gray-100 text-gray-700 uppercase font-semibold">
+                                <tr class="bg-gray-100 text-gray-700 uppercase font-semibold sticky top-0 z-10 border-b">
+                                    <th class="p-2 border text-center w-8">
+                                        <i class="fa-solid fa-check text-gray-400"></i>
+                                    </th>
                                     <th class="p-2 border">Mã Phiếu</th>
-                                    <th class="p-2 border">Ngày Tạo</th>
-                                    <th class="p-2 border text-center">Trạng Thái</th>
+                                    <th class="p-2 border">Kỳ Thuê / Ngày Tạo</th>
+                                    <th class="p-2 border text-center">Thời Hạn HĐ</th>
                                     <th class="p-2 border text-right">Tổng Tiền</th>
-                                    <th class="p-2 border text-center">Chi Tiết</th>
+                                    <th class="p-2 border text-center">Hóa Đơn VAT</th>
+                                    <th class="p-2 border text-center w-36">Thao Tác</th>
                                 </tr>
                             </thead>
                             <tbody id="vc-transactions-body">
-                                <tr><td colspan="5" class="p-4 text-center text-gray-400 italic">Đang tải lịch sử giao dịch...</td></tr>
+                                <tr><td colspan="7" class="p-4 text-center text-gray-400 italic">Đang tải lịch sử giao dịch...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- SUBTAB 2: NHẬT KÝ BÙ SÂN CHO KHÁCH HỢP ĐỒNG -->
+                <div id="vc-tab-content-compensations" class="hidden space-y-3">
+                    <div class="flex flex-wrap items-center justify-between gap-2 bg-amber-50/70 p-3 rounded-lg border border-amber-200">
+                        <div class="text-xs text-amber-900">
+                            <i class="fa-solid fa-info-circle mr-1 text-amber-600"></i>
+                            Ghi nhận các buổi khách hợp đồng nghỉ do <b>thời tiết mưa ngập</b> hoặc <b>sân bảo trì</b> để tự động tính bù khi gia hạn.
+                        </div>
+                        <button onclick="openAddCompensationModal()" class="bg-amber-600 hover:bg-amber-700 text-white px-3.5 py-1.5 rounded-lg text-xs font-bold shadow transition flex items-center gap-1.5 whitespace-nowrap">
+                            <i class="fa-solid fa-plus-circle"></i> Thêm Ghi Chú Bù Sân
+                        </button>
+                    </div>
+
+                    <!-- Bảng danh sách buổi bù -->
+                    <div class="border rounded-lg overflow-x-auto max-h-72">
+                        <table class="w-full text-left text-xs border-collapse">
+                            <thead>
+                                <tr class="bg-gray-100 text-gray-700 uppercase font-semibold sticky top-0 z-10 border-b">
+                                    <th class="p-2.5 border">Ngày Nghỉ</th>
+                                    <th class="p-2.5 border">Sân & Giờ</th>
+                                    <th class="p-2.5 border">Lý Do Nghỉ</th>
+                                    <th class="p-2.5 border text-center">Số Buổi</th>
+                                    <th class="p-2.5 border text-center">Căn Cứ Xác Nhận</th>
+                                    <th class="p-2.5 border text-center">Trạng Thái</th>
+                                    <th class="p-2.5 border text-center w-28">Thao Tác</th>
+                                </tr>
+                            </thead>
+                            <tbody id="vc-compensations-body">
+                                <tr><td colspan="7" class="p-4 text-center text-gray-400 italic">Chưa có ghi chú bù sân nào cho khách này.</td></tr>
                             </tbody>
                         </table>
                     </div>
                 </div>
             </div>
 
-            <div class="bg-gray-50 border-t p-4 flex justify-between items-center">
-                <div class="flex space-x-2">
-                    <button id="vc-edit-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-3 rounded transition text-sm flex items-center">
-                        <i class="fa-solid fa-pen mr-1.5"></i> Sửa
-                    </button>
-                    <button id="vc-delete-btn" class="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-3 rounded transition text-sm flex items-center">
-                        <i class="fa-solid fa-trash mr-1.5"></i> Xóa
-                    </button>
-                </div>
-                <button onclick="closeViewCustomerModal()" class="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded transition text-sm">
+            <!-- Footer modal -->
+            <div class="bg-gray-50 border-t p-3 md:p-4 flex justify-between items-center">
+                <button id="vc-delete-btn" class="bg-red-50 hover:bg-red-100 text-red-600 font-bold py-1.5 px-3 rounded border border-red-200 transition text-xs flex items-center">
+                    <i class="fa-solid fa-trash mr-1.5"></i> Xóa khách
+                </button>
+                <button onclick="closeViewCustomerModal()" class="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-2 px-5 rounded transition text-sm">
                     Đóng
                 </button>
             </div>
@@ -1024,6 +1081,23 @@
                     </div>
                 </div>
 
+                <!-- Bù Sân Cho Khách Hợp Đồng (Hiện khi khách có buổi chờ bù) -->
+                <div id="rn-comp-container" class="hidden bg-amber-50 border border-amber-300 p-3.5 rounded-lg space-y-2.5">
+                    <div class="flex justify-between items-center">
+                        <span class="text-xs font-bold text-amber-800 uppercase flex items-center">
+                            <i class="fa-solid fa-cloud-sun-rain mr-1.5 text-amber-600"></i> Buổi Bù Chờ Xử Lý Của Khách (Tích chọn để tự trừ tiền)
+                        </span>
+                        <span id="rn-comp-avail-count" class="text-xs font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded">0 buổi</span>
+                    </div>
+                    <div id="rn-comp-list" class="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                        <!-- Danh sách các buổi bù có checkbox -->
+                    </div>
+                    <div class="flex justify-between items-center text-xs font-semibold text-amber-900 border-t border-amber-200 pt-1.5">
+                        <span>Giảm trừ bù sân:</span>
+                        <span id="rn-comp-deduction-text" class="text-red-600 font-bold">-0 ₫</span>
+                    </div>
+                </div>
+
                 <!-- Tổng kết tiền -->
                 <div class="bg-teal-50 border border-teal-200 p-3 rounded-lg flex justify-between items-center">
                     <div>
@@ -1049,6 +1123,232 @@
                         <i class="fa-solid fa-circle-check mr-1.5"></i> Tạo Phiếu Mới Ngay
                     </button>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Thêm / Sửa Ghi Chú Bù Sân -->
+    <div id="comp-modal" class="fixed inset-0 bg-black bg-opacity-60 hidden flex items-center justify-center z-[90] p-4">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[92vh]">
+            <div class="bg-amber-600 p-4 flex justify-between items-center text-white">
+                <h2 class="text-base font-bold flex items-center gap-2" id="comp-modal-title">
+                    <i class="fa-solid fa-calendar-xmark"></i> Ghi Chú Bù Sân Cho Khách Hợp Đồng
+                </h2>
+                <button onclick="closeCompModal()" class="text-amber-200 hover:text-white transition group"><i class="fa-solid fa-xmark text-xl group-hover:scale-110"></i></button>
+            </div>
+
+            <div class="p-5 overflow-y-auto space-y-3.5 text-xs">
+                <input type="hidden" id="comp-edit-id" value="">
+                <input type="hidden" id="comp-cust-phone" value="">
+                
+                <div class="bg-amber-50 p-2.5 rounded border border-amber-200 text-amber-900 flex justify-between items-center">
+                    <div>Khách hàng: <b id="comp-cust-name-display" class="text-sm">---</b></div>
+                    <div class="font-mono text-gray-600" id="comp-cust-phone-display">---</div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block font-semibold text-gray-700 mb-1">Ngày bị nghỉ / mất buổi (*)</label>
+                        <input type="date" id="comp-missed-date" class="w-full px-3 py-2 border rounded text-xs bg-white focus:ring-1 focus:ring-amber-500 outline-none">
+                    </div>
+                    <div>
+                        <label class="block font-semibold text-gray-700 mb-1">Số buổi bù (*)</label>
+                        <input type="number" id="comp-sessions-count" value="1" min="1" max="30" class="w-full px-3 py-2 border rounded text-xs bg-white font-bold text-amber-700 focus:ring-1 focus:ring-amber-500 outline-none">
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block font-semibold text-gray-700 mb-1">Sân bị nghỉ</label>
+                        <input type="text" id="comp-court-name" class="w-full px-3 py-2 border rounded text-xs bg-white focus:ring-1 focus:ring-amber-500 outline-none" placeholder="VD: Sân 1, Sân Pickleball...">
+                    </div>
+                    <div>
+                        <label class="block font-semibold text-gray-700 mb-1">Khung giờ</label>
+                        <input type="text" id="comp-time-range" class="w-full px-3 py-2 border rounded text-xs bg-white font-mono focus:ring-1 focus:ring-amber-500 outline-none" placeholder="VD: 17:30 - 19:30">
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block font-semibold text-gray-700 mb-1">Lý do nghỉ (*)</label>
+                    <select id="comp-reason-select" onchange="checkCustomReason(this.value)" class="w-full px-3 py-2 border rounded text-xs bg-white focus:ring-1 focus:ring-amber-500 outline-none mb-1.5 font-medium">
+                        <option value="Thời tiết mưa to / ngập sân">Thời tiết mưa to / ngập sân</option>
+                        <option value="Sân bảo trì / sửa chữa định kỳ">Sân bảo trì / sửa chữa định kỳ</option>
+                        <option value="Giải đấu / Sự kiện đặc biệt của trung tâm">Giải đấu / Sự kiện đặc biệt của trung tâm</option>
+                        <option value="Khách xin hoãn / báo nghỉ trước có xác nhận">Khách xin hoãn / báo nghỉ trước có xác nhận</option>
+                        <option value="other">Lý do khác...</option>
+                    </select>
+                    <input type="text" id="comp-custom-reason" class="w-full px-3 py-2 border rounded text-xs bg-white hidden focus:ring-1 focus:ring-amber-500 outline-none" placeholder="Nhập lý do cụ thể...">
+                </div>
+
+                <!-- Upload hình ảnh căn cứ xác nhận -->
+                <div>
+                    <label class="block font-semibold text-gray-700 mb-1">
+                        <i class="fa-solid fa-camera mr-1 text-amber-600"></i> Hình ảnh căn cứ xác nhận (Tin nhắn, thời tiết, hiện trường...)
+                    </label>
+                    
+                    <input type="file" id="comp-image-input" accept="image/*" class="hidden" onchange="handleCompImageSelected(this)">
+                    
+                    <div id="comp-upload-placeholder" onclick="document.getElementById('comp-image-input').click()" class="border-2 border-dashed border-gray-300 hover:border-amber-500 hover:bg-amber-50/40 rounded-lg p-4 text-center cursor-pointer transition">
+                        <i class="fa-solid fa-cloud-arrow-up text-2xl text-amber-500 mb-1"></i>
+                        <p class="text-xs text-gray-600 font-medium">Bấm vào đây để tải ảnh từ máy tính / điện thoại</p>
+                        <p class="text-[11px] text-gray-400 mt-0.5">Hỗ trợ JPG, PNG, WEBP (Ảnh tự động nén nhẹ & sắc nét)</p>
+                    </div>
+
+                    <div id="comp-image-preview-box" class="hidden relative border rounded-lg overflow-hidden bg-gray-100 p-2 mt-2">
+                        <div class="flex items-center gap-3">
+                            <img id="comp-image-preview" src="" alt="Căn cứ xác nhận" class="w-20 h-20 object-cover rounded border cursor-pointer hover:opacity-90" onclick="viewLargeProofImage(this.src)" title="Bấm để xem ảnh phóng to">
+                            <div class="flex-1 min-w-0">
+                                <span class="font-bold text-gray-700 block truncate" id="comp-img-name">anh_xac_nhan.jpg</span>
+                                <span class="text-[11px] text-green-600 flex items-center gap-1 mt-0.5"><i class="fa-solid fa-circle-check"></i> Đã nén sẵn sàng lưu</span>
+                                <button type="button" onclick="removeCompImage()" class="mt-1 text-red-500 hover:underline text-[11px] font-semibold flex items-center gap-1">
+                                    <i class="fa-solid fa-trash"></i> Xóa ảnh này
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block font-semibold text-gray-700 mb-1">Ghi chú thêm</label>
+                    <textarea id="comp-note" class="w-full px-3 py-2 border rounded text-xs bg-white h-14 outline-none focus:ring-1 focus:ring-amber-500" placeholder="Ghi chú thêm về thỏa thuận bù với khách..."></textarea>
+                </div>
+
+                <div>
+                    <label class="block font-semibold text-gray-700 mb-1">Trạng thái xử lý</label>
+                    <select id="comp-status" class="w-full px-3 py-2 border rounded text-xs bg-white font-bold">
+                        <option value="pending" class="text-amber-600">⏳ Đang chờ bù (Chưa bù)</option>
+                        <option value="completed" class="text-green-600">✓ Đã bù xong</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="bg-gray-50 border-t p-3.5 flex justify-end space-x-2">
+                <button onclick="closeCompModal()" class="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded text-xs font-semibold transition">Hủy</button>
+                <button onclick="saveCompensation()" id="comp-save-btn" class="px-5 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded text-xs font-bold shadow flex items-center gap-1.5 transition">
+                    <i class="fa-solid fa-floppy-disk"></i> Lưu Ghi Chú
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Xem Ảnh Căn Cứ Lớn -->
+    <div id="comp-image-modal" class="fixed inset-0 bg-black bg-opacity-80 hidden flex items-center justify-center z-[100] p-4" onclick="closeLargeProofImage()">
+        <div class="relative max-w-3xl max-h-[90vh] bg-white rounded-lg p-2 shadow-2xl" onclick="event.stopPropagation()">
+            <button onclick="closeLargeProofImage()" class="absolute -top-3 -right-3 w-8 h-8 rounded-full bg-red-600 text-white flex items-center justify-center font-bold shadow-lg hover:bg-red-700 transition cursor-pointer">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+            <img id="comp-large-image" src="" alt="Căn cứ xác nhận" class="max-w-full max-h-[85vh] object-contain rounded">
+        </div>
+    </div>
+
+    <!-- Modal Xem Lại & Xuất Excel Hóa Đơn VAT Cho Kế Toán -->
+    <div id="vat-export-modal" class="fixed inset-0 bg-black bg-opacity-60 hidden flex items-center justify-center z-[90] p-4">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-3xl overflow-hidden flex flex-col max-h-[92vh]">
+            <div class="bg-gradient-to-r from-emerald-600 to-teal-700 p-4 flex justify-between items-center text-white">
+                <div class="flex items-center space-x-2.5">
+                    <i class="fa-solid fa-file-excel text-2xl"></i>
+                    <div>
+                        <h2 class="text-base md:text-lg font-bold">Xuất Bảng Kê Hóa Đơn VAT Cho Kế Toán</h2>
+                        <p class="text-xs text-emerald-100">Tạo file Excel (.xlsx) chuẩn mẫu xuất hóa đơn điện tử</p>
+                    </div>
+                </div>
+                <button onclick="closeVatExportModal()" class="text-emerald-200 hover:text-white transition group"><i class="fa-solid fa-xmark text-xl group-hover:scale-110"></i></button>
+            </div>
+
+            <div class="p-5 overflow-y-auto space-y-4 text-xs">
+                <!-- Thông tin khách / Công ty (Lấy từ dữ liệu khách) -->
+                <div class="bg-emerald-50/60 border border-emerald-200 p-4 rounded-lg space-y-3">
+                    <h3 class="text-xs font-bold text-emerald-800 uppercase flex items-center">
+                        <i class="fa-solid fa-building mr-1.5 text-emerald-600"></i> Thông Tin Khách Hàng / Đơn Vị Mua Hàng
+                    </h3>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div class="sm:col-span-2">
+                            <label class="block font-semibold text-gray-700 mb-1">Tên Công Ty / Đơn Vị (*)</label>
+                            <input type="text" id="ve-company" class="w-full px-3 py-2 border rounded bg-white text-xs font-bold focus:ring-1 focus:ring-emerald-500 outline-none" placeholder="Tên công ty nhận hóa đơn">
+                        </div>
+                        <div>
+                            <label class="block font-semibold text-gray-700 mb-1">Mã Số Thuế (*)</label>
+                            <input type="text" id="ve-tax-code" class="w-full px-3 py-2 border rounded bg-white text-xs font-mono font-bold text-blue-700 focus:ring-1 focus:ring-emerald-500 outline-none" placeholder="Mã số thuế">
+                        </div>
+                        <div>
+                            <label class="block font-semibold text-gray-700 mb-1">Người Liên Hệ / SĐT</label>
+                            <input type="text" id="ve-contact" class="w-full px-3 py-2 border rounded bg-white text-xs focus:ring-1 focus:ring-emerald-500 outline-none" placeholder="Họ tên người mua & SĐT">
+                        </div>
+                        <div class="sm:col-span-2">
+                            <label class="block font-semibold text-gray-700 mb-1">Địa Chỉ Thuế / Đăng Ký Kinh Doanh</label>
+                            <input type="text" id="ve-tax-address" class="w-full px-3 py-2 border rounded bg-white text-xs focus:ring-1 focus:ring-emerald-500 outline-none" placeholder="Địa chỉ ĐKKD">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Nội dung hàng hóa / dịch vụ -->
+                <div class="bg-gray-50 border p-4 rounded-lg space-y-3">
+                    <h3 class="text-xs font-bold text-gray-700 uppercase flex items-center">
+                        <i class="fa-solid fa-tag mr-1.5 text-emerald-600"></i> Nội Dung Xuất Hóa Đơn (Có thể xem và chỉnh sửa)
+                    </h3>
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div class="sm:col-span-2">
+                            <label class="block font-semibold text-gray-700 mb-1">Tên Hàng Hóa, Dịch Vụ (*)</label>
+                            <input type="text" id="ve-item-name" class="w-full px-3 py-2 border rounded bg-white text-xs font-bold text-gray-800 focus:ring-1 focus:ring-emerald-500 outline-none" placeholder="VD: Dịch vụ thuê sân thể thao...">
+                        </div>
+                        <div>
+                            <label class="block font-semibold text-gray-700 mb-1">Thuế Suất VAT</label>
+                            <select id="ve-vat-rate" onchange="recalculateVatPreview()" class="w-full px-3 py-2 border rounded bg-white text-xs font-bold text-indigo-700 focus:ring-1 focus:ring-emerald-500 outline-none">
+                                <option value="10">10%</option>
+                                <option value="8">8%</option>
+                                <option value="0">0%</option>
+                                <option value="none">Không chịu thuế</option>
+                            </select>
+                        </div>
+                        <div class="sm:col-span-3">
+                            <label class="block font-semibold text-gray-700 mb-1">Diễn Giải Chi Tiết / Kỳ Thuê</label>
+                            <input type="text" id="ve-item-desc" class="w-full px-3 py-2 border rounded bg-white text-xs focus:ring-1 focus:ring-emerald-500 outline-none" placeholder="VD: Thuê sân kỳ tháng 10/2026...">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Danh sách phiếu được chọn xuất -->
+                <div>
+                    <h3 class="text-xs font-bold text-gray-700 uppercase mb-2 flex items-center justify-between">
+                        <span><i class="fa-solid fa-receipt mr-1 text-emerald-600"></i> Các Phiếu Thu Sẽ Xuất Kèm (<span id="ve-invoices-count">0</span> phiếu)</span>
+                    </h3>
+                    <div class="border rounded-lg overflow-x-auto max-h-48">
+                        <table class="w-full text-left text-xs border-collapse">
+                            <thead>
+                                <tr class="bg-gray-100 text-gray-700 uppercase font-semibold border-b">
+                                    <th class="p-2 border">Mã Phiếu</th>
+                                    <th class="p-2 border">Ngày Thuê / Tạo</th>
+                                    <th class="p-2 border text-right">Tiền Hàng (Trước VAT)</th>
+                                    <th class="p-2 border text-right">Tiền Thuế VAT</th>
+                                    <th class="p-2 border text-right">Tổng Thanh Toán</th>
+                                </tr>
+                            </thead>
+                            <tbody id="ve-preview-table-body" class="bg-white">
+                                <!-- Populated dynamically -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Tổng kết & Tùy chọn -->
+                <div class="bg-emerald-50 border border-emerald-300 p-3.5 rounded-lg flex flex-col sm:flex-row justify-between items-center gap-3">
+                    <label class="inline-flex items-center text-xs font-semibold text-emerald-900 cursor-pointer">
+                        <input type="checkbox" id="ve-auto-mark-checked" checked class="rounded text-emerald-600 mr-2">
+                        Tự động đánh dấu các phiếu này là <b>"Đã xuất hóa đơn VAT"</b> sau khi tải file
+                    </label>
+
+                    <div class="text-right">
+                        <div class="text-[11px] text-gray-600">Tổng Tiền Thanh Toán:</div>
+                        <div id="ve-final-total-display" class="text-lg font-bold text-emerald-800">0 ₫</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-gray-50 border-t p-3.5 flex justify-end space-x-2">
+                <button onclick="closeVatExportModal()" class="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded text-xs font-semibold transition">Đóng</button>
+                <button onclick="executeExportVatExcel()" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-xs font-bold shadow flex items-center gap-1.5 transition">
+                    <i class="fa-solid fa-file-arrow-down text-sm"></i> Tải File Excel (.xlsx)
+                </button>
             </div>
         </div>
     </div>

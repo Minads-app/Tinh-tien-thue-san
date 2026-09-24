@@ -643,18 +643,181 @@ function updateEstimatedPrice() {
     }
 }
 
-function addToBill() {
+function timeToMinutes(timeStr) {
+    if (!timeStr) return 0;
+    const parts = timeStr.trim().split(':');
+    return (parseInt(parts[0], 10) || 0) * 60 + (parseInt(parts[1], 10) || 0);
+}
+
+function getWeekdayNameVn(dayIndex) {
+    const names = ['Chủ Nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy'];
+    return names[dayIndex] || `T${dayIndex + 1}`;
+}
+
+function checkCourtConflicts(params) {
+    const { group, courts, startDate, endDate, selectedDays, excludeDates, startTime, endTime, ignoreInvoiceId } = params;
+    const newStartMin = timeToMinutes(startTime);
+    const newEndMin = timeToMinutes(endTime);
+
+    if (newStartMin >= newEndMin) return [];
+
+    // Tạo danh sách các ngày hợp lệ của lịch mới
+    const newSessionDates = [];
+    let cur = new Date(startDate);
+    while (cur <= endDate) {
+        const dayOfWeek = cur.getDay();
+        if (selectedDays.includes(dayOfWeek)) {
+            const dateStr = cur.toDateString();
+            if (!excludeDates.includes(dateStr)) {
+                const y = cur.getFullYear();
+                const m = (cur.getMonth() + 1).toString().padStart(2, '0');
+                const d = cur.getDate().toString().padStart(2, '0');
+                newSessionDates.push({
+                    isoDate: `${y}-${m}-${d}`,
+                    displayDate: `${d}/${m}/${y}`,
+                    dayOfWeek: dayOfWeek,
+                    dayName: getWeekdayNameVn(dayOfWeek)
+                });
+            }
+        }
+        cur.setDate(cur.getDate() + 1);
+    }
+
+    if (newSessionDates.length === 0 || !cachedTransactions || cachedTransactions.length === 0) {
+        return [];
+    }
+
+    const conflicts = [];
+    const recordedConflictKeys = new Set();
+
+    cachedTransactions.forEach(t => {
+        const invId = t.id || t.docId || '';
+        if (ignoreInvoiceId && (invId === ignoreInvoiceId || t.docId === ignoreInvoiceId)) return;
+        if (t.status === 'cancelled') return;
+        if (!t.items || !Array.isArray(t.items)) return;
+
+        t.items.forEach(oldItem => {
+            const oldName = oldItem.name || '';
+            
+            // Tìm sân trùng
+            courts.forEach(courtName => {
+                const isCourtMatch = oldName.includes(`[${courtName}]`) || (oldName.toLowerCase().includes(courtName.toLowerCase()) && oldName.toLowerCase().includes(group.toLowerCase()));
+                if (!isCourtMatch) return;
+
+                // Trích xuất giờ của oldItem
+                let oldStartMin = 0;
+                let oldEndMin = 0;
+                let oldTimeStr = '';
+
+                if (oldItem.timeRange && oldItem.timeRange.includes('-')) {
+                    const parts = oldItem.timeRange.split('-');
+                    oldStartMin = timeToMinutes(parts[0]);
+                    oldEndMin = timeToMinutes(parts[1]);
+                    oldTimeStr = oldItem.timeRange;
+                } else {
+                    const matchTime = (oldItem.desc || '').match(/\((\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})\)/);
+                    if (matchTime) {
+                        oldStartMin = timeToMinutes(matchTime[1]);
+                        oldEndMin = timeToMinutes(matchTime[2]);
+                        oldTimeStr = `${matchTime[1]} - ${matchTime[2]}`;
+                    }
+                }
+
+                if (oldStartMin === 0 && oldEndMin === 0) return;
+
+                // Kiểm tra giao thoa giờ
+                const isTimeOverlap = (newStartMin < oldEndMin) && (newEndMin > oldStartMin);
+                if (!isTimeOverlap) return;
+
+                // Kiểm tra dải ngày của oldItem
+                let oldStartDate = null;
+                let oldEndDate = null;
+                if (oldItem.startDateStr) {
+                    const [y, m, d] = oldItem.startDateStr.split('-').map(Number);
+                    oldStartDate = new Date(y, m - 1, d);
+                } else if (t.startDate) {
+                    const [y, m, d] = t.startDate.split('-').map(Number);
+                    oldStartDate = new Date(y, m - 1, d);
+                }
+
+                if (oldItem.endDateStr) {
+                    const [y, m, d] = oldItem.endDateStr.split('-').map(Number);
+                    oldEndDate = new Date(y, m - 1, d);
+                } else if (t.endDate) {
+                    const [y, m, d] = t.endDate.split('-').map(Number);
+                    oldEndDate = new Date(y, m - 1, d);
+                }
+
+                const oldWeekdays = (oldItem.weekdays && Array.isArray(oldItem.weekdays)) ? oldItem.weekdays.map(Number) : null;
+                const oldSkipped = (oldItem.skipped && Array.isArray(oldItem.skipped)) ? oldItem.skipped : [];
+
+                // So khớp từng ngày của lịch mới với lịch cũ
+                newSessionDates.forEach(session => {
+                    const [sy, sm, sd] = session.isoDate.split('-').map(Number);
+                    const checkDate = new Date(sy, sm - 1, sd);
+
+                    let isDateMatch = false;
+                    if (oldStartDate && oldEndDate) {
+                        if (checkDate >= oldStartDate && checkDate <= oldEndDate) {
+                            if (oldWeekdays && oldWeekdays.length > 0) {
+                                if (oldWeekdays.includes(session.dayOfWeek)) isDateMatch = true;
+                            } else {
+                                isDateMatch = true;
+                            }
+                        }
+                    } else {
+                        // Không có dải ngày, kiểm tra nếu desc có ngày trùng
+                        if ((oldItem.desc || '').includes(session.displayDate)) isDateMatch = true;
+                    }
+
+                    // Nếu ngày này trong phiếu cũ đã được đánh dấu nghỉ thì không tính trùng
+                    if (isDateMatch && (oldSkipped.includes(session.displayDate) || oldSkipped.includes(session.isoDate))) {
+                        isDateMatch = false;
+                    }
+
+                    if (isDateMatch) {
+                        const conflictKey = `${courtName}_${session.isoDate}_${invId}`;
+                        if (!recordedConflictKeys.has(conflictKey)) {
+                            recordedConflictKeys.add(conflictKey);
+                            conflicts.push({
+                                court: courtName,
+                                date: session.displayDate,
+                                dayName: session.dayName,
+                                newTime: `${startTime} - ${endTime}`,
+                                oldTime: oldTimeStr || `${Math.floor(oldStartMin/60)}:${(oldStartMin%60).toString().padStart(2,'0')} - ${Math.floor(oldEndMin/60)}:${(oldEndMin%60).toString().padStart(2,'0')}`,
+                                customerName: t.customerName || 'Khách vãng lai',
+                                customerPhone: t.customerPhone || '---',
+                                invoiceId: invId
+                            });
+                        }
+                    }
+                });
+            });
+        });
+    });
+
+    return conflicts;
+}
+
+async function addToBill() {
     const group = document.getElementById('sport-select').value;
     const selectedCourts = Array.from(document.querySelectorAll('input[name="court-checkbox"]:checked')).map(cb => cb.value);
     
     if(!group || selectedCourts.length === 0) { Swal.fire('Lỗi', 'Vui lòng chọn Môn và ít nhất 1 Sân', 'error'); return; }
 
-    const startDate = new Date(document.getElementById('start-date').value);
-    const endDate = new Date(document.getElementById('end-date').value);
+    const startDateInput = document.getElementById('start-date').value;
+    const endDateInput = document.getElementById('end-date').value;
+    if (!startDateInput || !endDateInput) {
+        Swal.fire('Lỗi', 'Vui lòng chọn Từ ngày và Đến ngày!', 'error');
+        return;
+    }
+
+    const startDate = new Date(startDateInput);
+    const endDate = new Date(endDateInput);
     const startTime = document.getElementById('time-start').value;
     const endTime = document.getElementById('time-end').value;
     
-    const excludeDates = excludeDatePicker.selectedDates.map(d => d.toDateString());
+    const excludeDates = (excludeDatePicker && excludeDatePicker.selectedDates) ? excludeDatePicker.selectedDates.map(d => d.toDateString()) : [];
 
     const duration = calculateHours(startTime, endTime);
     if(duration <= 0) { Swal.fire('Lỗi', 'Giờ kết thúc phải lớn hơn bắt đầu', 'error'); return; }
@@ -662,6 +825,78 @@ function addToBill() {
     const selectedDays = [];
     document.querySelectorAll('input[name="weekday"]:checked').forEach(cb => selectedDays.push(parseInt(cb.value)));
     if(selectedDays.length === 0) { Swal.fire('Lỗi', 'Chọn thứ trong tuần', 'error'); return; }
+
+    // =========================================================================
+    // KIỂM TRA TRÙNG SÂN THỜI GIAN THỰC (CONFLICT DETECTION)
+    // =========================================================================
+    const conflicts = checkCourtConflicts({
+        group: group,
+        courts: selectedCourts,
+        startDate: startDate,
+        endDate: endDate,
+        selectedDays: selectedDays,
+        excludeDates: excludeDates,
+        startTime: startTime,
+        endTime: endTime,
+        ignoreInvoiceId: currentInvoiceId
+    });
+
+    if (conflicts.length > 0) {
+        let conflictRowsHtml = '';
+        conflicts.slice(0, 8).forEach(c => {
+            conflictRowsHtml += `
+                <tr class="border-b text-xs">
+                    <td class="p-2 border-r font-bold text-red-700">${c.court}</td>
+                    <td class="p-2 border-r whitespace-nowrap">${c.date} <span class="text-gray-500 font-medium">(${c.dayName})</span></td>
+                    <td class="p-2 border-r text-center font-mono font-bold text-blue-700">${c.newTime}</td>
+                    <td class="p-2 border-r text-gray-800"><b>${c.customerName}</b> <span class="font-mono text-[11px] text-gray-500">(${c.customerPhone})</span></td>
+                    <td class="p-2 font-mono text-center text-orange-700 font-bold">${c.oldTime}</td>
+                </tr>
+            `;
+        });
+
+        if (conflicts.length > 8) {
+            conflictRowsHtml += `<tr><td colspan="5" class="p-2 text-center text-gray-500 italic">... và còn ${conflicts.length - 8} buổi trùng khác.</td></tr>`;
+        }
+
+        const warnResult = await Swal.fire({
+            title: '<span class="text-red-600 flex items-center justify-center gap-2"><i class="fa-solid fa-triangle-exclamation"></i> CẢNH BÁO TRÙNG LỊCH SÂN!</span>',
+            html: `
+                <div class="text-left text-xs mb-3 text-gray-700">
+                    Phát hiện <b class="text-red-600">${conflicts.length} buổi</b> trong khoảng thời gian này đã có khách khác đặt trước:
+                </div>
+                <div class="border rounded-lg overflow-x-auto max-h-56 text-left">
+                    <table class="w-full text-left text-xs border-collapse">
+                        <thead>
+                            <tr class="bg-red-50 text-red-900 border-b uppercase font-bold text-[11px]">
+                                <th class="p-2 border-r">Sân</th>
+                                <th class="p-2 border-r">Ngày</th>
+                                <th class="p-2 border-r text-center">Giờ Định Đặt</th>
+                                <th class="p-2 border-r">Khách Đang Giữ Sân</th>
+                                <th class="p-2 text-center">Giờ Trùng Cũ</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${conflictRowsHtml}
+                        </tbody>
+                    </table>
+                </div>
+                <p class="text-[11px] text-gray-500 italic mt-3 text-center">Bạn có muốn tiếp tục thêm bất chấp cảnh báo trùng sân không?</p>
+            `,
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#d97706',
+            cancelButtonColor: '#2563eb',
+            confirmButtonText: '<i class="fa-solid fa-check mr-1"></i> Vẫn Thêm (Bỏ qua trùng)',
+            cancelButtonText: '<i class="fa-solid fa-arrow-rotate-left mr-1"></i> Quay lại chọn giờ khác',
+            reverseButtons: true,
+            width: '650px'
+        });
+
+        if (!warnResult.isConfirmed) {
+            return; // Dừng, không thêm vào giỏ
+        }
+    }
 
     let validDaysCount = 0;
     let matchedDaysCount = 0;
@@ -734,7 +969,7 @@ function addToBill() {
     document.querySelectorAll('input[name="court-checkbox"]:checked').forEach(cb => cb.checked = false);
 
     renderInvoice();
-    Swal.fire({ icon: 'success', title: 'Đã thêm', toast: true, position: 'top-end', showConfirmButton: false, timer: 1500 });
+    Swal.fire({ icon: 'success', title: 'Đã thêm vào phiếu', toast: true, position: 'top-end', showConfirmButton: false, timer: 1500 });
 }
 
 
@@ -3032,23 +3267,70 @@ async function deleteCustomer(phoneId, customerName) {
     }
 }
 
+let currentViewingPhone = '';
+let currentViewingCustomerInvoices = [];
+let selectedVatInvoiceIds = new Set();
+let currentCustomerCompensations = [];
+let currentCompUploadedBase64 = null;
+
+function switchVcSubTab(subTabName) {
+    const btnInvoices = document.getElementById('vc-tab-btn-invoices');
+    const btnComp = document.getElementById('vc-tab-btn-compensations');
+    const contentInvoices = document.getElementById('vc-tab-content-invoices');
+    const contentComp = document.getElementById('vc-tab-content-compensations');
+
+    if (subTabName === 'invoices') {
+        if (btnInvoices) {
+            btnInvoices.className = "pb-2.5 border-b-2 border-blue-600 text-blue-600 flex items-center gap-1.5 transition font-bold";
+        }
+        if (btnComp) {
+            btnComp.className = "pb-2.5 border-b-2 border-transparent text-gray-500 hover:text-gray-800 flex items-center gap-1.5 transition font-semibold";
+        }
+        if (contentInvoices) contentInvoices.classList.remove('hidden');
+        if (contentComp) contentComp.classList.add('hidden');
+    } else {
+        if (btnInvoices) {
+            btnInvoices.className = "pb-2.5 border-b-2 border-transparent text-gray-500 hover:text-gray-800 flex items-center gap-1.5 transition font-semibold";
+        }
+        if (btnComp) {
+            btnComp.className = "pb-2.5 border-b-2 border-amber-600 text-amber-700 flex items-center gap-1.5 transition font-bold";
+        }
+        if (contentInvoices) contentInvoices.classList.add('hidden');
+        if (contentComp) contentComp.classList.remove('hidden');
+        fetchCustomerCompensations(currentViewingPhone);
+    }
+}
+
 async function viewCustomer(phoneId) {
     const cust = customersList.find(c => c.phoneId === phoneId || c.rawDocId === phoneId);
     if (!cust) return;
 
+    currentViewingPhone = cust.phoneId || phoneId;
+    selectedVatInvoiceIds.clear();
+
     const el = (id) => document.getElementById(id);
     if (!el('view-customer-modal')) return;
 
-    el('vc-title').textContent = `Hồ Sơ: ${cust.name || 'Khách hàng'}`;
+    el('vc-title').textContent = cust.name || 'Khách hàng';
     el('vc-code').textContent = cust.customerCode || '---';
     el('vc-name').textContent = cust.name || '---';
     el('vc-phone').textContent = cust.phoneId || '---';
+    if (el('vc-phone-header')) el('vc-phone-header').textContent = cust.phoneId || '---';
     el('vc-phone-link').href = `tel:${cust.phoneId || ''}`;
-    el('vc-gender').textContent = cust.gender || '---';
+    el('vc-gender-badge').textContent = cust.gender || 'Anh';
     if (el('vc-team')) el('vc-team').textContent = cust.team || '---';
-    el('vc-company').textContent = cust.company || '---';
+    
+    // Doanh nghiệp
+    if (el('vc-company')) {
+        el('vc-company').textContent = cust.company || '---';
+        el('vc-company').title = cust.company || '';
+    }
     if (el('vc-tax-code')) el('vc-tax-code').textContent = cust.taxCode || '---';
-    if (el('vc-tax-address')) el('vc-tax-address').textContent = cust.taxAddress || '---';
+    if (el('vc-tax-address')) {
+        el('vc-tax-address').textContent = cust.taxAddress || '---';
+        el('vc-tax-address').title = cust.taxAddress || '';
+    }
+
     el('vc-tickets').textContent = cust.ticketCount || 0;
     el('vc-spent').textContent = formatVND(cust.totalSpent || 0);
 
@@ -3059,13 +3341,6 @@ async function viewCustomer(phoneId) {
     }
     el('vc-last-visit').textContent = lastVisitStr;
 
-    let createdAtStr = '---';
-    if (cust.createdAt && cust.createdAt.toDate) {
-        const d = cust.createdAt.toDate();
-        createdAtStr = `${d.getDate().toString().padStart(2,'0')}/${(d.getMonth()+1).toString().padStart(2,'0')}/${d.getFullYear()}`;
-    }
-    el('vc-created-at').textContent = createdAtStr;
-
     el('vc-edit-btn').onclick = () => {
         openEditCustomerModal(phoneId);
     };
@@ -3073,10 +3348,21 @@ async function viewCustomer(phoneId) {
         deleteCustomer(phoneId, cust.name);
     };
 
+    // Mặc định về subtab Lịch Sử
+    switchVcSubTab('invoices');
     el('view-customer-modal').classList.remove('hidden');
 
+    // Tải đồng thời Lịch sử phiếu và Nhật ký Bù sân
+    loadCustomerInvoices(currentViewingPhone);
+    fetchCustomerCompensations(currentViewingPhone);
+}
+
+async function loadCustomerInvoices(phoneId) {
+    const el = (id) => document.getElementById(id);
     const transBody = el('vc-transactions-body');
-    transBody.innerHTML = '<tr><td colspan="5" class="p-3 text-center text-gray-500"><i class="fa-solid fa-spinner fa-spin mr-1"></i> Đang tải lịch sử giao dịch...</td></tr>';
+    if (!transBody) return;
+    
+    transBody.innerHTML = '<tr><td colspan="7" class="p-4 text-center text-gray-500"><i class="fa-solid fa-spinner fa-spin mr-1.5 text-blue-600"></i> Đang tải lịch sử giao dịch...</td></tr>';
 
     try {
         let transactions = [];
@@ -3092,64 +3378,912 @@ async function viewCustomer(phoneId) {
             snap.forEach(d => transactions.push({ docId: d.id, ...d.data() }));
         }
 
-        if (transactions.length === 0) {
-            transBody.innerHTML = '<tr><td colspan="5" class="p-4 text-center text-gray-400 italic">Chưa có phiếu thuê nào của khách hàng này.</td></tr>';
-        } else {
-            transactions.sort((a, b) => {
-                const tA = (a.createdAt && a.createdAt.toDate) ? a.createdAt.toDate().getTime() : 0;
-                const tB = (b.createdAt && b.createdAt.toDate) ? b.createdAt.toDate().getTime() : 0;
-                return tB - tA;
-            });
+        transactions.sort((a, b) => {
+            const tA = (a.createdAt && a.createdAt.toDate) ? a.createdAt.toDate().getTime() : 0;
+            const tB = (b.createdAt && b.createdAt.toDate) ? b.createdAt.toDate().getTime() : 0;
+            return tB - tA;
+        });
 
-            transBody.innerHTML = '';
-            transactions.forEach(t => {
-                let dateStr = '---';
-                if (t.createdAt && t.createdAt.toDate) {
-                    const d = t.createdAt.toDate();
-                    dateStr = `${d.getDate().toString().padStart(2,'0')}/${(d.getMonth()+1).toString().padStart(2,'0')}/${d.getFullYear()}`;
-                }
-                const invId = t.id || `CŨ-${(t.docId || '').slice(0,6).toUpperCase()}`;
-                const status = t.status || 'paid';
-                let statusBadge = '';
-                if (status === 'unpaid') {
-                    statusBadge = `<span class="px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-[10px] font-bold">Chưa TT</span>`;
-                } else if (status === 'partial') {
-                    statusBadge = `<span class="px-2 py-0.5 bg-orange-100 text-orange-700 rounded-full text-[10px] font-bold">TT 1 Phần</span>`;
-                } else if (status === 'overpaid') {
-                    statusBadge = `<span class="px-2 py-0.5 bg-purple-100 text-purple-700 rounded-full text-[10px] font-bold">Trả Thừa</span>`;
-                } else {
-                    statusBadge = `<span class="px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-[10px] font-bold">Đã TT</span>`;
-                }
+        currentViewingCustomerInvoices = transactions;
+        if (el('vc-badge-invoices')) el('vc-badge-invoices').textContent = transactions.length;
 
-                const dataStr = encodeURIComponent(JSON.stringify(t));
-                const tr = document.createElement('tr');
-                tr.className = "border-b hover:bg-gray-50";
-                tr.innerHTML = `
-                    <td class="p-2 border font-mono font-bold text-indigo-600">${invId}</td>
-                    <td class="p-2 border text-gray-600 whitespace-nowrap">${dateStr}</td>
-                    <td class="p-2 border text-center whitespace-nowrap">${statusBadge}</td>
-                    <td class="p-2 border text-right font-bold text-gray-800 whitespace-nowrap">${formatVND(t.totalAmount || 0)}</td>
-                    <td class="p-2 border text-center whitespace-nowrap">
-                        <button onclick="viewReceipt('${dataStr}')" class="px-2 py-1 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded text-[11px] font-bold transition mr-1" title="Xem chi tiết phiếu">
-                            <i class="fa-solid fa-eye mr-1"></i> Phiếu
-                        </button>
-                        <button onclick="closeViewCustomerModal(); openRenewModal('${dataStr}')" class="px-2 py-1 bg-teal-50 text-teal-600 hover:bg-teal-100 rounded text-[11px] font-bold transition" title="Gia hạn phiếu này sang tháng mới">
-                            <i class="fa-solid fa-calendar-plus mr-1"></i> Gia Hạn
-                        </button>
-                    </td>
-                `;
-                transBody.appendChild(tr);
-            });
-        }
+        renderVcInvoicesTable();
+
     } catch (e) {
         console.error("Lỗi lấy lịch sử giao dịch của khách:", e);
-        transBody.innerHTML = '<tr><td colspan="5" class="p-3 text-center text-red-500">Lỗi khi tải lịch sử giao dịch.</td></tr>';
+        transBody.innerHTML = '<tr><td colspan="7" class="p-4 text-center text-red-500">Lỗi khi tải lịch sử giao dịch.</td></tr>';
+    }
+}
+
+function renderVcInvoicesTable() {
+    const el = (id) => document.getElementById(id);
+    const transBody = el('vc-transactions-body');
+    if (!transBody) return;
+
+    const filterVat = el('vc-filter-vat') ? el('vc-filter-vat').value : 'all';
+
+    let displayList = currentViewingCustomerInvoices;
+    if (filterVat === 'exported') {
+        displayList = displayList.filter(t => t.vatExported === true);
+    } else if (filterVat === 'not_exported') {
+        displayList = displayList.filter(t => !t.vatExported);
+    }
+
+    if (displayList.length === 0) {
+        transBody.innerHTML = '<tr><td colspan="7" class="p-5 text-center text-gray-400 italic">Không có phiếu nào phù hợp với bộ lọc.</td></tr>';
+        updateVatSelectionUI();
+        return;
+    }
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    transBody.innerHTML = '';
+    displayList.forEach(t => {
+        const invId = t.id || `CŨ-${(t.docId || '').slice(0,6).toUpperCase()}`;
+        const targetDocId = t.id || t.docId;
+
+        // Ngày tạo
+        let createDateStr = '---';
+        if (t.createdAt && t.createdAt.toDate) {
+            const d = t.createdAt.toDate();
+            createDateStr = `${d.getDate().toString().padStart(2,'0')}/${(d.getMonth()+1).toString().padStart(2,'0')}/${d.getFullYear()}`;
+        }
+
+        // Kỳ thuê (startDate - endDate)
+        let periodDisplay = '';
+        if (t.startDate && t.endDate) {
+            let [sy, sm, sd] = t.startDate.split('-');
+            let [ey, em, ed] = t.endDate.split('-');
+            periodDisplay = `<div class="font-bold text-gray-800 text-[11px]"><i class="fa-regular fa-calendar-days text-indigo-500 mr-1"></i>${sd}/${sm} - ${ed}/${em}/${ey}</div>`;
+        }
+        periodDisplay += `<div class="text-[10px] text-gray-400">Tạo: ${createDateStr}</div>`;
+
+        // CẢNH BÁO HẾT HẠN HỢP ĐỒNG
+        let expiryBadge = '<span class="text-gray-400 italic text-[11px]">Vãng lai</span>';
+        let hasContract = false;
+        if (t.endDate && t.endDate.includes('-')) {
+            hasContract = true;
+            const [ey, em, ed] = t.endDate.split('-').map(Number);
+            const endDateObj = new Date(ey, em - 1, ed);
+            endDateObj.setHours(0, 0, 0, 0);
+
+            const diffTime = endDateObj.getTime() - today.getTime();
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+            if (diffDays < 0) {
+                const daysAgo = Math.abs(diffDays);
+                expiryBadge = `<span class="px-2 py-0.5 bg-red-100 text-red-700 rounded-full font-bold text-[10px] inline-flex items-center gap-1" title="Hạn cuối: ${ed}/${em}/${ey}"><i class="fa-solid fa-triangle-exclamation"></i> Đã hết hạn (${daysAgo} ngày)</span>`;
+            } else if (diffDays <= 7) {
+                expiryBadge = `<span class="px-2 py-0.5 bg-amber-100 text-amber-800 rounded-full font-bold text-[10px] inline-flex items-center gap-1 animate-pulse" title="Hạn cuối: ${ed}/${em}/${ey}"><i class="fa-solid fa-bolt text-amber-600"></i> Sắp hết (${diffDays} ngày)</span>`;
+            } else {
+                expiryBadge = `<span class="px-2 py-0.5 bg-green-100 text-green-700 rounded-full font-semibold text-[10px] inline-flex items-center gap-1" title="Hạn cuối: ${ed}/${em}/${ey}"><i class="fa-solid fa-circle-check"></i> Còn ${diffDays} ngày</span>`;
+            }
+        }
+
+        // TRẠNG THÁI VAT
+        const isVatExported = !!t.vatExported;
+        let vatBadge = '';
+        if (isVatExported) {
+            vatBadge = `
+                <button type="button" onclick="toggleInvoiceVatStatus('${targetDocId}', true)" title="Bấm để chuyển về Chưa xuất VAT" class="px-2 py-0.5 bg-emerald-100 text-emerald-800 hover:bg-emerald-200 rounded font-bold text-[11px] inline-flex items-center gap-1 transition cursor-pointer">
+                    <i class="fa-solid fa-check"></i> Đã xuất VAT
+                </button>
+            `;
+        } else {
+            vatBadge = `
+                <button type="button" onclick="toggleInvoiceVatStatus('${targetDocId}', false)" title="Bấm để đánh dấu Đã xuất VAT" class="px-2 py-0.5 bg-gray-100 text-gray-600 hover:bg-emerald-50 hover:text-emerald-700 rounded font-medium text-[11px] inline-flex items-center gap-1 transition border border-gray-200 cursor-pointer">
+                    <i class="fa-regular fa-circle"></i> Chưa xuất
+                </button>
+            `;
+        }
+
+        // CHECKBOX CHỌN PHIẾU XUẤT EXCEL
+        const isChecked = selectedVatInvoiceIds.has(targetDocId);
+
+        const dataStr = encodeURIComponent(JSON.stringify(t));
+        const tr = document.createElement('tr');
+        tr.className = `border-b hover:bg-blue-50/60 transition ${isChecked ? 'bg-blue-50/80' : ''}`;
+        tr.innerHTML = `
+            <td class="p-2 border text-center">
+                <input type="checkbox" ${isChecked ? 'checked' : ''} onchange="toggleInvoiceVatSelect('${targetDocId}', this.checked)" class="rounded text-blue-600 cursor-pointer">
+            </td>
+            <td class="p-2 border font-mono font-bold text-indigo-700 whitespace-nowrap">${invId}</td>
+            <td class="p-2 border whitespace-nowrap">${periodDisplay}</td>
+            <td class="p-2 border text-center whitespace-nowrap">${expiryBadge}</td>
+            <td class="p-2 border text-right font-bold text-gray-800 whitespace-nowrap">${formatVND(t.totalAmount || 0)}</td>
+            <td class="p-2 border text-center whitespace-nowrap">${vatBadge}</td>
+            <td class="p-2 border text-center whitespace-nowrap">
+                <button onclick="viewReceipt('${dataStr}')" class="px-2 py-1 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded text-[11px] font-bold transition mr-1" title="Xem chi tiết phiếu">
+                    <i class="fa-solid fa-eye"></i> Phiếu
+                </button>
+                <button onclick="closeViewCustomerModal(); openRenewModal('${dataStr}')" class="px-2.5 py-1 bg-teal-600 hover:bg-teal-700 text-white rounded text-[11px] font-bold shadow-sm transition inline-flex items-center gap-1" title="Gia hạn phiếu này sang tháng mới">
+                    <i class="fa-solid fa-calendar-plus"></i> Gia Hạn
+                </button>
+            </td>
+        `;
+        transBody.appendChild(tr);
+    });
+
+    updateVatSelectionUI();
+}
+
+function filterVcInvoicesTable() {
+    renderVcInvoicesTable();
+}
+
+function toggleInvoiceVatSelect(targetDocId, checked) {
+    if (checked) {
+        selectedVatInvoiceIds.add(targetDocId);
+    } else {
+        selectedVatInvoiceIds.delete(targetDocId);
+    }
+    updateVatSelectionUI();
+}
+
+function toggleSelectAllInvoices(checked) {
+    if (checked) {
+        currentViewingCustomerInvoices.forEach(t => {
+            const id = t.id || t.docId;
+            if (id) selectedVatInvoiceIds.add(id);
+        });
+    } else {
+        selectedVatInvoiceIds.clear();
+    }
+    renderVcInvoicesTable();
+}
+
+function updateVatSelectionUI() {
+    const el = (id) => document.getElementById(id);
+    const count = selectedVatInvoiceIds.size;
+    if (el('vc-selected-count')) el('vc-selected-count').textContent = count;
+    if (el('vc-btn-count')) el('vc-btn-count').textContent = count;
+    
+    const selectAllCheckbox = el('vc-select-all-invoices');
+    if (selectAllCheckbox && currentViewingCustomerInvoices.length > 0) {
+        selectAllCheckbox.checked = (count === currentViewingCustomerInvoices.length && count > 0);
+    }
+}
+
+async function toggleInvoiceVatStatus(targetDocId, currentStatus) {
+    if (!db || !targetDocId) return;
+    const newStatus = !currentStatus;
+
+    try {
+        const updatePayload = {
+            vatExported: newStatus,
+            vatExportedAt: newStatus ? firebase.firestore.FieldValue.serverTimestamp() : null
+        };
+        await db.collection('transactions').doc(targetDocId).set(updatePayload, { merge: true });
+
+        // Cập nhật bộ nhớ đệm
+        const match = currentViewingCustomerInvoices.find(t => (t.id === targetDocId || t.docId === targetDocId));
+        if (match) {
+            match.vatExported = newStatus;
+        }
+        const cached = cachedTransactions.find(t => (t.id === targetDocId || t.docId === targetDocId));
+        if (cached) {
+            cached.vatExported = newStatus;
+        }
+
+        renderVcInvoicesTable();
+        Swal.fire({
+            icon: 'success',
+            title: newStatus ? 'Đã đánh dấu Đã xuất VAT!' : 'Đã chuyển về Chưa xuất VAT!',
+            toast: true,
+            position: 'top-end',
+            timer: 1500,
+            showConfirmButton: false
+        });
+    } catch (e) {
+        console.error("Lỗi cập nhật trạng thái VAT:", e);
+        Swal.fire('Lỗi', 'Không thể cập nhật trạng thái VAT!', 'error');
+    }
+}
+
+// ==========================================
+// XUẤT EXCEL HÓA ĐƠN VAT CHO KẾ TOÁN (SHEETJS)
+// ==========================================
+
+function openVatExportModalForSelected() {
+    if (selectedVatInvoiceIds.size === 0) {
+        Swal.fire('Chưa chọn phiếu', 'Vui lòng tích chọn ít nhất 1 phiếu thanh toán để xuất Excel gửi kế toán!', 'warning');
+        return;
+    }
+
+    const cust = customersList.find(c => c.phoneId === currentViewingPhone || c.rawDocId === currentViewingPhone);
+    const selectedTransactions = currentViewingCustomerInvoices.filter(t => selectedVatInvoiceIds.has(t.id || t.docId));
+
+    const el = (id) => document.getElementById(id);
+    if (!el('vat-export-modal')) return;
+
+    // Tự động nạp thông tin Doanh nghiệp / Khách
+    el('ve-company').value = (cust && cust.company) ? cust.company : (cust ? cust.name : '');
+    el('ve-tax-code').value = (cust && cust.taxCode) ? cust.taxCode : '';
+    el('ve-tax-address').value = (cust && cust.taxAddress) ? cust.taxAddress : '';
+    el('ve-contact').value = `${cust ? cust.name : ''} - ${currentViewingPhone || ''}`;
+
+    // Nội dung hóa đơn mặc định: "Dịch vụ thuê <Tên sân thể thao>"
+    const venueNameClean = siteSettings.venueName ? siteSettings.venueName.replace(/^sân\s+/i, '').trim() : 'Sân Thể Thao';
+    el('ve-item-name').value = `Dịch vụ thuê ${siteSettings.venueName || 'Sân Thể Thao'}`;
+
+    // Diễn giải kỳ thuê
+    const dateRanges = [];
+    selectedTransactions.forEach(t => {
+        if (t.startDate && t.endDate) {
+            let [sy, sm, sd] = t.startDate.split('-');
+            let [ey, em, ed] = t.endDate.split('-');
+            dateRanges.push(`${sd}/${sm} - ${ed}/${em}/${ey}`);
+        }
+    });
+    el('ve-item-desc').value = dateRanges.length > 0 ? `Kỳ thuê: ${dateRanges.join(', ')}` : `Dịch vụ thể thao tháng ${new Date().getMonth() + 1}/${new Date().getFullYear()}`;
+
+    // Render xem trước danh sách phiếu
+    el('ve-invoices-count').textContent = selectedTransactions.length;
+    recalculateVatPreview();
+
+    el('vat-export-modal').classList.remove('hidden');
+}
+
+function recalculateVatPreview() {
+    const el = (id) => document.getElementById(id);
+    const selectedTransactions = currentViewingCustomerInvoices.filter(t => selectedVatInvoiceIds.has(t.id || t.docId));
+    const tbody = el('ve-preview-table-body');
+    if (!tbody) return;
+
+    const rateVal = el('ve-vat-rate').value;
+    const vatRate = rateVal === 'none' ? 0 : (parseFloat(rateVal) / 100);
+
+    tbody.innerHTML = '';
+    let grandPreTax = 0;
+    let grandVat = 0;
+    let grandTotal = 0;
+
+    selectedTransactions.forEach(t => {
+        const invId = t.id || `CŨ-${(t.docId || '').slice(0,6).toUpperCase()}`;
+        const total = t.totalAmount || 0;
+        
+        let preTax = 0;
+        let vat = 0;
+
+        if (vatRate === 0) {
+            preTax = total;
+            vat = 0;
+        } else {
+            // Nếu phiếu gốc đã có thuế VAT
+            if (t.vatAmount && t.vatAmount > 0) {
+                vat = t.vatAmount;
+                preTax = t.subTotal || (total - vat);
+            } else {
+                // Tính ngược lại tiền trước thuế và tiền thuế từ tổng thanh toán
+                preTax = Math.round(total / (1 + vatRate));
+                vat = total - preTax;
+            }
+        }
+
+        grandPreTax += preTax;
+        grandVat += vat;
+        grandTotal += total;
+
+        let dateStr = t.startDate ? `${t.startDate} - ${t.endDate}` : '---';
+
+        const tr = document.createElement('tr');
+        tr.className = "border-b text-xs";
+        tr.innerHTML = `
+            <td class="p-2 border font-mono font-bold text-indigo-700">${invId}</td>
+            <td class="p-2 border text-gray-600">${dateStr}</td>
+            <td class="p-2 border text-right font-medium text-gray-800">${formatVND(preTax)}</td>
+            <td class="p-2 border text-right text-orange-600 font-bold">${formatVND(vat)}</td>
+            <td class="p-2 border text-right font-bold text-emerald-700">${formatVND(total)}</td>
+        `;
+        tbody.appendChild(tr);
+    });
+
+    el('ve-final-total-display').textContent = formatVND(grandTotal);
+}
+
+function closeVatExportModal() {
+    const modal = document.getElementById('vat-export-modal');
+    if (modal) modal.classList.add('hidden');
+}
+
+async function executeExportVatExcel() {
+    if (typeof XLSX === 'undefined') {
+        Swal.fire('Lỗi', 'Thư viện xuất Excel (SheetJS) chưa được tải hoàn tất. Vui lòng thử lại sau vài giây!', 'error');
+        return;
+    }
+
+    const el = (id) => document.getElementById(id);
+    const selectedTransactions = currentViewingCustomerInvoices.filter(t => selectedVatInvoiceIds.has(t.id || t.docId));
+    if (selectedTransactions.length === 0) return;
+
+    const companyName = el('ve-company').value.trim();
+    const taxCode = el('ve-tax-code').value.trim();
+    const taxAddress = el('ve-tax-address').value.trim();
+    const contactPerson = el('ve-contact').value.trim();
+    const serviceName = el('ve-item-name').value.trim();
+    const serviceDesc = el('ve-item-desc').value.trim();
+    const vatRateStr = el('ve-vat-rate').value;
+    const vatRate = vatRateStr === 'none' ? 0 : (parseFloat(vatRateStr) / 100);
+    const autoMark = el('ve-auto-mark-checked').checked;
+
+    if (!companyName) {
+        Swal.fire('Lỗi', 'Vui lòng nhập Tên Công ty / Đơn vị mua hàng!', 'error');
+        return;
+    }
+
+    try {
+        Swal.fire({ title: 'Đang tạo file Excel...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+
+        const d = new Date();
+        const exportDateStr = `${d.getDate().toString().padStart(2,'0')}/${(d.getMonth()+1).toString().padStart(2,'0')}/${d.getFullYear()}`;
+
+        // Cấu trúc dữ liệu theo bảng chuẩn kế toán
+        const rows = [];
+
+        // Thông tin đơn vị bán hàng
+        rows.push([siteSettings.venueName || 'ĐƠN VỊ CUNG CẤP DỊCH VỤ THỂ THAO']);
+        rows.push(['Địa chỉ:', siteSettings.venueAddress || '']);
+        rows.push([]);
+
+        // Tiêu đề
+        rows.push(['BẢNG KÊ CHI TIẾT DỊCH VỤ XUẤT HÓA ĐƠN VAT']);
+        rows.push([`Ngày lập: ${exportDateStr}`]);
+        rows.push([]);
+
+        // Thông tin khách hàng / đơn vị mua hàng
+        rows.push(['THÔNG TIN ĐƠN VỊ MUA HÀNG:']);
+        rows.push(['Tên đơn vị:', companyName]);
+        rows.push(['Mã số thuế:', taxCode || '---']);
+        rows.push(['Địa chỉ thuế:', taxAddress || '---']);
+        rows.push(['Người liên hệ:', contactPerson || '---']);
+        rows.push(['Nội dung hóa đơn:', serviceName]);
+        rows.push(['Diễn giải / Kỳ:', serviceDesc]);
+        rows.push([]);
+
+        // Header bảng dịch vụ
+        rows.push([
+            'STT',
+            'Mã Phiếu',
+            'Kỳ / Thời Gian Thuê',
+            'Tên Hàng Hóa, Dịch Vụ',
+            'ĐVT',
+            'Số Lượng',
+            'Đơn Giá (Chưa VAT)',
+            'Thành Tiền Chưa VAT',
+            'Thuế Suất VAT',
+            'Tiền Thuế VAT',
+            'Tổng Tiền Thanh Toán'
+        ]);
+
+        let sumPreTax = 0;
+        let sumVat = 0;
+        let sumTotal = 0;
+
+        selectedTransactions.forEach((t, index) => {
+            const invId = t.id || `CŨ-${(t.docId || '').slice(0,6).toUpperCase()}`;
+            const total = t.totalAmount || 0;
+            
+            let preTax = 0;
+            let vat = 0;
+
+            if (vatRate === 0) {
+                preTax = total;
+                vat = 0;
+            } else if (t.vatAmount && t.vatAmount > 0) {
+                vat = t.vatAmount;
+                preTax = t.subTotal || (total - vat);
+            } else {
+                preTax = Math.round(total / (1 + vatRate));
+                vat = total - preTax;
+            }
+
+            sumPreTax += preTax;
+            sumVat += vat;
+            sumTotal += total;
+
+            let period = (t.startDate && t.endDate) ? `${t.startDate} đến ${t.endDate}` : 'Dịch vụ thuê sân';
+
+            rows.push([
+                index + 1,
+                invId,
+                period,
+                serviceName,
+                'Tháng',
+                1,
+                preTax,
+                preTax,
+                vatRateStr === 'none' ? 'KCT' : `${vatRate * 100}%`,
+                vat,
+                total
+            ]);
+        });
+
+        // Dòng tổng cộng
+        rows.push([]);
+        rows.push([
+            '',
+            'TỔNG CỘNG',
+            '',
+            '',
+            '',
+            selectedTransactions.length,
+            '',
+            sumPreTax,
+            '',
+            sumVat,
+            sumTotal
+        ]);
+
+        rows.push([]);
+        rows.push(['(Số tiền bằng chữ: ' + formatVND(sumTotal) + ')']);
+        rows.push([]);
+        rows.push(['', '', 'Người Lập Bảng', '', '', '', '', '', 'Kế Toán Trưởng']);
+        rows.push(['', '', '(Ký, ghi rõ họ tên)', '', '', '', '', '', '(Ký, ghi rõ họ tên)']);
+
+        // Tạo WorkSheet và WorkBook
+        const ws = XLSX.utils.aoa_to_sheet(rows);
+
+        // Thiết lập độ rộng cột
+        ws['!cols'] = [
+            { wch: 6 },  // STT
+            { wch: 22 }, // Mã Phiếu
+            { wch: 26 }, // Kỳ thuê
+            { wch: 35 }, // Tên dịch vụ
+            { wch: 10 }, // ĐVT
+            { wch: 10 }, // Số lượng
+            { wch: 18 }, // Đơn giá
+            { wch: 20 }, // Thành tiền chưa VAT
+            { wch: 14 }, // Thuế suất
+            { wch: 18 }, // Tiền VAT
+            { wch: 22 }  // Tổng cộng
+        ];
+
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'BangKe_HoaDon_VAT');
+
+        // Tên file xuất ra
+        const safeCustName = removeVietnameseTones(companyName || 'Khach').replace(/[^a-zA-Z0-9]/g, '_');
+        const filename = `Bang_Ke_Hoa_Don_VAT_${safeCustName}_${d.getFullYear()}${(d.getMonth()+1).toString().padStart(2,'0')}${d.getDate().toString().padStart(2,'0')}.xlsx`;
+
+        XLSX.writeFile(wb, filename);
+
+        // Tự động đánh dấu đã xuất VAT nếu được chọn
+        if (autoMark && db) {
+            const batch = db.batch();
+            selectedTransactions.forEach(t => {
+                const targetDocId = t.id || t.docId;
+                if (targetDocId) {
+                    const docRef = db.collection('transactions').doc(targetDocId);
+                    batch.set(docRef, {
+                        vatExported: true,
+                        vatExportedAt: firebase.firestore.FieldValue.serverTimestamp()
+                    }, { merge: true });
+
+                    t.vatExported = true;
+                    const cached = cachedTransactions.find(ct => (ct.id === targetDocId || ct.docId === targetDocId));
+                    if (cached) cached.vatExported = true;
+                }
+            });
+            await batch.commit();
+            renderVcInvoicesTable();
+        }
+
+        closeVatExportModal();
+        Swal.fire({
+            icon: 'success',
+            title: 'Xuất Excel Thành Công!',
+            html: `Đã tải xuống file <b>${filename}</b>.<br>Kế toán có thể mở xem và lập hóa đơn điện tử cho khách ngay.`,
+            confirmButtonColor: '#059669',
+            confirmButtonText: 'Đã hiểu'
+        });
+
+    } catch (err) {
+        console.error("Lỗi xuất Excel:", err);
+        Swal.fire('Lỗi', 'Không thể tạo file Excel: ' + err.message, 'error');
+    }
+}
+
+// =========================================================================
+// QUẢN LÝ GHI CHÚ BÙ SÂN CHO KHÁCH HỢP ĐỒNG (COMPENSATIONS)
+// =========================================================================
+
+async function fetchCustomerCompensations(phoneId) {
+    if (!db || !phoneId) return;
+
+    const el = (id) => document.getElementById(id);
+    const tbody = el('vc-compensations-body');
+    if (tbody) tbody.innerHTML = '<tr><td colspan="7" class="p-4 text-center text-gray-500"><i class="fa-solid fa-spinner fa-spin mr-1.5 text-amber-600"></i> Đang tải danh sách bù sân...</td></tr>';
+
+    try {
+        const snap = await db.collection('compensations')
+            .where('customerPhone', '==', phoneId)
+            .get();
+
+        const list = [];
+        snap.forEach(d => {
+            list.push({ id: d.id, ...d.data() });
+        });
+
+        // Sắp xếp ngày nghỉ mới nhất lên đầu
+        list.sort((a, b) => {
+            const dateA = a.missedDate || '';
+            const dateB = b.missedDate || '';
+            return dateB.localeCompare(dateA);
+        });
+
+        currentCustomerCompensations = list;
+
+        // Cập nhật thống kê
+        const pendingCount = list.filter(c => c.status !== 'completed').reduce((sum, c) => sum + (parseInt(c.sessionsCount) || 1), 0);
+        if (el('vc-pending-comp-stat')) el('vc-pending-comp-stat').textContent = `${pendingCount} buổi`;
+        if (el('vc-badge-compensations')) el('vc-badge-compensations').textContent = `${pendingCount}`;
+
+        renderCompensationsTable();
+    } catch (e) {
+        console.error("Lỗi tải bù sân:", e);
+        if (tbody) tbody.innerHTML = '<tr><td colspan="7" class="p-4 text-center text-red-500">Lỗi khi tải danh sách bù sân.</td></tr>';
+    }
+}
+
+function renderCompensationsTable() {
+    const el = (id) => document.getElementById(id);
+    const tbody = el('vc-compensations-body');
+    if (!tbody) return;
+
+    if (currentCustomerCompensations.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" class="p-5 text-center text-gray-400 italic">Chưa có ghi chú bù sân nào cho khách này. Bấm "Thêm Ghi Chú Bù Sân" để ghi nhận.</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = '';
+    currentCustomerCompensations.forEach(comp => {
+        let displayMissedDate = comp.missedDate || '---';
+        if (displayMissedDate.includes('-')) {
+            const [y, m, d] = displayMissedDate.split('-');
+            displayMissedDate = `${d}/${m}/${y}`;
+        }
+
+        // Căn cứ xác nhận (ảnh)
+        let proofHtml = '<span class="text-gray-400 italic text-[11px]">Không có</span>';
+        if (comp.proofImage) {
+            proofHtml = `
+                <div class="inline-flex items-center gap-1 cursor-pointer group" onclick="viewLargeProofImage('${comp.proofImage}')" title="Bấm để xem ảnh lớn">
+                    <img src="${comp.proofImage}" class="w-8 h-8 rounded object-cover border group-hover:scale-110 transition shadow-sm" alt="Ảnh căn cứ">
+                    <i class="fa-solid fa-magnifying-glass-plus text-xs text-amber-600"></i>
+                </div>
+            `;
+        }
+
+        // Trạng thái
+        const isDone = (comp.status === 'completed');
+        let statusBadge = '';
+        if (isDone) {
+            statusBadge = `
+                <button type="button" onclick="toggleCompensationStatus('${comp.id}', true)" title="Bấm để chuyển về Chờ bù" class="px-2 py-0.5 bg-green-100 text-green-800 hover:bg-green-200 rounded font-bold text-[11px] inline-flex items-center gap-1 transition cursor-pointer">
+                    <i class="fa-solid fa-circle-check"></i> Đã bù
+                </button>
+            `;
+        } else {
+            statusBadge = `
+                <button type="button" onclick="toggleCompensationStatus('${comp.id}', false)" title="Bấm để đánh dấu Đã bù" class="px-2 py-0.5 bg-amber-100 text-amber-800 hover:bg-green-100 hover:text-green-800 rounded font-bold text-[11px] inline-flex items-center gap-1 transition cursor-pointer">
+                    <i class="fa-regular fa-clock"></i> Chờ bù
+                </button>
+            `;
+        }
+
+        const tr = document.createElement('tr');
+        tr.className = "border-b hover:bg-amber-50/40 transition text-xs";
+        tr.innerHTML = `
+            <td class="p-2.5 border font-bold text-gray-800 whitespace-nowrap"><i class="fa-regular fa-calendar-xmark text-amber-600 mr-1"></i>${displayMissedDate}</td>
+            <td class="p-2.5 border text-gray-700 whitespace-nowrap"><b>${comp.courtName || 'Sân hợp đồng'}</b><br><span class="text-[11px] font-mono text-gray-500">${comp.timeRange || '---'}</span></td>
+            <td class="p-2.5 border text-gray-700 max-w-[200px]">
+                <div class="font-medium text-amber-900">${comp.reason || '---'}</div>
+                ${comp.note ? `<div class="text-[11px] text-gray-500 italic truncate" title="${comp.note}">${comp.note}</div>` : ''}
+            </td>
+            <td class="p-2.5 border text-center font-bold text-amber-700 text-sm">${comp.sessionsCount || 1}</td>
+            <td class="p-2.5 border text-center whitespace-nowrap">${proofHtml}</td>
+            <td class="p-2.5 border text-center whitespace-nowrap">${statusBadge}</td>
+            <td class="p-2.5 border text-center whitespace-nowrap">
+                <button onclick="openEditCompensationModal('${comp.id}')" title="Sửa ghi chú" class="inline-flex items-center justify-center w-7 h-7 rounded bg-blue-50 text-blue-600 hover:bg-blue-100 transition mr-1">
+                    <i class="fa-solid fa-pen text-xs"></i>
+                </button>
+                <button onclick="deleteCompensation('${comp.id}')" title="Xóa" class="inline-flex items-center justify-center w-7 h-7 rounded bg-red-50 text-red-500 hover:bg-red-100 transition">
+                    <i class="fa-solid fa-trash text-xs"></i>
+                </button>
+            </td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+
+function openAddCompensationModal() {
+    const cust = customersList.find(c => c.phoneId === currentViewingPhone || c.rawDocId === currentViewingPhone);
+    const el = (id) => document.getElementById(id);
+
+    el('comp-modal-title').innerHTML = '<i class="fa-solid fa-calendar-xmark mr-1.5"></i> Thêm Ghi Chú Bù Sân';
+    el('comp-edit-id').value = '';
+    el('comp-cust-phone').value = currentViewingPhone;
+    el('comp-cust-name-display').textContent = cust ? cust.name : 'Khách hàng';
+    el('comp-cust-phone-display').textContent = currentViewingPhone;
+
+    // Hôm nay
+    const d = new Date();
+    const todayISO = `${d.getFullYear()}-${(d.getMonth()+1).toString().padStart(2,'0')}-${d.getDate().toString().padStart(2,'0')}`;
+    el('comp-missed-date').value = todayISO;
+    el('comp-sessions-count').value = '1';
+    el('comp-court-name').value = '';
+    el('comp-time-range').value = '';
+    el('comp-reason-select').value = 'Thời tiết mưa to / ngập sân';
+    el('comp-custom-reason').value = '';
+    el('comp-custom-reason').classList.add('hidden');
+    el('comp-note').value = '';
+    el('comp-status').value = 'pending';
+
+    removeCompImage();
+    el('comp-modal').classList.remove('hidden');
+}
+
+function openEditCompensationModal(compId) {
+    const comp = currentCustomerCompensations.find(c => c.id === compId);
+    if (!comp) return;
+
+    const cust = customersList.find(c => c.phoneId === currentViewingPhone || c.rawDocId === currentViewingPhone);
+    const el = (id) => document.getElementById(id);
+
+    el('comp-modal-title').innerHTML = '<i class="fa-solid fa-pen-to-square mr-1.5"></i> Sửa Ghi Chú Bù Sân';
+    el('comp-edit-id').value = comp.id;
+    el('comp-cust-phone').value = currentViewingPhone;
+    el('comp-cust-name-display').textContent = cust ? cust.name : 'Khách hàng';
+    el('comp-cust-phone-display').textContent = currentViewingPhone;
+
+    el('comp-missed-date').value = comp.missedDate || '';
+    el('comp-sessions-count').value = comp.sessionsCount || 1;
+    el('comp-court-name').value = comp.courtName || '';
+    el('comp-time-range').value = comp.timeRange || '';
+    
+    // Lý do
+    const standardReasons = [
+        "Thời tiết mưa to / ngập sân",
+        "Sân bảo trì / sửa chữa định kỳ",
+        "Giải đấu / Sự kiện đặc biệt của trung tâm",
+        "Khách xin hoãn / báo nghỉ trước có xác nhận"
+    ];
+    if (standardReasons.includes(comp.reason)) {
+        el('comp-reason-select').value = comp.reason;
+        el('comp-custom-reason').value = '';
+        el('comp-custom-reason').classList.add('hidden');
+    } else {
+        el('comp-reason-select').value = 'other';
+        el('comp-custom-reason').value = comp.reason || '';
+        el('comp-custom-reason').classList.remove('hidden');
+    }
+
+    el('comp-note').value = comp.note || '';
+    el('comp-status').value = comp.status || 'pending';
+
+    if (comp.proofImage) {
+        currentCompUploadedBase64 = comp.proofImage;
+        el('comp-image-preview').src = comp.proofImage;
+        el('comp-image-preview-box').classList.remove('hidden');
+        el('comp-upload-placeholder').classList.add('hidden');
+    } else {
+        removeCompImage();
+    }
+
+    el('comp-modal').classList.remove('hidden');
+}
+
+function closeCompModal() {
+    const modal = document.getElementById('comp-modal');
+    if (modal) modal.classList.add('hidden');
+    currentCompUploadedBase64 = null;
+}
+
+function checkCustomReason(val) {
+    const customInput = document.getElementById('comp-custom-reason');
+    if (!customInput) return;
+    if (val === 'other') {
+        customInput.classList.remove('hidden');
+        customInput.focus();
+    } else {
+        customInput.classList.add('hidden');
+    }
+}
+
+// Xử lý nén ảnh qua Canvas để lưu trữ nhanh, nhẹ, không lo giới hạn
+function handleCompImageSelected(input) {
+    if (!input.files || input.files.length === 0) return;
+    const file = input.files[0];
+
+    const el = (id) => document.getElementById(id);
+    el('comp-img-name').textContent = file.name;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+            const maxWidth = 1200;
+            const maxHeight = 1200;
+            let width = img.width;
+            let height = img.height;
+
+            if (width > height) {
+                if (width > maxWidth) {
+                    height = Math.round((height * maxWidth) / width);
+                    width = maxWidth;
+                }
+            } else {
+                if (height > maxHeight) {
+                    width = Math.round((width * maxHeight) / height);
+                    height = maxHeight;
+                }
+            }
+
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, width, height);
+
+            // Nén JPEG chất lượng 0.75 -> file siêu nhẹ (~80KB - 150KB)
+            const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.75);
+            currentCompUploadedBase64 = compressedDataUrl;
+
+            el('comp-image-preview').src = compressedDataUrl;
+            el('comp-image-preview-box').classList.remove('hidden');
+            el('comp-upload-placeholder').classList.add('hidden');
+        };
+        img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+}
+
+function removeCompImage() {
+    currentCompUploadedBase64 = null;
+    const el = (id) => document.getElementById(id);
+    if (el('comp-image-input')) el('comp-image-input').value = '';
+    if (el('comp-image-preview-box')) el('comp-image-preview-box').classList.add('hidden');
+    if (el('comp-upload-placeholder')) el('comp-upload-placeholder').classList.remove('hidden');
+}
+
+function viewLargeProofImage(src) {
+    if (!src) return;
+    const modal = document.getElementById('comp-image-modal');
+    const img = document.getElementById('comp-large-image');
+    if (modal && img) {
+        img.src = src;
+        modal.classList.remove('hidden');
+    }
+}
+
+function closeLargeProofImage() {
+    const modal = document.getElementById('comp-image-modal');
+    if (modal) modal.classList.add('hidden');
+}
+
+async function saveCompensation() {
+    if (!db) {
+        Swal.fire('Lỗi', 'Không thể kết nối cơ sở dữ liệu!', 'error');
+        return;
+    }
+
+    const el = (id) => document.getElementById(id);
+    const editId = el('comp-edit-id').value;
+    const phone = el('comp-cust-phone').value;
+    const missedDate = el('comp-missed-date').value;
+    const sessionsCount = parseInt(el('comp-sessions-count').value, 10) || 1;
+    const courtName = el('comp-court-name').value.trim();
+    const timeRange = el('comp-time-range').value.trim();
+    const reasonSelect = el('comp-reason-select').value;
+    const customReason = el('comp-custom-reason').value.trim();
+    const reason = reasonSelect === 'other' ? (customReason || 'Lý do khác') : reasonSelect;
+    const note = el('comp-note').value.trim();
+    const status = el('comp-status').value;
+
+    if (!missedDate) {
+        Swal.fire('Thiếu thông tin', 'Vui lòng chọn ngày bị nghỉ!', 'warning');
+        return;
+    }
+
+    const payload = {
+        customerPhone: phone,
+        missedDate: missedDate,
+        sessionsCount: sessionsCount,
+        courtName: courtName,
+        timeRange: timeRange,
+        reason: reason,
+        note: note,
+        status: status,
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    };
+
+    if (currentCompUploadedBase64) {
+        payload.proofImage = currentCompUploadedBase64;
+    }
+
+    try {
+        Swal.fire({ title: 'Đang lưu...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+
+        if (editId) {
+            await db.collection('compensations').doc(editId).set(payload, { merge: true });
+        } else {
+            payload.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+            await db.collection('compensations').add(payload);
+        }
+
+        closeCompModal();
+        await fetchCustomerCompensations(phone);
+
+        Swal.fire({
+            icon: 'success',
+            title: 'Thành công!',
+            text: editId ? 'Đã cập nhật ghi chú bù sân.' : 'Đã thêm ghi chú bù sân mới.',
+            timer: 1500,
+            showConfirmButton: false
+        });
+    } catch (e) {
+        console.error("Lỗi lưu ghi chú bù sân:", e);
+        Swal.fire('Lỗi', 'Không thể lưu ghi chú bù sân. Vui lòng thử lại!', 'error');
+    }
+}
+
+async function deleteCompensation(compId) {
+    if (!db || !compId) return;
+
+    const result = await Swal.fire({
+        title: 'Xóa ghi chú bù sân?',
+        text: 'Ghi chú này sẽ bị xóa khỏi hệ thống!',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#ef4444',
+        cancelButtonColor: '#6b7280',
+        confirmButtonText: 'Xóa ngay',
+        cancelButtonText: 'Hủy'
+    });
+
+    if (!result.isConfirmed) return;
+
+    try {
+        await db.collection('compensations').doc(compId).delete();
+        await fetchCustomerCompensations(currentViewingPhone);
+        Swal.fire({ icon: 'success', title: 'Đã xóa!', timer: 1200, showConfirmButton: false });
+    } catch (e) {
+        console.error("Lỗi xóa bù sân:", e);
+        Swal.fire('Lỗi', 'Không thể xóa ghi chú!', 'error');
+    }
+}
+
+async function toggleCompensationStatus(compId, currentIsCompleted) {
+    if (!db || !compId) return;
+    const newStatus = currentIsCompleted ? 'pending' : 'completed';
+
+    try {
+        await db.collection('compensations').doc(compId).update({
+            status: newStatus,
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+
+        await fetchCustomerCompensations(currentViewingPhone);
+        Swal.fire({
+            icon: 'success',
+            title: newStatus === 'completed' ? 'Đã đánh dấu Đã Bù Xong!' : 'Đã chuyển về Chờ Bù!',
+            toast: true,
+            position: 'top-end',
+            timer: 1500,
+            showConfirmButton: false
+        });
+    } catch (e) {
+        console.error("Lỗi cập nhật trạng thái bù sân:", e);
+        Swal.fire('Lỗi', 'Không thể cập nhật trạng thái!', 'error');
     }
 }
 
 function closeViewCustomerModal() {
     const modal = document.getElementById('view-customer-modal');
     if (modal) modal.classList.add('hidden');
+    currentViewingPhone = '';
+    selectedVatInvoiceIds.clear();
 }
 
 // ==========================================
@@ -3249,15 +4383,21 @@ function showPaymentNotification(name, amount, invId) {
 }
 
 // ==========================================
-// TICKET RENEWAL / GIA HẠN PHIẾU
+// TICKET RENEWAL / GIA HẠN PHIẾU (TÍCH HỢP TỰ ĐỘNG BÙ SÂN)
 // ==========================================
 
 let currentRenewData = null;
 let currentRenewCalculatedItems = [];
+let currentRenewAvailableCompensations = [];
+let currentRenewSelectedCompIds = new Set();
+let currentRenewCompDeduction = 0;
 
-function openRenewModal(dataStrEncoded) {
+async function openRenewModal(dataStrEncoded) {
     const data = JSON.parse(decodeURIComponent(dataStrEncoded));
     currentRenewData = data;
+    currentRenewSelectedCompIds.clear();
+    currentRenewCompDeduction = 0;
+    currentRenewAvailableCompensations = [];
 
     const el = (id) => document.getElementById(id);
     if (!el('renew-modal')) return;
@@ -3325,6 +4465,62 @@ function openRenewModal(dataStrEncoded) {
     el('rn-status').value = 'unpaid';
     el('rn-payment-method').value = data.paymentMethod || 'Chuyển khoản';
 
+    // KIỂM TRA CÁC BUỔI CHỜ BÙ CỦA KHÁCH ĐỂ HIỂN THỊ CHỌN BÙ TRỪ
+    const phone = data.customerPhone || '';
+    const compContainer = el('rn-comp-container');
+    const compList = el('rn-comp-list');
+    
+    if (phone && db) {
+        try {
+            const snap = await db.collection('compensations')
+                .where('customerPhone', '==', phone)
+                .get();
+
+            const pendingComps = [];
+            snap.forEach(d => {
+                const c = d.data();
+                if (c.status !== 'completed') {
+                    pendingComps.push({ id: d.id, ...c });
+                }
+            });
+
+            currentRenewAvailableCompensations = pendingComps;
+
+            if (pendingComps.length > 0 && compContainer && compList) {
+                el('rn-comp-avail-count').textContent = `${pendingComps.length} buổi chờ bù`;
+                compList.innerHTML = '';
+
+                pendingComps.forEach(c => {
+                    let dStr = c.missedDate || '';
+                    if (dStr.includes('-')) {
+                        const [cy, cm, cd] = dStr.split('-');
+                        dStr = `${cd}/${cm}/${cy}`;
+                    }
+
+                    const div = document.createElement('div');
+                    div.className = "flex items-center justify-between p-2 bg-white rounded border border-amber-200 text-xs";
+                    div.innerHTML = `
+                        <label class="flex items-center gap-2 cursor-pointer font-medium text-gray-800 flex-1 min-w-0">
+                            <input type="checkbox" value="${c.id}" onchange="toggleRenewCompensation('${c.id}', this.checked)" class="rounded text-amber-600 focus:ring-amber-500">
+                            <span class="truncate">Ngày <b>${dStr}</b>: ${c.reason || 'Nghỉ'} (${c.sessionsCount || 1} buổi)</span>
+                        </label>
+                        <span class="font-bold text-amber-700 font-mono text-[11px] whitespace-nowrap ml-2">${c.courtName || ''}</span>
+                    `;
+                    compList.appendChild(div);
+                });
+
+                compContainer.classList.remove('hidden');
+            } else if (compContainer) {
+                compContainer.classList.add('hidden');
+            }
+        } catch (e) {
+            console.warn("Lỗi tải buổi bù khi gia hạn:", e);
+            if (compContainer) compContainer.classList.add('hidden');
+        }
+    } else if (compContainer) {
+        compContainer.classList.add('hidden');
+    }
+
     // Render xem trước lịch và tính toán số buổi
     renderRenewPreview();
 
@@ -3332,11 +4528,23 @@ function openRenewModal(dataStrEncoded) {
     el('renew-modal').classList.remove('hidden');
 }
 
+function toggleRenewCompensation(compId, checked) {
+    if (checked) {
+        currentRenewSelectedCompIds.add(compId);
+    } else {
+        currentRenewSelectedCompIds.delete(compId);
+    }
+    renderRenewPreview();
+}
+
 function closeRenewModal() {
     const modal = document.getElementById('renew-modal');
     if (modal) modal.classList.add('hidden');
     currentRenewData = null;
     currentRenewCalculatedItems = [];
+    currentRenewAvailableCompensations = [];
+    currentRenewSelectedCompIds.clear();
+    currentRenewCompDeduction = 0;
 }
 
 function renderRenewPreview() {
@@ -3381,7 +4589,6 @@ function renderRenewPreview() {
         if (orig.weekdays && Array.isArray(orig.weekdays) && orig.weekdays.length > 0) {
             weekdays = orig.weekdays.map(Number);
         } else {
-            // Fallback: suy từ desc hoặc name
             const str = (orig.desc || '') + ' ' + (orig.name || '');
             const map = { 'CN': 0, 'T2': 1, 'T3': 2, 'T4': 3, 'T5': 4, 'T6': 5, 'T7': 6 };
             for (let k in map) {
@@ -3456,14 +4663,36 @@ function renderRenewPreview() {
         tbody.innerHTML = '<tr><td colspan="6" class="p-3 text-center text-gray-400 italic">Phiếu gốc không chứa thông tin chi tiết dịch vụ/sân đặt.</td></tr>';
     }
 
+    // TÍNH TOÁN BÙ SÂN NẾU ĐƯỢC CHỌN
+    let compSessionsCount = 0;
+    currentRenewAvailableCompensations.forEach(c => {
+        if (currentRenewSelectedCompIds.has(c.id)) {
+            compSessionsCount += (parseInt(c.sessionsCount, 10) || 1);
+        }
+    });
+
+    let deduction = 0;
+    if (compSessionsCount > 0 && totalSessions > 0) {
+        const avgSessionPrice = subTotal / totalSessions;
+        deduction = Math.round(compSessionsCount * avgSessionPrice);
+    }
+    currentRenewCompDeduction = deduction;
+
+    if (el('rn-comp-deduction-text')) {
+        el('rn-comp-deduction-text').textContent = deduction > 0 ? `-${formatVND(deduction)} (${compSessionsCount} buổi)` : '-0 ₫';
+    }
+
+    // Tổng sau khi trừ buổi bù
+    const totalAfterComp = Math.max(0, subTotal - deduction);
+
     // Tính thuế VAT nếu phiếu gốc có thuế
     let vatAmount = 0;
     if (currentRenewData.vatAmount && currentRenewData.vatAmount > 0) {
-        vatAmount = Math.round(subTotal * 0.10);
+        vatAmount = Math.round(totalAfterComp * 0.10);
     }
-    const finalTotal = subTotal + vatAmount;
+    const finalTotal = totalAfterComp + vatAmount;
 
-    el('rn-total-sessions').textContent = `${totalSessions} buổi`;
+    el('rn-total-sessions').textContent = `${totalSessions} buổi` + (compSessionsCount > 0 ? ` (Bù trừ ${compSessionsCount} buổi)` : '');
     el('rn-total-amount').textContent = formatVND(finalTotal);
 }
 
@@ -3483,15 +4712,27 @@ async function submitRenewDirect() {
     const endDateVal = el('rn-end-date').value;
 
     let subTotal = currentRenewCalculatedItems.reduce((sum, i) => sum + i.total, 0);
-    let vatAmount = (currentRenewData.vatAmount && currentRenewData.vatAmount > 0) ? Math.round(subTotal * 0.10) : 0;
-    let finalTotal = subTotal + vatAmount;
+    const totalAfterComp = Math.max(0, subTotal - currentRenewCompDeduction);
+    let vatAmount = (currentRenewData.vatAmount && currentRenewData.vatAmount > 0) ? Math.round(totalAfterComp * 0.10) : 0;
+    let finalTotal = totalAfterComp + vatAmount;
 
     const payMethod = el('rn-payment-method').value;
     const status = el('rn-status').value;
     const userNote = el('rn-note').value.trim();
 
     const origId = currentRenewData.id || `CŨ-${(currentRenewData.docId || '').slice(0, 6).toUpperCase()}`;
-    const note = userNote ? `Gia hạn từ phiếu ${origId}. ${userNote}` : `Gia hạn từ phiếu ${origId}`;
+    
+    // Ghi chú bù sân nếu có
+    let compNoteAdd = '';
+    const selectedCompItems = currentRenewAvailableCompensations.filter(c => currentRenewSelectedCompIds.has(c.id));
+    if (selectedCompItems.length > 0) {
+        const compDatesStr = selectedCompItems.map(c => c.missedDate).join(', ');
+        compNoteAdd = ` [Đã bù ${selectedCompItems.length} buổi: ${compDatesStr}, trừ ${formatVND(currentRenewCompDeduction)}]`;
+    }
+
+    const note = userNote 
+        ? `Gia hạn từ phiếu ${origId}. ${userNote}${compNoteAdd}` 
+        : `Gia hạn từ phiếu ${origId}${compNoteAdd}`;
 
     // Cấp mã phiếu mới
     const d = new Date();
@@ -3513,6 +4754,7 @@ async function submitRenewDirect() {
         paymentMethod: payMethod,
         note: note,
         subTotal: subTotal,
+        discountAmount: currentRenewCompDeduction,
         vatAmount: vatAmount,
         totalAmount: finalTotal,
         paidAmount: status === 'paid' ? finalTotal : 0,
@@ -3525,8 +4767,22 @@ async function submitRenewDirect() {
     try {
         Swal.fire({ title: 'Đang tạo phiếu gia hạn...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
 
+        const batch = db.batch();
         const docRef = db.collection('transactions').doc(newInvoiceId);
-        await docRef.set(newTransaction);
+        batch.set(docRef, newTransaction);
+
+        // ĐÁNH DẤU CÁC BUỔI BÙ ĐÃ HOÀN TẤT
+        selectedCompItems.forEach(c => {
+            const cRef = db.collection('compensations').doc(c.id);
+            batch.update(cRef, {
+                status: 'completed',
+                compensatedInvoiceId: newInvoiceId,
+                compensatedDate: startDateVal,
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+        });
+
+        await batch.commit();
 
         // Cập nhật thống kê khách hàng
         if (currentRenewData.customerPhone) {
@@ -3549,10 +4805,12 @@ async function submitRenewDirect() {
         let [sy, sm, sd] = startDateVal.split('-');
         let [ey, em, ed] = endDateVal.split('-');
 
+        let compSuccessMsg = selectedCompItems.length > 0 ? `<br><span class="text-amber-700 font-bold">✓ Đã tự động bù trừ ${selectedCompItems.length} buổi (${formatVND(currentRenewCompDeduction)})</span>` : '';
+
         Swal.fire({
             icon: 'success',
             title: 'Gia hạn thành công!',
-            html: `Đã tạo phiếu mới: <b class="text-teal-700 font-mono text-base">${newInvoiceId}</b><br>Kỳ: <b>${sd}/${sm}/${sy} - ${ed}/${em}/${ey}</b> (${totalSessions} buổi)<br>Tổng tiền: <b class="text-indigo-700 font-bold">${formatVND(finalTotal)}</b>`,
+            html: `Đã tạo phiếu mới: <b class="text-teal-700 font-mono text-base">${newInvoiceId}</b><br>Kỳ: <b>${sd}/${sm}/${sy} - ${ed}/${em}/${ey}</b> (${totalSessions} buổi)${compSuccessMsg}<br>Tổng tiền: <b class="text-indigo-700 font-bold">${formatVND(finalTotal)}</b>`,
             confirmButtonColor: '#0d9488',
             confirmButtonText: '<i class="fa-solid fa-eye mr-1"></i> Xem Chi Tiết Phiếu',
             showCancelButton: true,
@@ -3581,7 +4839,25 @@ function transferRenewToBooking() {
     const endDateVal = el('rn-end-date').value;
     const userNote = el('rn-note').value.trim();
     const origId = currentRenewData.id || `CŨ-${(currentRenewData.docId || '').slice(0, 6).toUpperCase()}`;
-    const fullNote = userNote ? `Gia hạn từ phiếu ${origId}. ${userNote}` : `Gia hạn từ phiếu ${origId}`;
+
+    const selectedCompItems = currentRenewAvailableCompensations.filter(c => currentRenewSelectedCompIds.has(c.id));
+    let compNoteAdd = '';
+    if (selectedCompItems.length > 0) {
+        const compDatesStr = selectedCompItems.map(c => c.missedDate).join(', ');
+        compNoteAdd = ` [Bù ${selectedCompItems.length} buổi: ${compDatesStr}, giảm trừ ${formatVND(currentRenewCompDeduction)}]`;
+
+        // Tự động đánh dấu hoàn tất trên Firestore
+        if (db) {
+            selectedCompItems.forEach(c => {
+                db.collection('compensations').doc(c.id).update({
+                    status: 'completed',
+                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                }).catch(e => console.warn(e));
+            });
+        }
+    }
+
+    const fullNote = userNote ? `Gia hạn từ phiếu ${origId}. ${userNote}${compNoteAdd}` : `Gia hạn từ phiếu ${origId}${compNoteAdd}`;
 
     const itemsToTransfer = JSON.parse(JSON.stringify(currentRenewCalculatedItems));
     const customerName = currentRenewData.customerName || '';
@@ -3629,6 +4905,12 @@ function transferRenewToBooking() {
     // Gán danh sách items
     billItems = itemsToTransfer;
 
+    // Điền giảm giá bù sân nếu có
+    if (currentRenewCompDeduction > 0) {
+        if (el('discount-type')) el('discount-type').value = 'money';
+        if (el('discount-val')) el('discount-val').value = currentRenewCompDeduction;
+    }
+
     // VAT
     if (el('vat-check')) el('vat-check').checked = vatChecked;
 
@@ -3638,7 +4920,7 @@ function transferRenewToBooking() {
     Swal.fire({
         icon: 'success',
         title: 'Đã chuyển sang Bảng Tính Tiền!',
-        html: `Lịch gia hạn cho khách <b>${customerName}</b> đã được nạp vào hóa đơn.<br>Bạn có thể chỉnh sửa thêm/bớt sân, áp dụng chiết khấu hoặc bấm <b>Lưu & Xuất Phiếu</b> ngay.`,
+        html: `Lịch gia hạn cho khách <b>${customerName}</b> đã được nạp vào hóa đơn.${selectedCompItems.length > 0 ? `<br><b class="text-amber-700">Đã áp dụng giảm trừ bù sân: ${formatVND(currentRenewCompDeduction)}</b>` : ''}`,
         timer: 3500,
         showConfirmButton: true,
         confirmButtonText: 'Đã hiểu'
