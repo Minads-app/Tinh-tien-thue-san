@@ -3603,9 +3603,43 @@ function openVatExportModalForSelected() {
     el('ve-tax-address').value = (cust && cust.taxAddress) ? cust.taxAddress : '';
     el('ve-contact').value = `${cust ? cust.name : ''} - ${currentViewingPhone || ''}`;
 
-    // Nội dung hóa đơn mặc định: "Dịch vụ thuê <Tên sân thể thao>"
-    const venueNameClean = siteSettings.venueName ? siteSettings.venueName.replace(/^sân\s+/i, '').trim() : 'Sân Thể Thao';
-    el('ve-item-name').value = `Dịch vụ thuê ${siteSettings.venueName || 'Sân Thể Thao'}`;
+    // Trích xuất các môn thể thao / loại sân từ các phiếu được chọn (VD: Bóng đá, Bóng rổ, Cầu lông...)
+    const sportsSet = new Set();
+    selectedTransactions.forEach(t => {
+        if (t.items && Array.isArray(t.items)) {
+            t.items.forEach(item => {
+                let name = item.name || '';
+                let sportName = '';
+                if (name.includes('[')) {
+                    sportName = name.split('[')[0].trim();
+                } else if (name.includes('-')) {
+                    sportName = name.split('-')[0].trim();
+                } else {
+                    sportName = name.trim();
+                }
+                if (sportName) {
+                    sportsSet.add(sportName);
+                }
+            });
+        }
+    });
+
+    let sportDisplay = '';
+    if (sportsSet.size > 0) {
+        const sportsList = Array.from(sportsSet).map(s => {
+            let clean = s.trim();
+            clean = clean.replace(/^sân\s+/i, ''); // Bỏ chữ "sân" ở đầu nếu có
+            return clean.toLowerCase();
+        });
+        sportDisplay = sportsList.join(', ');
+    }
+
+    // Nội dung hóa đơn mặc định: "Dịch vụ thuê sân <môn thể thao>" (VD: Dịch vụ thuê sân bóng đá)
+    if (sportDisplay) {
+        el('ve-item-name').value = `Dịch vụ thuê sân ${sportDisplay}`;
+    } else {
+        el('ve-item-name').value = `Dịch vụ thuê sân thể thao`;
+    }
 
     // Diễn giải kỳ thuê
     const dateRanges = [];
