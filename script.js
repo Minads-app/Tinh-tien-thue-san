@@ -398,6 +398,25 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const startDateVal = document.getElementById('start-date').value || '';
         const endDateVal = document.getElementById('end-date').value || '';
+
+        // Tự động tính min startDate và max endDate từ toàn bộ billItems (tránh bị lệch khi thêm nhiều dịch vụ)
+        let finalStartDate = startDateVal;
+        let finalEndDate = endDateVal;
+        if (billItems && billItems.length > 0) {
+            let minD = null, maxD = null;
+            billItems.forEach(it => {
+                const r = getItemDateRange(it);
+                if (r && r.start && r.end) {
+                    if (!minD || r.start < minD) minD = r.start;
+                    if (!maxD || r.end > maxD) maxD = r.end;
+                }
+            });
+            if (minD && maxD) {
+                const pad = (n) => String(n).padStart(2, '0');
+                finalStartDate = `${minD.getFullYear()}-${pad(minD.getMonth() + 1)}-${pad(minD.getDate())}`;
+                finalEndDate = `${maxD.getFullYear()}-${pad(maxD.getMonth() + 1)}-${pad(maxD.getDate())}`;
+            }
+        }
         
         // Dùng mã phiếu hiện tại đã cấp
         const invoiceId = currentInvoiceId;
@@ -463,8 +482,8 @@ document.addEventListener('DOMContentLoaded', () => {
             discountAmount: discountNum,
             vatAmount: vatAmountNum,
             totalAmount: finalTotalNum,
-            startDate: startDateVal,
-            endDate: endDateVal,
+            startDate: finalStartDate,
+            endDate: finalEndDate,
             items: billItems
         };
 
@@ -3408,6 +3427,76 @@ async function loadCustomerInvoices(phoneId) {
     }
 }
 
+
+// ==========================================
+// TÍNH TOÁN KHOẢNG NGÀY HIỆU LỰC THỰC TẾ CỦA PHIẾU (XỬ LÝ PHIẾU NHIỀU DỊCH VỤ DÀI HẠN)
+// ==========================================
+function getEffectiveTransactionDates(t) {
+    if (!t) return { startDateObj: null, endDateObj: null, startDateISO: '', endDateISO: '', displayStr: '---' };
+
+    let minStart = null;
+    let maxEnd = null;
+
+    // 1. Quét qua toàn bộ các dòng dịch vụ (items)
+    if (t.items && Array.isArray(t.items) && t.items.length > 0) {
+        t.items.forEach(item => {
+            const range = getItemDateRange(item);
+            if (range && range.start && range.end) {
+                if (!minStart || range.start < minStart) minStart = new Date(range.start);
+                if (!maxEnd || range.end > maxEnd) maxEnd = new Date(range.end);
+            }
+        });
+    }
+
+    // 2. Nếu không lấy được từ items, dùng startDate và endDate cấp phiếu
+    if (!minStart && t.startDate && t.startDate.includes('-')) {
+        const [sy, sm, sd] = t.startDate.split('-').map(Number);
+        minStart = new Date(sy, sm - 1, sd);
+    }
+    if (!maxEnd && t.endDate && t.endDate.includes('-')) {
+        const [ey, em, ed] = t.endDate.split('-').map(Number);
+        maxEnd = new Date(ey, em - 1, ed);
+    }
+
+    const pad = (n) => String(n).padStart(2, '0');
+    let startDateISO = '';
+    let endDateISO = '';
+    let displayStr = '---';
+
+    if (minStart && maxEnd) {
+        const sy = minStart.getFullYear();
+        const sm = pad(minStart.getMonth() + 1);
+        const sd = pad(minStart.getDate());
+
+        const ey = maxEnd.getFullYear();
+        const em = pad(maxEnd.getMonth() + 1);
+        const ed = pad(maxEnd.getDate());
+
+        startDateISO = `${sy}-${sm}-${sd}`;
+        endDateISO = `${ey}-${em}-${ed}`;
+
+        if (sy === ey) {
+            displayStr = `${sd}/${sm} - ${ed}/${em}/${ey}`;
+        } else {
+            displayStr = `${sd}/${sm}/${sy} - ${ed}/${em}/${ey}`;
+        }
+    } else if (maxEnd) {
+        const ey = maxEnd.getFullYear();
+        const em = pad(maxEnd.getMonth() + 1);
+        const ed = pad(maxEnd.getDate());
+        endDateISO = `${ey}-${em}-${ed}`;
+        displayStr = `Đến ${ed}/${em}/${ey}`;
+    }
+
+    return {
+        startDateObj: minStart,
+        endDateObj: maxEnd,
+        startDateISO,
+        endDateISO,
+        displayStr
+    };
+}
+
 function renderVcInvoicesTable() {
     const el = (id) => document.getElementById(id);
     const transBody = el('vc-transactions-body');
@@ -3417,9 +3506,11 @@ function renderVcInvoicesTable() {
 
     let displayList = currentViewingCustomerInvoices;
     if (filterVat === 'exported') {
-        displayList = displayList.filter(t => t.vatExported === true);
+        displayList = displayList.filter(t => t.vatStatus === 'exported' || t.vatExported === true || t.vatExported === 'exported');
+    } else if (filterVat === 'pending') {
+        displayList = displayList.filter(t => t.vatStatus === 'pending' || t.vatExported === 'pending');
     } else if (filterVat === 'not_exported') {
-        displayList = displayList.filter(t => !t.vatExported);
+        displayList = displayList.filter(t => !t.vatStatus || t.vatStatus === 'not_exported' || (!t.vatExported && t.vatExported !== 'pending' && t.vatExported !== true));
     }
 
     if (displayList.length === 0) {
@@ -3443,26 +3534,37 @@ function renderVcInvoicesTable() {
             createDateStr = `${d.getDate().toString().padStart(2,'0')}/${(d.getMonth()+1).toString().padStart(2,'0')}/${d.getFullYear()}`;
         }
 
-        // Kỳ thuê (startDate - endDate)
+        // 1. Tính toán khoảng ngày thực tế của phiếu (quét qua toàn bộ items dịch vụ)
+        const effectiveDates = getEffectiveTransactionDates(t);
+
+        // Tự động làm sạch dữ liệu cũ (Self-healing): nếu t.endDate bị lưu thiếu/sai so với items thực tế
+        if (effectiveDates.endDateISO && t.endDate !== effectiveDates.endDateISO) {
+            t.startDate = effectiveDates.startDateISO;
+            t.endDate = effectiveDates.endDateISO;
+            if (db && targetDocId) {
+                db.collection('transactions').doc(targetDocId).update({
+                    startDate: effectiveDates.startDateISO,
+                    endDate: effectiveDates.endDateISO
+                }).catch(e => console.warn('Lỗi auto-heal date:', e));
+            }
+        }
+
+        // Kỳ thuê hiển thị (startDate - endDate thực tế)
         let periodDisplay = '';
-        if (t.startDate && t.endDate) {
-            let [sy, sm, sd] = t.startDate.split('-');
-            let [ey, em, ed] = t.endDate.split('-');
-            periodDisplay = `<div class="font-bold text-gray-800 text-[11px]"><i class="fa-regular fa-calendar-days text-indigo-500 mr-1"></i>${sd}/${sm} - ${ed}/${em}/${ey}</div>`;
+        if (effectiveDates.displayStr && effectiveDates.displayStr !== '---') {
+            periodDisplay = `<div class="font-bold text-gray-800 text-[11px]"><i class="fa-regular fa-calendar-days text-indigo-500 mr-1"></i>${effectiveDates.displayStr}</div>`;
         }
         periodDisplay += `<div class="text-[10px] text-gray-400">Tạo: ${createDateStr}</div>`;
 
-        // CẢNH BÁO HẾT HẠN HỢP ĐỒNG
+        // CẢNH BÁO HẾT HẠN HỢP ĐỒNG (Tính theo mốc kết thúc muộn nhất của toàn bộ dịch vụ)
         let expiryBadge = '<span class="text-gray-400 italic text-[11px]">Vãng lai</span>';
-        let hasContract = false;
-        if (t.endDate && t.endDate.includes('-')) {
-            hasContract = true;
-            const [ey, em, ed] = t.endDate.split('-').map(Number);
-            const endDateObj = new Date(ey, em - 1, ed);
+        if (effectiveDates.endDateObj) {
+            const endDateObj = new Date(effectiveDates.endDateObj);
             endDateObj.setHours(0, 0, 0, 0);
 
             const diffTime = endDateObj.getTime() - today.getTime();
             const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            const [ey, em, ed] = (effectiveDates.endDateISO || '').split('-');
 
             if (diffDays < 0) {
                 const daysAgo = Math.abs(diffDays);
@@ -3474,19 +3576,33 @@ function renderVcInvoicesTable() {
             }
         }
 
-        // TRẠNG THÁI VAT
-        const isVatExported = !!t.vatExported;
+        // TRẠNG THÁI VAT (3 trạng thái: not_exported: Chưa xuất, pending: Chờ xuất, exported: Đã xuất VAT)
+        let vatStatus = 'not_exported';
+        if (t.vatStatus) {
+            vatStatus = t.vatStatus;
+        } else if (t.vatExported === true || t.vatExported === 'exported') {
+            vatStatus = 'exported';
+        } else if (t.vatExported === 'pending') {
+            vatStatus = 'pending';
+        }
+
         let vatBadge = '';
-        if (isVatExported) {
+        if (vatStatus === 'exported') {
             vatBadge = `
-                <button type="button" onclick="toggleInvoiceVatStatus('${targetDocId}', true)" title="Bấm để chuyển về Chưa xuất VAT" class="px-2 py-0.5 bg-emerald-100 text-emerald-800 hover:bg-emerald-200 rounded font-bold text-[11px] inline-flex items-center gap-1 transition cursor-pointer">
-                    <i class="fa-solid fa-check"></i> Đã xuất VAT
+                <button type="button" onclick="changeInvoiceVatStatus('${targetDocId}', 'exported')" title="Kế toán đã xuất hóa đơn hoàn tất. Bấm để đổi trạng thái" class="px-2.5 py-1 bg-emerald-100 text-emerald-800 hover:bg-emerald-200 rounded-full font-bold text-[11px] inline-flex items-center gap-1.5 transition border border-emerald-300 cursor-pointer shadow-xs">
+                    <i class="fa-solid fa-check text-emerald-600"></i> Đã xuất VAT
+                </button>
+            `;
+        } else if (vatStatus === 'pending') {
+            vatBadge = `
+                <button type="button" onclick="changeInvoiceVatStatus('${targetDocId}', 'pending')" title="Đã gửi yêu cầu cho kế toán, đang chờ gửi lại hóa đơn. Bấm để đổi trạng thái" class="px-2.5 py-1 bg-amber-100 text-amber-900 hover:bg-amber-200 rounded-full font-bold text-[11px] inline-flex items-center gap-1.5 transition border border-amber-300 cursor-pointer shadow-xs animate-pulse">
+                    <i class="fa-solid fa-clock-rotate-left text-amber-600"></i> Chờ xuất
                 </button>
             `;
         } else {
             vatBadge = `
-                <button type="button" onclick="toggleInvoiceVatStatus('${targetDocId}', false)" title="Bấm để đánh dấu Đã xuất VAT" class="px-2 py-0.5 bg-gray-100 text-gray-600 hover:bg-emerald-50 hover:text-emerald-700 rounded font-medium text-[11px] inline-flex items-center gap-1 transition border border-gray-200 cursor-pointer">
-                    <i class="fa-regular fa-circle"></i> Chưa xuất
+                <button type="button" onclick="changeInvoiceVatStatus('${targetDocId}', 'not_exported')" title="Chưa gửi kế toán. Bấm để đổi trạng thái" class="px-2.5 py-1 bg-gray-100 text-gray-600 hover:bg-gray-200 rounded-full font-medium text-[11px] inline-flex items-center gap-1.5 transition border border-gray-200 cursor-pointer shadow-xs">
+                    <i class="fa-regular fa-circle text-[10px]"></i> Chưa xuất
                 </button>
             `;
         }
@@ -3558,45 +3674,80 @@ function updateVatSelectionUI() {
     }
 }
 
-async function toggleInvoiceVatStatus(targetDocId, currentStatus) {
+async function changeInvoiceVatStatus(targetDocId, currentStatusVal) {
     if (!db || !targetDocId) return;
-    const newStatus = !currentStatus;
+
+    const { value: newStatus } = await Swal.fire({
+        title: 'Trạng thái Hóa đơn VAT',
+        html: '<div class="text-xs text-gray-500 mb-2 text-left">Chọn giai đoạn thực tế của phiếu thanh toán:</div>',
+        input: 'radio',
+        inputOptions: {
+            'not_exported': '⚪ Chưa xuất (Chưa gửi cho kế toán)',
+            'pending': '🟡 Chờ xuất (Đã gửi kế toán, chờ nhận hóa đơn)',
+            'exported': '🟢 Đã xuất VAT (Kế toán đã xuất và gửi hóa đơn)'
+        },
+        inputValue: currentStatusVal || 'not_exported',
+        showCancelButton: true,
+        confirmButtonText: 'Lưu trạng thái',
+        cancelButtonText: 'Đóng',
+        confirmButtonColor: '#059669',
+        cancelButtonColor: '#6b7280'
+    });
+
+    if (!newStatus || newStatus === currentStatusVal) return;
 
     try {
         const updatePayload = {
-            vatExported: newStatus,
-            vatExportedAt: newStatus ? firebase.firestore.FieldValue.serverTimestamp() : null
+            vatStatus: newStatus,
+            vatExported: (newStatus === 'exported' ? true : (newStatus === 'pending' ? 'pending' : false)),
+            vatUpdatedAt: firebase.firestore.FieldValue.serverTimestamp()
         };
+        if (newStatus === 'exported') {
+            updatePayload.vatExportedAt = firebase.firestore.FieldValue.serverTimestamp();
+        } else if (newStatus === 'pending') {
+            updatePayload.vatRequestedAt = firebase.firestore.FieldValue.serverTimestamp();
+        }
+
         await db.collection('transactions').doc(targetDocId).set(updatePayload, { merge: true });
 
         // Cập nhật bộ nhớ đệm
         const match = currentViewingCustomerInvoices.find(t => (t.id === targetDocId || t.docId === targetDocId));
         if (match) {
-            match.vatExported = newStatus;
+            match.vatStatus = newStatus;
+            match.vatExported = updatePayload.vatExported;
         }
         const cached = cachedTransactions.find(t => (t.id === targetDocId || t.docId === targetDocId));
         if (cached) {
-            cached.vatExported = newStatus;
+            cached.vatStatus = newStatus;
+            cached.vatExported = updatePayload.vatExported;
         }
 
         renderVcInvoicesTable();
+
+        const statusNames = {
+            'not_exported': '⚪ Chưa xuất',
+            'pending': '🟡 Chờ xuất (Đã gửi yêu cầu cho kế toán)',
+            'exported': '🟢 Đã xuất VAT'
+        };
+
         Swal.fire({
             icon: 'success',
-            title: newStatus ? 'Đã đánh dấu Đã xuất VAT!' : 'Đã chuyển về Chưa xuất VAT!',
+            title: `Đã đổi: ${statusNames[newStatus]}`,
             toast: true,
             position: 'top-end',
-            timer: 1500,
+            timer: 1800,
             showConfirmButton: false
         });
     } catch (e) {
         console.error("Lỗi cập nhật trạng thái VAT:", e);
-        Swal.fire('Lỗi', 'Không thể cập nhật trạng thái VAT!', 'error');
+        Swal.fire('Lỗi', 'Không thể cập nhật trạng thái VAT: ' + e.message, 'error');
     }
 }
 
-// ==========================================
-// XUẤT EXCEL HÓA ĐƠN VAT CHO KẾ TOÁN (SHEETJS)
-// ==========================================
+async function toggleInvoiceVatStatus(targetDocId, currentStatus) {
+    const curVal = currentStatus ? 'exported' : 'not_exported';
+    return changeInvoiceVatStatus(targetDocId, curVal);
+}
 
 // ==========================================
 // XUẤT EXCEL & XEM TRƯỚC HÓA ĐƠN VAT CHO KẾ TOÁN (XLSX-JS-STYLE)
@@ -4154,7 +4305,7 @@ async function executeExportVatExcel() {
 
         XLSX.writeFile(wb, filename);
 
-        // Đánh dấu đã xuất VAT trong database nếu có tích chọn
+        // Đánh dấu chuyển sang Chờ xuất (Đã gửi kế toán) nếu có tích chọn
         if (autoMark && db) {
             const batch = db.batch();
             selectedTransactions.forEach(t => {
@@ -4162,13 +4313,18 @@ async function executeExportVatExcel() {
                 if (targetDocId) {
                     const docRef = db.collection('transactions').doc(targetDocId);
                     batch.set(docRef, {
-                        vatExported: true,
-                        vatExportedAt: firebase.firestore.FieldValue.serverTimestamp()
+                        vatStatus: 'pending',
+                        vatExported: 'pending',
+                        vatRequestedAt: firebase.firestore.FieldValue.serverTimestamp()
                     }, { merge: true });
 
-                    t.vatExported = true;
+                    t.vatStatus = 'pending';
+                    t.vatExported = 'pending';
                     const cached = cachedTransactions.find(ct => (ct.id === targetDocId || ct.docId === targetDocId));
-                    if (cached) cached.vatExported = true;
+                    if (cached) {
+                        cached.vatStatus = 'pending';
+                        cached.vatExported = 'pending';
+                    }
                 }
             });
             await batch.commit();
@@ -4719,15 +4875,9 @@ async function openRenewModal(dataStrEncoded) {
     if (origEndStr.includes('-')) { const [y, m, d] = origEndStr.split('-'); origEndStr = `${d}/${m}/${y}`; }
     el('rn-original-dates').textContent = `${origStartStr} - ${origEndStr}`;
 
-    // Xác định mốc thời gian kết thúc của phiếu cũ để gợi ý tháng mới
-    let baseDate = new Date();
-    if (data.endDate && data.endDate.includes('-')) {
-        const [y, m, d] = data.endDate.split('-').map(Number);
-        baseDate = new Date(y, m - 1, d);
-    } else if (data.startDate && data.startDate.includes('-')) {
-        const [y, m, d] = data.startDate.split('-').map(Number);
-        baseDate = new Date(y, m - 1, d);
-    }
+    // Xác định mốc thời gian kết thúc thực tế của phiếu cũ (quét cả items) để gợi ý tháng mới chính xác
+    const effectiveDates = getEffectiveTransactionDates(data);
+    let baseDate = effectiveDates.endDateObj || new Date();
 
     // Tạo các options gợi ý tháng tiếp theo (+1 tháng, +2 tháng, +3 tháng)
     const monthSelect = el('rn-month-select');

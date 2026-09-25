@@ -788,6 +788,7 @@
                                 <select id="vc-filter-vat" onchange="filterVcInvoicesTable()" class="border rounded px-2 py-1 text-xs bg-white">
                                     <option value="all">Tất cả phiếu</option>
                                     <option value="not_exported">Chưa xuất VAT</option>
+                                    <option value="pending">Chờ xuất (Đã gửi KT)</option>
                                     <option value="exported">Đã xuất VAT</option>
                                 </select>
                             </div>
@@ -1349,8 +1350,8 @@
                 <!-- 3. Tùy chọn đánh dấu xuất VAT -->
                 <div class="bg-gray-50 border p-3 rounded-lg flex items-center justify-between">
                     <label class="inline-flex items-center text-xs font-semibold text-gray-700 cursor-pointer">
-                        <input type="checkbox" id="ve-auto-mark-checked" checked class="rounded text-emerald-600 mr-2">
-                        Tự động đánh dấu các phiếu đã chọn là <b>"Đã xuất hóa đơn VAT"</b>
+                        <input type="checkbox" id="ve-auto-mark-checked" checked class="rounded text-amber-600 mr-2">
+                        Tự động chuyển các phiếu đã chọn sang trạng thái <b class="text-amber-700 ml-1">"Chờ xuất"</b> (Đã gửi yêu cầu cho kế toán)
                     </label>
                     <span class="text-[11px] text-gray-400 italic">File xuất ra định dạng chuẩn Excel .xlsx</span>
                 </div>
