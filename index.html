@@ -1250,6 +1250,123 @@
         </div>
     </div>
 
+    <!-- Modal Xác Nhận Thanh Toán / Gạch Nợ Thủ Công -->
+    <div id="manual-payment-modal" class="fixed inset-0 bg-black bg-opacity-65 hidden flex items-center justify-center z-[92] p-3 md:p-4">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[92vh]">
+            <!-- Header -->
+            <div class="bg-gradient-to-r from-emerald-600 to-teal-700 p-4 flex justify-between items-center text-white cursor-move select-none" title="Nhấp giữ để di chuyển popup - Nhấp đúp để về giữa">
+                <div class="flex items-center space-x-2.5">
+                    <i class="fa-solid fa-grip-lines-vertical opacity-50 text-xs"></i>
+                    <i class="fa-solid fa-hand-holding-dollar text-2xl text-emerald-200"></i>
+                    <div>
+                        <h2 class="text-base md:text-lg font-bold">Xác Nhận Thanh Toán Thủ Công</h2>
+                        <p class="text-xs text-emerald-100">Gạch nợ khi SePay không tự động bắt hoặc khách nợ công ty</p>
+                    </div>
+                </div>
+                <button onclick="closeManualPaymentModal()" class="text-emerald-200 hover:text-white transition group cursor-pointer"><i class="fa-solid fa-xmark text-xl group-hover:scale-110"></i></button>
+            </div>
+
+            <!-- Body -->
+            <div class="p-4 md:p-5 overflow-y-auto space-y-4 text-xs">
+                <!-- Thẻ tóm tắt thông tin phiếu -->
+                <div class="bg-emerald-50/70 border border-emerald-200 rounded-lg p-3 space-y-1.5">
+                    <div class="flex justify-between items-center">
+                        <span class="text-gray-500 font-medium">Mã phiếu:</span>
+                        <span id="mpm-invoice-id" class="font-mono font-bold text-indigo-700 text-sm">---</span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-gray-500 font-medium">Khách hàng / Đơn vị:</span>
+                        <span id="mpm-customer-name" class="font-bold text-gray-800 text-right truncate max-w-[240px]">---</span>
+                    </div>
+                    <div class="flex justify-between items-center pt-1.5 border-t border-emerald-200/60">
+                        <span class="text-emerald-900 font-bold">Số tiền cần gạch nợ:</span>
+                        <span id="mpm-amount-display" class="font-mono font-bold text-emerald-700 text-base">0 ₫</span>
+                    </div>
+                </div>
+
+                <!-- 1. Chọn 1 trong 3 Hình thức thanh toán (Radio Cards) -->
+                <div>
+                    <label class="block font-bold text-gray-700 uppercase mb-2 text-[11px] flex items-center gap-1.5">
+                        <i class="fa-solid fa-layer-group text-emerald-600"></i> Chọn Hình Thức Thanh Toán (*)
+                    </label>
+                    <div class="space-y-2">
+                        <!-- Thẻ 1: Chuyển khoản Công ty -->
+                        <label class="flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition hover:bg-blue-50/50 has-[:checked]:border-blue-500 has-[:checked]:bg-blue-50/60 has-[:checked]:ring-1 has-[:checked]:ring-blue-500">
+                            <input type="radio" name="mpm-channel" value="company_transfer" checked class="mt-0.5 text-blue-600 focus:ring-blue-500">
+                            <div class="flex-1 min-w-0">
+                                <div class="flex items-center gap-1.5 font-bold text-blue-900 text-xs">
+                                    <i class="fa-solid fa-building text-blue-600"></i> Chuyển khoản Công ty
+                                </div>
+                                <div class="text-[11px] text-gray-500 mt-0.5">Khách thanh toán qua tài khoản công ty, lệnh ủy nhiệm chi (SePay không nhận diện theo cú pháp cá nhân)</div>
+                            </div>
+                        </label>
+
+                        <!-- Thẻ 2: Chuyển khoản Cá nhân nhưng không đúng cú pháp -->
+                        <label class="flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition hover:bg-purple-50/50 has-[:checked]:border-purple-500 has-[:checked]:bg-purple-50/60 has-[:checked]:ring-1 has-[:checked]:ring-purple-500">
+                            <input type="radio" name="mpm-channel" value="wrong_syntax_transfer" class="mt-0.5 text-purple-600 focus:ring-purple-500">
+                            <div class="flex-1 min-w-0">
+                                <div class="flex items-center gap-1.5 font-bold text-purple-900 text-xs">
+                                    <i class="fa-solid fa-user-tag text-purple-600"></i> Chuyển khoản Cá nhân (Sai cú pháp)
+                                </div>
+                                <div class="text-[11px] text-gray-500 mt-0.5">Khách đã chuyển khoản nhưng ghi sai hoặc quên ghi mã phiếu, SePay không tự động gạch nợ</div>
+                            </div>
+                        </label>
+
+                        <!-- Thẻ 3: Thanh toán tiền mặt -->
+                        <label class="flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition hover:bg-emerald-50/50 has-[:checked]:border-emerald-500 has-[:checked]:bg-emerald-50/60 has-[:checked]:ring-1 has-[:checked]:ring-emerald-500">
+                            <input type="radio" name="mpm-channel" value="cash" class="mt-0.5 text-emerald-600 focus:ring-emerald-500">
+                            <div class="flex-1 min-w-0">
+                                <div class="flex items-center gap-1.5 font-bold text-emerald-900 text-xs">
+                                    <i class="fa-solid fa-money-bill-wave text-emerald-600"></i> Thanh toán tiền mặt
+                                </div>
+                                <div class="text-[11px] text-gray-500 mt-0.5">Khách nộp tiền mặt trực tiếp tại quầy hoặc sân</div>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- 2. Ghi chú / Mã chuẩn chi / Người nộp (Tùy chọn) -->
+                <div>
+                    <label class="block font-semibold text-gray-700 mb-1 text-xs">Mã giao dịch ngân hàng / Tên người gửi / Ghi chú (Tùy chọn)</label>
+                    <input type="text" id="mpm-ref-note" class="w-full px-3 py-2 border rounded-lg bg-white text-xs focus:ring-1 focus:ring-emerald-500 outline-none" placeholder="VD: Mã VCB-883921, Kế toán Lan CK, Thu tại quầy...">
+                </div>
+
+                <!-- 3. Đính kèm ảnh giao dịch / ủy nhiệm chi / biên lai (Không bắt buộc) -->
+                <div>
+                    <label class="block font-semibold text-gray-700 mb-1 text-xs flex items-center justify-between">
+                        <span><i class="fa-solid fa-image text-emerald-600 mr-1"></i> Ảnh chứng từ / Bill chuyển khoản</span>
+                        <span class="text-[10px] text-gray-400 font-normal italic">(Không bắt buộc)</span>
+                    </label>
+
+                    <div class="border-2 border-dashed border-gray-300 hover:border-emerald-500 rounded-lg p-3 text-center transition bg-gray-50/50">
+                        <input type="file" id="mpm-image-input" accept="image/*" class="hidden" onchange="handleManualPaymentImageSelect(event)">
+                        
+                        <div id="mpm-upload-placeholder" class="cursor-pointer py-2" onclick="document.getElementById('mpm-image-input').click()">
+                            <i class="fa-solid fa-cloud-arrow-up text-2xl text-gray-400 mb-1"></i>
+                            <div class="text-xs text-gray-600 font-medium">Bấm để chọn ảnh hoặc chụp ảnh bill</div>
+                            <div class="text-[10px] text-gray-400 mt-0.5">Hỗ trợ JPG, PNG (Hệ thống tự động nén nhẹ &lt; 150KB)</div>
+                        </div>
+
+                        <div id="mpm-image-preview-box" class="hidden relative inline-block">
+                            <img id="mpm-image-preview" src="" alt="Ảnh chứng từ" class="max-h-36 rounded border shadow-sm object-contain">
+                            <button type="button" onclick="removeManualPaymentImage()" class="absolute -top-2 -right-2 bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs shadow hover:bg-red-700 transition cursor-pointer" title="Xóa ảnh này">
+                                <i class="fa-solid fa-xmark"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <div class="bg-gray-50 border-t p-3.5 flex justify-end items-center space-x-2">
+                <button type="button" onclick="closeManualPaymentModal()" class="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg text-xs font-semibold transition cursor-pointer">Hủy bỏ</button>
+                <button type="button" id="mpm-submit-btn" onclick="executeManualPayment()" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow transition flex items-center gap-1.5 cursor-pointer">
+                    <i class="fa-solid fa-check"></i> Xác Nhận & Gạch Nợ
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Modal Xem Lại & Xuất Excel Hóa Đơn VAT Cho Kế Toán -->
     <div id="vat-export-modal" class="fixed inset-0 bg-black bg-opacity-60 hidden flex items-center justify-center z-[90] p-3 md:p-4">
         <div class="bg-white rounded-xl shadow-2xl w-full max-w-4xl overflow-hidden flex flex-col max-h-[92vh]">

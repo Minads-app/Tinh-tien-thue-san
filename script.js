@@ -2459,12 +2459,33 @@ function viewReceipt(dataStrEncoded) {
                         const d = payData.paidAt.toDate();
                         dateStr = `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')} ${d.getDate()}/${d.getMonth()+1}/${d.getFullYear()}`;
                     }
+                    // Lưu ảnh chứng từ vào global cache để tránh truyền chuỗi Base64 dài vào DOM
+                    if (payData.proofImage) {
+                        window._paymentProofImages = window._paymentProofImages || {};
+                        window._paymentProofImages[docSnap.id] = payData.proofImage;
+                    }
+
+                    let proofBtn = '';
+                    if (payData.proofImage) {
+                        proofBtn = ` <button type="button" onclick="viewPaymentProofImage(window._paymentProofImages['${docSnap.id}'])" class="ml-1.5 px-2 py-0.5 bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 rounded text-[10px] font-bold inline-flex items-center gap-1 cursor-pointer" title="Bấm để xem ảnh chứng từ / ủy nhiệm chi"><i class="fa-solid fa-image"></i> Xem bill</button>`;
+                    }
+
+                    // Format phương thức thanh toán đẹp mắt
+                    let channelDisplay = payData.sepayTransactionId || '---';
+                    if (payData.channel === 'company_transfer') {
+                        channelDisplay = `<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-blue-50 text-blue-800 font-semibold border border-blue-200 text-[10px]"><i class="fa-solid fa-building text-blue-600"></i> CK Công ty</span> ${payData.note ? '<span class="text-gray-600 text-[10px] font-normal">(' + escapeVatHtml(payData.note) + ')</span>' : ''}`;
+                    } else if (payData.channel === 'wrong_syntax_transfer') {
+                        channelDisplay = `<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-purple-50 text-purple-800 font-semibold border border-purple-200 text-[10px]"><i class="fa-solid fa-user-tag text-purple-600"></i> CK Sai cú pháp</span> ${payData.note ? '<span class="text-gray-600 text-[10px] font-normal">(' + escapeVatHtml(payData.note) + ')</span>' : ''}`;
+                    } else if (payData.channel === 'cash') {
+                        channelDisplay = `<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-800 font-semibold border border-emerald-200 text-[10px]"><i class="fa-solid fa-money-bill-wave text-emerald-600"></i> Tiền mặt</span> ${payData.note ? '<span class="text-gray-600 text-[10px] font-normal">(' + escapeVatHtml(payData.note) + ')</span>' : ''}`;
+                    }
+
                     const tr = document.createElement('tr');
                     tr.className = "border-b text-gray-700 hover:bg-gray-50";
                     tr.innerHTML = `
-                        <td class="p-2 border text-[11px] font-medium">${dateStr}</td>
-                        <td class="p-2 border font-bold text-green-700 text-xs text-right">${formatVND(payData.amount)}</td>
-                        <td class="p-2 border font-mono text-[10px] text-gray-500">${payData.sepayTransactionId || '---'}</td>
+                        <td class="p-2 border text-[11px] font-medium whitespace-nowrap">${dateStr}</td>
+                        <td class="p-2 border font-bold text-green-700 text-xs text-right whitespace-nowrap">${formatVND(payData.amount)}</td>
+                        <td class="p-2 border font-mono text-[10px] text-gray-700">${channelDisplay}${proofBtn}</td>
                     `;
                     historyTableBody.appendChild(tr);
                 });
@@ -2481,9 +2502,9 @@ function viewReceipt(dataStrEncoded) {
         if (statusContainer) statusContainer.classList.remove('hidden');
         statusBtn.style.display = 'flex';
         statusBtn.innerHTML = status === 'partial' 
-            ? `<i class="fa-solid fa-check-double mr-1.5"></i> Thu phần nợ còn lại (Tiền mặt)`
-            : `<i class="fa-solid fa-check mr-1.5"></i> Xác Nhận Đã Thanh Toán (Tiền mặt)`;
-        statusBtn.onclick = () => confirmPayment(data.docId);
+            ? `<i class="fa-solid fa-hand-holding-dollar mr-1.5"></i> Thu nợ còn lại & Xác nhận gạch nợ`
+            : `<i class="fa-solid fa-hand-holding-dollar mr-1.5"></i> Xác Nhận Thanh Toán / Gạch Nợ Thủ Công`;
+        statusBtn.onclick = () => openManualPaymentModal(data);
     } else {
         if (statusContainer) statusContainer.classList.add('hidden');
         statusBtn.style.display = 'none';
@@ -2690,6 +2711,246 @@ async function printAndShareReceipt(data) {
     if (document.getElementById('discount-val')) document.getElementById('discount-val').value = '';
     if (document.getElementById('vat-check')) document.getElementById('vat-check').checked = false;
     renderInvoice();
+}
+
+
+// ==========================================
+// XÁC NHẬN THANH TOÁN / GẠCH NỢ THỦ CÔNG (CK CÔNG TY, CK SAI CÚ PHÁP, TIỀN MẶT)
+// ==========================================
+
+let currentManualPaymentData = null;
+let currentManualPaymentBase64 = null;
+
+function openManualPaymentModal(data) {
+    if (!data) return;
+    currentManualPaymentData = data;
+    currentManualPaymentBase64 = null;
+
+    const el = (id) => document.getElementById(id);
+    if (!el('manual-payment-modal')) return;
+
+    const invId = data.id || `CŨ-${(data.docId || '').slice(0, 6).toUpperCase()}`;
+    const amountToPay = data.remainingAmount !== undefined ? data.remainingAmount : (data.totalAmount || 0);
+
+    el('mpm-invoice-id').textContent = invId;
+    el('mpm-customer-name').textContent = data.company ? `${data.company} (${data.customerName || ''})` : (data.customerName || 'Khách vãng lai');
+    el('mpm-amount-display').textContent = formatVND(amountToPay);
+
+    // Mặc định chọn hình thức: nếu có công ty -> Chuyển khoản công ty, nếu tiền mặt -> Tiền mặt, còn lại -> CK sai cú pháp
+    const radioCompany = document.querySelector('input[name="mpm-channel"][value="company_transfer"]');
+    const radioWrongSyntax = document.querySelector('input[name="mpm-channel"][value="wrong_syntax_transfer"]');
+    const radioCash = document.querySelector('input[name="mpm-channel"][value="cash"]');
+
+    if (data.company && radioCompany) {
+        radioCompany.checked = true;
+    } else if (data.paymentMethod === 'Tiền mặt' && radioCash) {
+        radioCash.checked = true;
+    } else if (radioWrongSyntax) {
+        radioWrongSyntax.checked = true;
+    }
+
+    if (el('mpm-ref-note')) el('mpm-ref-note').value = '';
+    
+    // Reset ảnh
+    removeManualPaymentImage();
+
+    el('manual-payment-modal').classList.remove('hidden');
+    bringModalToFront(el('manual-payment-modal'));
+}
+
+function closeManualPaymentModal() {
+    const modal = document.getElementById('manual-payment-modal');
+    if (modal) modal.classList.add('hidden');
+    currentManualPaymentData = null;
+    currentManualPaymentBase64 = null;
+    syncModalStack();
+}
+
+function handleManualPaymentImageSelect(e) {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+        Swal.fire('Lỗi', 'Vui lòng chọn file hình ảnh (JPG, PNG, JPEG)!', 'error');
+        return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = function(evt) {
+        const img = new Image();
+        img.onload = function() {
+            // Nén ảnh bằng Canvas: tối đa 1280px để giữ nét nhưng dung lượng siêu nhẹ (~80KB - 150KB)
+            let width = img.width;
+            let height = img.height;
+            const maxDimension = 1280;
+
+            if (width > height) {
+                if (width > maxDimension) {
+                    height = Math.round((height * maxDimension) / width);
+                    width = maxDimension;
+                }
+            } else {
+                if (height > maxDimension) {
+                    width = Math.round((width * maxDimension) / height);
+                    height = maxDimension;
+                }
+            }
+
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, width, height);
+
+            const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.75);
+            currentManualPaymentBase64 = compressedDataUrl;
+
+            const el = (id) => document.getElementById(id);
+            if (el('mpm-image-preview')) el('mpm-image-preview').src = compressedDataUrl;
+            if (el('mpm-image-preview-box')) el('mpm-image-preview-box').classList.remove('hidden');
+            if (el('mpm-upload-placeholder')) el('mpm-upload-placeholder').classList.add('hidden');
+        };
+        img.src = evt.target.result;
+    };
+    reader.readAsDataURL(file);
+}
+
+function removeManualPaymentImage() {
+    currentManualPaymentBase64 = null;
+    const el = (id) => document.getElementById(id);
+    if (el('mpm-image-input')) el('mpm-image-input').value = '';
+    if (el('mpm-image-preview')) el('mpm-image-preview').src = '';
+    if (el('mpm-image-preview-box')) el('mpm-image-preview-box').classList.add('hidden');
+    if (el('mpm-upload-placeholder')) el('mpm-upload-placeholder').classList.remove('hidden');
+}
+
+function viewPaymentProofImage(imgUrl) {
+    if (!imgUrl) return;
+    const modal = document.getElementById('comp-image-modal');
+    const img = document.getElementById('comp-large-image');
+    if (!modal || !img) return;
+    img.src = imgUrl;
+    modal.classList.remove('hidden');
+    bringModalToFront(modal);
+}
+
+async function executeManualPayment() {
+    if (!db || !currentManualPaymentData) {
+        Swal.fire('Lỗi', 'Không tìm thấy dữ liệu phiếu!', 'error');
+        return;
+    }
+
+    const docId = currentManualPaymentData.docId;
+    if (!docId) {
+        Swal.fire('Lỗi', 'Mã phiếu không hợp lệ!', 'error');
+        return;
+    }
+
+    const selectedChannelEl = document.querySelector('input[name="mpm-channel"]:checked');
+    const channel = selectedChannelEl ? selectedChannelEl.value : 'company_transfer';
+
+    const channelMap = {
+        'company_transfer': { label: 'Chuyển khoản Công ty', method: 'Chuyển khoản', tag: '[CK Công ty]' },
+        'wrong_syntax_transfer': { label: 'CK Cá nhân (Sai cú pháp)', method: 'Chuyển khoản', tag: '[CK Sai cú pháp]' },
+        'cash': { label: 'Tiền mặt', method: 'Tiền mặt', tag: '[Tiền mặt]' }
+    };
+
+    const config = channelMap[channel] || channelMap['company_transfer'];
+    const refNote = document.getElementById('mpm-ref-note') ? document.getElementById('mpm-ref-note').value.trim() : '';
+
+    let sepayLabel = config.tag;
+    if (refNote) {
+        sepayLabel += ` ${refNote}`;
+    }
+
+    try {
+        Swal.fire({ title: 'Đang gạch nợ...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+
+        const docRef = db.collection('transactions').doc(docId);
+        const docSnap = await docRef.get();
+        if (!docSnap.exists) {
+            Swal.fire('Lỗi', 'Phiếu không tồn tại trên hệ thống!', 'error');
+            return;
+        }
+
+        const data = docSnap.data();
+        const totalAmount = data.totalAmount || 0;
+        const amountToPay = data.remainingAmount !== undefined ? data.remainingAmount : totalAmount;
+
+        const batch = db.batch();
+
+        // 1. Cập nhật phiếu sang trạng thái paid
+        batch.update(docRef, {
+            status: 'paid',
+            paymentMethod: config.method,
+            paidAmount: totalAmount,
+            remainingAmount: 0,
+            manualPaymentChannel: channel,
+            manualPaymentLabel: config.label,
+            manualPaymentNote: refNote,
+            manualPaymentAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+
+        // 2. Ghi nhận giao dịch vào collection con 'payments'
+        const paymentDocRef = docRef.collection('payments').doc();
+        const paymentPayload = {
+            amount: amountToPay,
+            paidAt: firebase.firestore.FieldValue.serverTimestamp(),
+            method: config.method,
+            channel: channel,
+            channelLabel: config.label,
+            note: refNote,
+            sepayTransactionId: sepayLabel
+        };
+
+        if (currentManualPaymentBase64) {
+            paymentPayload.proofImage = currentManualPaymentBase64;
+        }
+
+        batch.set(paymentDocRef, paymentPayload);
+
+        await batch.commit();
+
+        // 3. Cập nhật bộ nhớ đệm
+        currentManualPaymentData.status = 'paid';
+        currentManualPaymentData.paidAmount = totalAmount;
+        currentManualPaymentData.remainingAmount = 0;
+        currentManualPaymentData.paymentMethod = config.method;
+
+        const cached = cachedTransactions.find(t => (t.id === docId || t.docId === docId));
+        if (cached) {
+            cached.status = 'paid';
+            cached.paidAmount = totalAmount;
+            cached.remainingAmount = 0;
+            cached.paymentMethod = config.method;
+        }
+        const custMatch = currentViewingCustomerInvoices.find(t => (t.id === docId || t.docId === docId));
+        if (custMatch) {
+            custMatch.status = 'paid';
+            custMatch.paidAmount = totalAmount;
+            custMatch.remainingAmount = 0;
+            custMatch.paymentMethod = config.method;
+        }
+
+        closeManualPaymentModal();
+        closeReceiptModal();
+        fetchReports(); // Cập nhật lại danh sách báo cáo chính
+        if (currentViewingPhone) {
+            loadCustomerInvoices(currentViewingPhone);
+        }
+
+        Swal.fire({
+            icon: 'success',
+            title: 'Gạch Nợ Thành Công!',
+            html: `Đã xác nhận thanh toán theo hình thức: <b class="text-emerald-700">${config.label}</b>.<br>Số tiền: <b>${formatVND(amountToPay)}</b>`,
+            confirmButtonColor: '#059669',
+            confirmButtonText: 'Đã hiểu'
+        });
+
+    } catch (e) {
+        console.error("Lỗi khi xác nhận thanh toán thủ công:", e);
+        Swal.fire('Lỗi', 'Không thể gạch nợ: ' + e.message, 'error');
+    }
 }
 
 async function confirmPayment(docId) {
@@ -5401,6 +5662,7 @@ const ALL_MANAGED_MODALS = [
     'comp-modal',
     'vat-export-modal',
     'vat-preview-modal',
+    'manual-payment-modal',
     'rule-modal'
 ];
 
