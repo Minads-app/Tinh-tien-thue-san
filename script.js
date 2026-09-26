@@ -3486,10 +3486,21 @@ async function saveSettings() {
 
 function viewReceipt(dataStrEncoded) {
     const data = JSON.parse(decodeURIComponent(dataStrEncoded));
-    const invId = data.id || `CŨ-${data.docId.slice(0,6).toUpperCase()}`;
-    const status = data.status || 'paid';
+    const invId = data.id || `CŨ-${(data.docId || '').slice(0,6).toUpperCase()}`;
+    const targetInvoiceDocId = data.id || data.docId;
+    const status = data.status || (data.remainingAmount === 0 ? 'paid' : (data.paidAmount > 0 ? 'partial' : 'unpaid'));
     
-    document.getElementById('rm-id').textContent = invId;
+    // Status text & badge for header
+    let headerStatusBadge = '';
+    if (status === 'paid') {
+        headerStatusBadge = `<span class="ml-2 px-2.5 py-0.5 bg-emerald-500 text-white rounded-full text-xs font-bold inline-flex items-center gap-1"><i class="fa-solid fa-circle-check"></i> ĐÃ THANH TOÁN</span>`;
+    } else if (status === 'partial') {
+        headerStatusBadge = `<span class="ml-2 px-2.5 py-0.5 bg-amber-500 text-white rounded-full text-xs font-bold inline-flex items-center gap-1"><i class="fa-solid fa-circle-half-stroke"></i> TRẢ 1 PHẦN</span>`;
+    } else {
+        headerStatusBadge = `<span class="ml-2 px-2.5 py-0.5 bg-red-500 text-white rounded-full text-xs font-bold inline-flex items-center gap-1"><i class="fa-solid fa-circle-xmark"></i> CHƯA THANH TOÁN</span>`;
+    }
+
+    document.getElementById('rm-id').innerHTML = `${invId} ${headerStatusBadge}`;
     
     // Xây dựng nội dung chi tiết
     const itemsHtml = (data.items || []).map(i => {
@@ -3508,8 +3519,91 @@ function viewReceipt(dataStrEncoded) {
         </div>`;
     }).join('');
 
-        const modalDiscount = data.discountAmount !== undefined ? data.discountAmount : (data.discount !== undefined ? data.discount : Math.max(0, (data.subTotal || 0) - ((data.totalAmount || 0) - (data.vatAmount || 0))));
-        const html = `
+    const modalDiscount = data.discountAmount !== undefined ? data.discountAmount : (data.discount !== undefined ? data.discount : Math.max(0, (data.subTotal || 0) - ((data.totalAmount || 0) - (data.vatAmount || 0))));
+    
+    // Banner trạng thái thanh toán nổi bật ở đầu phiếu
+    let statusBannerHtml = '';
+    if (status === 'paid') {
+        statusBannerHtml = `
+            <div class="mb-4 p-3.5 bg-gradient-to-r from-emerald-50 to-green-50 border border-emerald-200 rounded-xl flex items-center justify-between shadow-xs">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center font-bold text-xl">
+                        <i class="fa-solid fa-circle-check"></i>
+                    </div>
+                    <div>
+                        <div class="text-xs font-bold text-emerald-900 uppercase">Trạng thái: ĐÃ THANH TOÁN ĐỦ</div>
+                        <div class="text-[11px] text-emerald-700">Số tiền: <b>${formatVND(data.paidAmount || data.totalAmount || 0)}</b> qua <b>${data.paymentMethod || 'Chuyển khoản'}</b> ${data.manualPaymentLabel ? `(${data.manualPaymentLabel})` : ''}</div>
+                    </div>
+                </div>
+                <span class="px-3 py-1 bg-emerald-600 text-white rounded-lg font-bold text-xs shadow-xs">
+                    <i class="fa-solid fa-check mr-1"></i> HOÀN TẤT
+                </span>
+            </div>
+        `;
+    } else if (status === 'partial') {
+        statusBannerHtml = `
+            <div class="mb-4 p-3.5 bg-gradient-to-r from-amber-50 to-yellow-50 border border-amber-200 rounded-xl flex items-center justify-between shadow-xs">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center font-bold text-xl">
+                        <i class="fa-solid fa-circle-half-stroke"></i>
+                    </div>
+                    <div>
+                        <div class="text-xs font-bold text-amber-900 uppercase">Trạng thái: THANH TOÁN MỘT PHẦN</div>
+                        <div class="text-[11px] text-gray-700">Đã trả: <b class="text-emerald-700">${formatVND(data.paidAmount || 0)}</b> | Còn thiếu: <b class="text-red-600 font-bold">${formatVND(data.remainingAmount || 0)}</b></div>
+                    </div>
+                </div>
+                <button type="button" onclick="openManualPaymentModal(JSON.parse(decodeURIComponent('${dataStrEncoded}')))" class="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-bold text-xs shadow-xs flex items-center gap-1 cursor-pointer transition">
+                    <i class="fa-solid fa-hand-holding-dollar"></i> Thu nợ
+                </button>
+            </div>
+        `;
+    } else {
+        statusBannerHtml = `
+            <div class="mb-4 p-3.5 bg-gradient-to-r from-red-50 to-rose-50 border border-red-200 rounded-xl flex items-center justify-between shadow-xs">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-full bg-red-100 text-red-600 flex items-center justify-center font-bold text-xl">
+                        <i class="fa-solid fa-circle-xmark"></i>
+                    </div>
+                    <div>
+                        <div class="text-xs font-bold text-red-900 uppercase">Trạng thái: CHƯA THANH TOÁN</div>
+                        <div class="text-[11px] text-red-700">Tổng tiền cần thu: <b class="text-red-700 font-bold">${formatVND(data.remainingAmount !== undefined ? data.remainingAmount : (data.totalAmount || 0))}</b></div>
+                    </div>
+                </div>
+                <button type="button" onclick="openManualPaymentModal(JSON.parse(decodeURIComponent('${dataStrEncoded}')))" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-xs shadow-xs flex items-center gap-1 cursor-pointer transition">
+                    <i class="fa-solid fa-hand-holding-dollar"></i> Gạch nợ ngay
+                </button>
+            </div>
+        `;
+    }
+
+    // Ảnh chứng từ nếu có trên phiếu chính
+    const mainProof = data.proofImage || data.manualPaymentProofImage;
+    let mainProofHtml = '';
+    if (mainProof) {
+        window._paymentProofImages = window._paymentProofImages || {};
+        window._paymentProofImages[targetInvoiceDocId] = mainProof;
+        mainProofHtml = `
+            <div class="mb-4 p-3 bg-blue-50/80 border border-blue-200 rounded-xl flex items-center justify-between shadow-xs">
+                <div class="flex items-center gap-2.5">
+                    <i class="fa-solid fa-receipt text-blue-600 text-xl"></i>
+                    <div>
+                        <div class="text-xs font-bold text-blue-900">Ủy nhiệm chi / Ảnh chứng từ thanh toán</div>
+                        <div class="text-[11px] text-gray-500">${data.manualPaymentLabel || 'Thanh toán chuyển khoản'}</div>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2">
+                    <img src="${mainProof}" class="w-10 h-10 object-cover rounded border border-blue-300 cursor-pointer shadow-xs hover:scale-105 transition" onclick="viewPaymentProofImage('${mainProof}')" title="Bấm để xem ảnh phóng to">
+                    <button type="button" onclick="viewPaymentProofImage('${mainProof}')" class="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-bold shadow-xs flex items-center gap-1 cursor-pointer">
+                        <i class="fa-solid fa-expand text-xs"></i> Xem ảnh
+                    </button>
+                </div>
+            </div>
+        `;
+    }
+
+    const html = `
+        ${statusBannerHtml}
+        ${mainProofHtml}
         <div class="grid grid-cols-2 gap-4 mb-4 text-sm bg-gray-50 p-3 rounded">
             <div><span class="text-gray-500 font-medium">Khách hàng:</span> <br><b>${data.customerName || 'Vãng lai'}</b></div>
             <div><span class="text-gray-500 font-medium">SĐT:</span> <br><b>${data.customerPhone || '---'}</b></div>
@@ -3542,12 +3636,12 @@ function viewReceipt(dataStrEncoded) {
 
     const historyTableBody = document.getElementById('payment-history-table');
     const historyEmpty = document.getElementById('payment-history-empty');
-    if (historyTableBody && historyEmpty && db) {
+    if (historyTableBody && historyEmpty && db && targetInvoiceDocId) {
         historyTableBody.innerHTML = '';
         historyEmpty.classList.remove('hidden');
         historyEmpty.textContent = 'Đang tải lịch sử thanh toán...';
 
-        db.collection('transactions').doc(data.docId).collection('payments').orderBy('paidAt', 'desc').get().then(snap => {
+        db.collection('transactions').doc(targetInvoiceDocId).collection('payments').orderBy('paidAt', 'desc').get().then(snap => {
             if (snap.empty) {
                 historyEmpty.textContent = 'Chưa có giao dịch thanh toán nào.';
             } else {
@@ -3562,12 +3656,18 @@ function viewReceipt(dataStrEncoded) {
                     // Lưu ảnh chứng từ vào global cache để tránh truyền chuỗi Base64 dài vào DOM
                     if (payData.proofImage) {
                         window._paymentProofImages = window._paymentProofImages || {};
-                        window._paymentProofImages[docSnap.id] = payData.proofImage;
+                        window._paymentProofImages[doc.id] = payData.proofImage;
                     }
 
                     let proofBtn = '';
                     if (payData.proofImage) {
-                        proofBtn = ` <button type="button" onclick="viewPaymentProofImage(window._paymentProofImages['${docSnap.id}'])" class="ml-1.5 px-2 py-0.5 bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 rounded text-[10px] font-bold inline-flex items-center gap-1 cursor-pointer" title="Bấm để xem ảnh chứng từ / ủy nhiệm chi"><i class="fa-solid fa-image"></i> Xem bill</button>`;
+                        proofBtn = `
+                            <div class="inline-flex items-center gap-1.5 ml-2 cursor-pointer group" onclick="viewPaymentProofImage(window._paymentProofImages['${doc.id}'])" title="Bấm để xem ảnh chứng từ / ủy nhiệm chi">
+                                <img src="${payData.proofImage}" class="w-8 h-8 rounded object-cover border border-blue-300 group-hover:scale-110 transition shadow-xs inline-block">
+                                <span class="px-2 py-0.5 bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 rounded text-[10px] font-bold inline-flex items-center gap-1">
+                                    <i class="fa-solid fa-image"></i> Xem bill
+                                </span>
+                            </div>`;
                     }
 
                     // Format phương thức thanh toán đẹp mắt
@@ -3827,6 +3927,9 @@ function openManualPaymentModal(data) {
     }
     if (!data) return;
     currentManualPaymentData = data;
+    if (!currentManualPaymentData.docId) {
+        currentManualPaymentData.docId = currentManualPaymentData.id;
+    }
     currentManualPaymentBase64 = null;
 
     const el = (id) => document.getElementById(id);
@@ -3982,8 +4085,8 @@ async function executeManualPayment() {
 
         const batch = db.batch();
 
-        // 1. Cập nhật phiếu sang trạng thái paid
-        batch.update(docRef, {
+        // 1. Cập nhật phiếu sang trạng thái paid và lưu kèm ảnh ủy nhiệm chi lên phiếu chính
+        const updateMainDocPayload = {
             status: 'paid',
             paymentMethod: config.method,
             paidAmount: totalAmount,
@@ -3992,7 +4095,13 @@ async function executeManualPayment() {
             manualPaymentLabel: config.label,
             manualPaymentNote: refNote,
             manualPaymentAt: firebase.firestore.FieldValue.serverTimestamp()
-        });
+        };
+        if (currentManualPaymentBase64) {
+            updateMainDocPayload.proofImage = currentManualPaymentBase64;
+            updateMainDocPayload.manualPaymentProofImage = currentManualPaymentBase64;
+        }
+
+        batch.update(docRef, updateMainDocPayload);
 
         // 2. Ghi nhận giao dịch vào collection con 'payments'
         const paymentDocRef = docRef.collection('payments').doc();
@@ -4019,6 +4128,10 @@ async function executeManualPayment() {
         currentManualPaymentData.paidAmount = totalAmount;
         currentManualPaymentData.remainingAmount = 0;
         currentManualPaymentData.paymentMethod = config.method;
+        if (currentManualPaymentBase64) {
+            currentManualPaymentData.proofImage = currentManualPaymentBase64;
+            currentManualPaymentData.manualPaymentProofImage = currentManualPaymentBase64;
+        }
 
         const cached = cachedTransactions.find(t => (t.id === docId || t.docId === docId));
         if (cached) {
@@ -4026,6 +4139,10 @@ async function executeManualPayment() {
             cached.paidAmount = totalAmount;
             cached.remainingAmount = 0;
             cached.paymentMethod = config.method;
+            if (currentManualPaymentBase64) {
+                cached.proofImage = currentManualPaymentBase64;
+                cached.manualPaymentProofImage = currentManualPaymentBase64;
+            }
         }
         const custMatch = currentViewingCustomerInvoices.find(t => (t.id === docId || t.docId === docId));
         if (custMatch) {
@@ -4033,6 +4150,10 @@ async function executeManualPayment() {
             custMatch.paidAmount = totalAmount;
             custMatch.remainingAmount = 0;
             custMatch.paymentMethod = config.method;
+            if (currentManualPaymentBase64) {
+                custMatch.proofImage = currentManualPaymentBase64;
+                custMatch.manualPaymentProofImage = currentManualPaymentBase64;
+            }
         }
 
         closeManualPaymentModal();
@@ -4764,7 +4885,7 @@ async function loadCustomerInvoices(phoneId) {
     const transBody = el('vc-transactions-body');
     if (!transBody) return;
     
-    transBody.innerHTML = '<tr><td colspan="7" class="p-4 text-center text-gray-500"><i class="fa-solid fa-spinner fa-spin mr-1.5 text-blue-600"></i> Đang tải lịch sử giao dịch...</td></tr>';
+    transBody.innerHTML = '<tr><td colspan="8" class="p-4 text-center text-gray-500"><i class="fa-solid fa-spinner fa-spin mr-1.5 text-blue-600"></i> Đang tải lịch sử giao dịch...</td></tr>';
 
     try {
         let transactions = [];
@@ -4793,7 +4914,7 @@ async function loadCustomerInvoices(phoneId) {
 
     } catch (e) {
         console.error("Lỗi lấy lịch sử giao dịch của khách:", e);
-        transBody.innerHTML = '<tr><td colspan="7" class="p-4 text-center text-red-500">Lỗi khi tải lịch sử giao dịch.</td></tr>';
+        transBody.innerHTML = '<tr><td colspan="8" class="p-4 text-center text-red-500">Lỗi khi tải lịch sử giao dịch.</td></tr>';
     }
 }
 
@@ -4884,7 +5005,7 @@ function renderVcInvoicesTable() {
     }
 
     if (displayList.length === 0) {
-        transBody.innerHTML = '<tr><td colspan="7" class="p-5 text-center text-gray-400 italic">Không có phiếu nào phù hợp với bộ lọc.</td></tr>';
+        transBody.innerHTML = '<tr><td colspan="8" class="p-5 text-center text-gray-400 italic">Không có phiếu nào phù hợp với bộ lọc.</td></tr>';
         updateVatSelectionUI();
         return;
     }
@@ -4946,6 +5067,30 @@ function renderVcInvoicesTable() {
             }
         }
 
+        // TRẠNG THÁI THANH TOÁN (paid, partial, unpaid)
+        let payStatus = t.status || 'unpaid';
+        let paymentBadge = '';
+        if (payStatus === 'paid') {
+            paymentBadge = `<span class="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-full font-bold text-[10px] inline-flex items-center gap-1 shadow-2xs whitespace-nowrap"><i class="fa-solid fa-circle-check text-emerald-600"></i> Đã TT</span>`;
+        } else if (payStatus === 'partial') {
+            const remain = (t.remainingAmount !== undefined) ? t.remainingAmount : ((t.totalAmount || 0) - (t.paidAmount || 0));
+            paymentBadge = `
+                <div class="flex flex-col items-center gap-0.5 whitespace-nowrap">
+                    <span class="px-2 py-0.5 bg-amber-100 text-amber-900 rounded-full font-bold text-[10px] inline-flex items-center gap-1"><i class="fa-solid fa-circle-half-stroke text-amber-600"></i> Trả 1 phần</span>
+                    <span class="text-[9px] text-red-600 font-semibold">Còn: ${formatVND(remain)}</span>
+                </div>
+            `;
+        } else {
+            paymentBadge = `
+                <div class="flex flex-col items-center gap-1 whitespace-nowrap">
+                    <span class="px-2 py-0.5 bg-red-100 text-red-700 rounded-full font-bold text-[10px] inline-flex items-center gap-1"><i class="fa-solid fa-circle-xmark"></i> Chưa TT</span>
+                    <button type="button" onclick="openManualPaymentFromCustModal('${targetDocId}')" class="px-2 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[10px] font-bold shadow-2xs flex items-center gap-1 cursor-pointer transition" title="Gạch nợ phiếu này">
+                        <i class="fa-solid fa-hand-holding-dollar"></i> Thu
+                    </button>
+                </div>
+            `;
+        }
+
         // TRẠNG THÁI VAT (3 trạng thái: not_exported: Chưa xuất, pending: Chờ xuất, exported: Đã xuất VAT)
         let vatStatus = 'not_exported';
         if (t.vatStatus) {
@@ -4991,6 +5136,7 @@ function renderVcInvoicesTable() {
             <td class="p-2 border whitespace-nowrap">${periodDisplay}</td>
             <td class="p-2 border text-center whitespace-nowrap">${expiryBadge}</td>
             <td class="p-2 border text-right font-bold text-gray-800 whitespace-nowrap">${formatVND(t.totalAmount || 0)}</td>
+            <td class="p-2 border text-center whitespace-nowrap">${paymentBadge}</td>
             <td class="p-2 border text-center whitespace-nowrap">${vatBadge}</td>
             <td class="p-2 border text-center whitespace-nowrap">
                 <button onclick="viewReceipt('${dataStr}')" class="px-2 py-1 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded text-[11px] font-bold transition mr-1" title="Xem chi tiết phiếu">
@@ -5005,6 +5151,18 @@ function renderVcInvoicesTable() {
     });
 
     updateVatSelectionUI();
+}
+
+function openManualPaymentFromCustModal(targetDocId) {
+    if (!targetDocId) return;
+    let inv = currentViewingCustomerInvoices.find(t => (t.id === targetDocId || t.docId === targetDocId));
+    if (!inv && cachedTransactions) {
+        inv = cachedTransactions.find(t => (t.id === targetDocId || t.docId === targetDocId));
+    }
+    if (inv) {
+        if (!inv.docId) inv.docId = inv.id || targetDocId;
+        openManualPaymentModal(inv);
+    }
 }
 
 function filterVcInvoicesTable() {
