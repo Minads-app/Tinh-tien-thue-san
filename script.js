@@ -4440,6 +4440,40 @@ async function saveBillEdit() {
     }
 }
 
+async function syncCustomerStatsByPhone(phoneId) {
+    if (!db || !phoneId) return;
+    try {
+        const cleanPhone = phoneId.replace(/\D/g, '');
+        let trans = [];
+        if (cachedTransactions && cachedTransactions.length > 0) {
+            trans = cachedTransactions.filter(t => {
+                const tp = (t.customerPhone || '').replace(/\D/g, '');
+                return (cleanPhone && tp && tp === cleanPhone) || (t.customerPhone === phoneId);
+            });
+        } else {
+            const snap = await db.collection('transactions').where('customerPhone', '==', phoneId).get();
+            snap.forEach(d => trans.push(d.data()));
+        }
+
+        const count = trans.length;
+        const total = trans.reduce((sum, t) => sum + (t.totalAmount || 0), 0);
+
+        await db.collection('customers').doc(phoneId).update({
+            ticketCount: count,
+            totalSpent: total
+        });
+
+        const cust = customersList.find(c => c.phoneId === phoneId || c.rawDocId === phoneId);
+        if (cust) {
+            cust.ticketCount = count;
+            cust.totalSpent = total;
+            renderCustomerTable();
+        }
+    } catch (e) {
+        console.warn('Lỗi syncCustomerStatsByPhone:', e);
+    }
+}
+
 async function deleteBill(docId, invId) {
     if (!hasPermission('reports_delete_bill')) {
         return Swal.fire('Từ chối', 'Bạn không có quyền xóa phiếu thanh toán!', 'error');
@@ -4461,7 +4495,24 @@ async function deleteBill(docId, invId) {
     if (!db) return;
     try {
         Swal.fire({ title: 'Đang xóa...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
-        await db.collection('transactions').doc(docId).delete();
+
+        const docRef = db.collection('transactions').doc(docId);
+        const docSnap = await docRef.get();
+        let customerPhone = null;
+        if (docSnap.exists) {
+            customerPhone = docSnap.data().customerPhone;
+        }
+
+        await docRef.delete();
+
+        // Xóa khỏi cache
+        cachedTransactions = cachedTransactions.filter(t => t.docId !== docId && t.id !== docId);
+
+        // Tự động đồng bộ lại thống kê cho khách hàng nếu có
+        if (customerPhone) {
+            syncCustomerStatsByPhone(customerPhone);
+        }
+
         if (currentViewingPhone && document.getElementById('view-customer-modal') && !document.getElementById('view-customer-modal').classList.contains('hidden')) {
             loadCustomerInvoices(currentViewingPhone);
         }
@@ -4553,6 +4604,19 @@ function renderCustomerTable() {
                 orgDisplay += `<br><span class="text-[11px] font-mono text-blue-600 bg-blue-50 px-1 py-0.5 rounded">MST: ${c.taxCode}</span>`;
             }
 
+            let displayTicketCount = c.ticketCount || 0;
+            let displayTotalSpent = c.totalSpent || 0;
+
+            if (cachedTransactions && cachedTransactions.length > 0) {
+                const cleanPhone = (c.phoneId || '').replace(/\D/g, '');
+                const userTrans = cachedTransactions.filter(t => {
+                    const tPhone = (t.customerPhone || '').replace(/\D/g, '');
+                    return (cleanPhone && tPhone && tPhone === cleanPhone) || (t.customerPhone === c.phoneId);
+                });
+                displayTicketCount = userTrans.length;
+                displayTotalSpent = userTrans.reduce((sum, t) => sum + (t.totalAmount || 0), 0);
+            }
+
             const safeName = (c.name || '').replace(/'/g, "\\'");
             const tr = document.createElement('tr');
             tr.className = "border-b hover:bg-blue-50 transition text-sm text-gray-700";
@@ -4562,8 +4626,8 @@ function renderCustomerTable() {
                 <td class="p-3 border-r font-mono font-bold">${c.phoneId || '---'}</td>
                 <td class="p-3 border-r text-gray-600">${c.gender || '---'}</td>
                 <td class="p-3 border-r text-gray-600">${orgDisplay}</td>
-                <td class="p-3 border-r text-center font-bold text-gray-800">${c.ticketCount || 0}</td>
-                <td class="p-3 border-r text-right font-bold text-green-700 text-base">${formatVND(c.totalSpent || 0)}</td>
+                <td class="p-3 border-r text-center font-bold text-gray-800">${displayTicketCount}</td>
+                <td class="p-3 border-r text-right font-bold text-green-700 text-base">${formatVND(displayTotalSpent)}</td>
                 <td class="p-3 border-r text-gray-500 whitespace-nowrap"><i class="fa-regular fa-calendar mr-1"></i> ${lastVisitStr}</td>
                 <td class="p-3 text-center whitespace-nowrap">
                     <button onclick="viewCustomer('${c.phoneId}')" title="Xem chi tiết" class="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 hover:bg-indigo-100 hover:text-indigo-800 transition mr-1">
@@ -4856,6 +4920,7 @@ async function viewCustomer(phoneId) {
 
     el('vc-tickets').textContent = cust.ticketCount || 0;
     el('vc-spent').textContent = formatVND(cust.totalSpent || 0);
+    if (el('vc-spent-sub')) el('vc-spent-sub').innerHTML = '';
 
     let lastVisitStr = '---';
     if (cust.lastVisit && cust.lastVisit.toDate) {
@@ -4909,6 +4974,40 @@ async function loadCustomerInvoices(phoneId) {
 
         currentViewingCustomerInvoices = transactions;
         if (el('vc-badge-invoices')) el('vc-badge-invoices').textContent = transactions.length;
+
+        // TÍNH TOÁN CHÍNH XÁC VÀ ĐỒNG BỘ LƯỢT THUÊ & TỔNG CHI TIÊU TỪ CÁC PHIẾU THỰC TẾ
+        const realCount = transactions.length;
+        const realTotalSpent = transactions.reduce((sum, t) => sum + (t.totalAmount || 0), 0);
+        const realPaidSpent = transactions.reduce((sum, t) => sum + (t.paidAmount !== undefined ? t.paidAmount : (t.status === 'paid' ? (t.totalAmount || 0) : 0)), 0);
+        const realDebt = realTotalSpent - realPaidSpent;
+
+        if (el('vc-tickets')) el('vc-tickets').textContent = realCount;
+        if (el('vc-spent')) {
+            el('vc-spent').textContent = formatVND(realTotalSpent);
+            el('vc-spent').title = `Tổng tiền: ${formatVND(realTotalSpent)} | Đã trả: ${formatVND(realPaidSpent)}${realDebt > 0 ? ` | Còn nợ: ${formatVND(realDebt)}` : ''}`;
+        }
+        if (el('vc-spent-sub')) {
+            if (realDebt > 0) {
+                el('vc-spent-sub').innerHTML = `Đã trả: <b class="text-emerald-700">${formatVND(realPaidSpent)}</b> | Nợ: <b class="text-red-600 font-bold">${formatVND(realDebt)}</b>`;
+            } else if (realCount > 0) {
+                el('vc-spent-sub').innerHTML = `<span class="text-emerald-700 font-semibold"><i class="fa-solid fa-check"></i> Đã thanh toán đủ</span>`;
+            } else {
+                el('vc-spent-sub').innerHTML = '';
+            }
+        }
+
+        // Tự động đồng bộ lên Firestore nếu dữ liệu cũ trong document customers bị lệch
+        if (db && phoneId) {
+            const cust = customersList.find(c => c.phoneId === phoneId || c.rawDocId === phoneId);
+            if (cust && (cust.ticketCount !== realCount || cust.totalSpent !== realTotalSpent)) {
+                cust.ticketCount = realCount;
+                cust.totalSpent = realTotalSpent;
+                db.collection('customers').doc(phoneId).update({
+                    ticketCount: realCount,
+                    totalSpent: realTotalSpent
+                }).catch(e => console.warn('Lỗi auto-sync customer stats:', e));
+            }
+        }
 
         renderVcInvoicesTable();
 
