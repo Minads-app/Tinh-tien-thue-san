@@ -132,3 +132,41 @@ body {
     scrollbar-width: thin;
 }
 
+/* --- SIDEBAR NAVIGATION STYLES --- */
+.sidebar-nav-btn {
+    transition: all 0.15s ease;
+}
+
+.sidebar-active {
+    background: rgba(255,255,255,0.12);
+    color: #fff;
+    font-weight: 600;
+}
+
+.sidebar-inactive {
+    color: rgba(255,255,255,0.55);
+}
+
+.sidebar-inactive:hover {
+    background: rgba(255,255,255,0.08);
+    color: rgba(255,255,255,0.9);
+}
+
+.sidebar-open {
+    transform: translateX(0) !important;
+}
+
+@media (min-width: 1024px) {
+    #main-content-area.sidebar-shifted {
+        margin-left: 240px;
+    }
+}
+
+@media print {
+    #sidebar-nav,
+    #sidebar-overlay,
+    #top-bar {
+        display: none !important;
+    }
+}
+

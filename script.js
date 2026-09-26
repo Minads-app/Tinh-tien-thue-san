@@ -19,6 +19,8 @@ let siteSettings = {
     venueName: '',
     venueSub: '',
     venueAddress: '',
+    operatingStart: 6,
+    operatingEnd: 22,
     bankPersonal: { name: '', accName: '', accNum: '', qrString: '' },
     bankCompany: { name: '', accName: '', accNum: '', qrString: '' }
 };
@@ -2979,8 +2981,8 @@ function switchTab(tabName) {
     const btnStaff = document.getElementById('tab-btn-staff');
     const btnCourtStatus = document.getElementById('tab-btn-court-status');
     
-    const activeClass = "tab-active py-4 px-1 inline-flex items-center text-sm border-b-2 border-indigo-600 font-bold text-indigo-700 cursor-pointer whitespace-nowrap";
-    const inactiveClass = "tab-inactive py-4 px-1 inline-flex items-center text-sm border-b-2 border-transparent font-medium text-gray-500 hover:text-gray-800 transition cursor-pointer whitespace-nowrap";
+    const activeClass = "sidebar-nav-btn sidebar-active w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition cursor-pointer";
+    const inactiveClass = "sidebar-nav-btn sidebar-inactive w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition cursor-pointer";
 
     [btnBooking, btnConfig, btnReports, btnCustomers, btnSettings, btnStaff, btnCourtStatus].forEach(btn => { if(btn) btn.className = inactiveClass; });
 
@@ -3004,6 +3006,29 @@ function switchTab(tabName) {
     } else if(tabName === 'court-status') {
         if(btnCourtStatus) btnCourtStatus.className = activeClass;
         renderCourtTimeline();
+    }
+
+    // Update top bar active tab indicator
+    const tabLabels = {
+        'booking': { icon: 'fa-file-invoice-dollar', label: 'Tạo Phiếu / Tính Tiền' },
+        'config': { icon: 'fa-sliders', label: 'Cấu Hình Bảng Giá' },
+        'reports': { icon: 'fa-chart-pie', label: 'Báo Cáo Thu / Chi' },
+        'customers': { icon: 'fa-users', label: 'Khách Hàng' },
+        'court-status': { icon: 'fa-calendar-check', label: 'Trạng Thái Sân' },
+        'settings': { icon: 'fa-gear', label: 'Cài Đặt' },
+        'staff': { icon: 'fa-user-shield', label: 'Quản Lý Nhân Sự' }
+    };
+    const topBarIndicator = document.getElementById('top-bar-active-tab');
+    if (topBarIndicator && tabLabels[tabName]) {
+        topBarIndicator.innerHTML = `<i class="fa-solid ${tabLabels[tabName].icon}"></i><span>${tabLabels[tabName].label}</span>`;
+    }
+
+    // Close sidebar on mobile after selecting
+    if (window.innerWidth < 1024) {
+        const sidebar = document.getElementById('sidebar-nav');
+        const overlay = document.getElementById('sidebar-overlay');
+        if (sidebar) sidebar.classList.remove('sidebar-open');
+        if (overlay) overlay.classList.add('hidden');
     }
 }
 function backupData() {
@@ -3403,6 +3428,12 @@ function populateSettingsForm() {
     el('s-venue-sub').value = siteSettings.venueSub || '';
     el('s-venue-address').value = siteSettings.venueAddress || '';
     
+    // Operating hours
+    const opStartEl = el('s-operating-start');
+    const opEndEl = el('s-operating-end');
+    if (opStartEl) opStartEl.value = siteSettings.operatingStart !== undefined ? siteSettings.operatingStart : 6;
+    if (opEndEl) opEndEl.value = siteSettings.operatingEnd !== undefined ? siteSettings.operatingEnd : 22;
+    
     const personalBin = siteSettings.bankPersonal.qrString ? siteSettings.bankPersonal.qrString.split('-')[0] : '';
     const companyBin = siteSettings.bankCompany.qrString ? siteSettings.bankCompany.qrString.split('-')[0] : '';
 
@@ -3428,6 +3459,8 @@ async function fetchSettings() {
                 siteSettings.venueName = d.venueName || '';
                 siteSettings.venueSub = d.venueSub || '';
                 siteSettings.venueAddress = d.venueAddress || '';
+                siteSettings.operatingStart = d.operatingStart !== undefined ? d.operatingStart : 6;
+                siteSettings.operatingEnd = d.operatingEnd !== undefined ? d.operatingEnd : 22;
                 siteSettings.bankPersonal = d.bankPersonal || { name: '', accName: '', accNum: '', qrString: '' };
                 siteSettings.bankCompany = d.bankCompany || { name: '', accName: '', accNum: '', qrString: '' };
                 applySettingsToUI();
@@ -3457,6 +3490,15 @@ async function saveSettings() {
     siteSettings.venueName = elVal('s-venue-name');
     siteSettings.venueSub = elVal('s-venue-sub');
     siteSettings.venueAddress = elVal('s-venue-address');
+    
+    const opStart = parseInt(document.getElementById('s-operating-start').value) || 6;
+    const opEnd = parseInt(document.getElementById('s-operating-end').value) || 22;
+    if (opStart >= opEnd) {
+        Swal.fire('Lỗi', 'Giờ mở cửa phải nhỏ hơn giờ đóng cửa!', 'warning');
+        return;
+    }
+    siteSettings.operatingStart = opStart;
+    siteSettings.operatingEnd = opEnd;
     
     const pAccNum = elVal('s-bank-personal-accnum');
     siteSettings.bankPersonal = {
@@ -7418,20 +7460,122 @@ function initModalManager() {
 let courtStatusFilter = 'all';
 let courtStatusDate = null;
 let courtTimelineInterval = null;
+let courtViewMode = 'day'; // 'day' | 'week' | 'month'
+let csZoomLevel = 100; // 50, 75, 100, 150, 200
+let csTimeInterval = 60; // 30 or 60 minutes
+
+const CS_WEEKDAY_NAMES = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
+const CS_WEEKDAY_FULL = ['Chủ Nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'];
+const CS_MONTH_NAMES = ['Tháng 1', 'Tháng 2', 'Tháng 3', 'Tháng 4', 'Tháng 5', 'Tháng 6', 'Tháng 7', 'Tháng 8', 'Tháng 9', 'Tháng 10', 'Tháng 11', 'Tháng 12'];
+
+function csFormatDate(d) {
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+function csParseDate(str) {
+    const [y, m, d] = str.split('-').map(Number);
+    return new Date(y, m - 1, d);
+}
 
 function initCourtStatusDate() {
     const dateInput = document.getElementById('court-status-date');
     if (!dateInput) return;
-    const today = new Date();
-    const yyyy = today.getFullYear();
-    const mm = String(today.getMonth() + 1).padStart(2, '0');
-    const dd = String(today.getDate()).padStart(2, '0');
-    dateInput.value = `${yyyy}-${mm}-${dd}`;
-    courtStatusDate = dateInput.value;
-    dateInput.addEventListener('change', function() {
-        courtStatusDate = this.value;
-        renderCourtTimeline();
+    if (!courtStatusDate) {
+        dateInput.value = csFormatDate(new Date());
+        courtStatusDate = dateInput.value;
+    } else {
+        dateInput.value = courtStatusDate;
+    }
+    dateInput.removeEventListener('change', csOnDateChange);
+    dateInput.addEventListener('change', csOnDateChange);
+}
+
+function csOnDateChange() {
+    courtStatusDate = this.value;
+    renderCourtTimeline();
+}
+
+function setCourtViewMode(mode) {
+    courtViewMode = mode;
+    document.querySelectorAll('.cs-mode-pill').forEach(btn => {
+        btn.className = 'cs-mode-pill px-3 py-1.5 rounded-lg font-semibold text-gray-600 hover:bg-gray-200 cursor-pointer';
     });
+    const modeMap = { 'day': 'cs-mode-day', 'week': 'cs-mode-week', 'month': 'cs-mode-month' };
+    const activeBtn = document.getElementById(modeMap[mode]);
+    if (activeBtn) activeBtn.className = 'cs-mode-pill px-3 py-1.5 rounded-lg font-bold bg-white text-teal-700 shadow-xs cursor-pointer';
+    renderCourtTimeline();
+}
+
+function csNavigate(direction) {
+    if (!courtStatusDate) initCourtStatusDate();
+    const d = csParseDate(courtStatusDate);
+    if (courtViewMode === 'day') {
+        d.setDate(d.getDate() + direction);
+    } else if (courtViewMode === 'week') {
+        d.setDate(d.getDate() + (direction * 7));
+    } else if (courtViewMode === 'month') {
+        d.setMonth(d.getMonth() + direction);
+    }
+    courtStatusDate = csFormatDate(d);
+    const dateInput = document.getElementById('court-status-date');
+    if (dateInput) dateInput.value = courtStatusDate;
+    renderCourtTimeline();
+}
+
+function csGoToday() {
+    courtStatusDate = csFormatDate(new Date());
+    const dateInput = document.getElementById('court-status-date');
+    if (dateInput) dateInput.value = courtStatusDate;
+    renderCourtTimeline();
+}
+
+function csGetWeekRange(dateStr) {
+    const d = csParseDate(dateStr);
+    const dayOfWeek = d.getDay(); // 0=CN
+    const monday = new Date(d);
+    monday.setDate(d.getDate() - ((dayOfWeek + 6) % 7)); // back to Monday
+    const days = [];
+    for (let i = 0; i < 7; i++) {
+        const day = new Date(monday);
+        day.setDate(monday.getDate() + i);
+        days.push(csFormatDate(day));
+    }
+    return days;
+}
+
+function csGetMonthDays(dateStr) {
+    const d = csParseDate(dateStr);
+    const year = d.getFullYear();
+    const month = d.getMonth();
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+    const days = [];
+    for (let i = 1; i <= lastDay.getDate(); i++) {
+        days.push(csFormatDate(new Date(year, month, i)));
+    }
+    return { days, firstDay, lastDay, year, month };
+}
+
+function csUpdateTitle() {
+    const titleEl = document.getElementById('cs-view-title');
+    if (!titleEl || !courtStatusDate) return;
+    const d = csParseDate(courtStatusDate);
+    const today = csFormatDate(new Date());
+
+    if (courtViewMode === 'day') {
+        if (courtStatusDate === today) {
+            titleEl.textContent = 'Trạng Thái Sân Hôm Nay';
+        } else {
+            titleEl.textContent = `Trạng Thái Sân — ${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
+        }
+    } else if (courtViewMode === 'week') {
+        const weekDays = csGetWeekRange(courtStatusDate);
+        const start = csParseDate(weekDays[0]);
+        const end = csParseDate(weekDays[6]);
+        titleEl.textContent = `Tuần ${String(start.getDate()).padStart(2,'0')}/${String(start.getMonth()+1).padStart(2,'0')} — ${String(end.getDate()).padStart(2,'0')}/${String(end.getMonth()+1).padStart(2,'0')}/${end.getFullYear()}`;
+    } else if (courtViewMode === 'month') {
+        titleEl.textContent = `${CS_MONTH_NAMES[d.getMonth()]} / ${d.getFullYear()}`;
+    }
 }
 
 function filterCourtTimeline(filter) {
@@ -7554,6 +7698,13 @@ function getBookingStatus(booking) {
 
 function renderCourtTimeline() {
     if (!courtStatusDate) initCourtStatusDate();
+    csUpdateTitle();
+
+    // Dispatch to the correct view renderer
+    if (courtViewMode === 'week') { renderWeekView(); return; }
+    if (courtViewMode === 'month') { renderMonthView(); return; }
+
+    // DAY VIEW (original logic)
     const targetDate = courtStatusDate;
     const courts = getFilteredCourts();
     const bookings = getBookingsForDate(targetDate);
@@ -7563,14 +7714,30 @@ function renderCourtTimeline() {
     const bodyEl = document.getElementById('timeline-body');
     if (!headerEl || !bodyEl) return;
 
-    const START_HOUR = 6;
-    const END_HOUR = 22;
+    const START_HOUR = siteSettings.operatingStart !== undefined ? siteSettings.operatingStart : 6;
+    const END_HOUR = siteSettings.operatingEnd !== undefined ? siteSettings.operatingEnd : 22;
     const TOTAL_HOURS = END_HOUR - START_HOUR;
+    const SLOTS = TOTAL_HOURS * (60 / csTimeInterval); // 16 slots at 60min, 32 at 30min
 
-    // Time header
+    // Apply zoom to inner container
+    const innerEl = document.getElementById('timeline-inner');
+    if (innerEl) innerEl.style.minWidth = Math.max(800, 800 * csZoomLevel / 100) + 'px';
+
+    // Time header with interval
     let headerHtml = '';
-    for (let h = START_HOUR; h <= END_HOUR; h++) {
-        headerHtml += `<div class="text-[10px] text-gray-500 font-mono text-center border-r border-gray-200" style="width:${100/TOTAL_HOURS}%; min-width:${100/TOTAL_HOURS}%">${h}:00</div>`;
+    for (let h = START_HOUR; h < END_HOUR; h++) {
+        if (csTimeInterval === 30) {
+            headerHtml += `<div class="text-[10px] text-gray-500 font-mono text-center border-r border-gray-200 border-dashed" style="width:${100/SLOTS}%; min-width:${100/SLOTS}%">${h}:00</div>`;
+            headerHtml += `<div class="text-[9px] text-gray-400 font-mono text-center border-r border-gray-200" style="width:${100/SLOTS}%; min-width:${100/SLOTS}%">:30</div>`;
+        } else {
+            headerHtml += `<div class="text-[10px] text-gray-500 font-mono text-center border-r border-gray-200" style="width:${100/SLOTS}%; min-width:${100/SLOTS}%">${h}:00</div>`;
+        }
+    }
+    // Last hour label
+    if (csTimeInterval === 30) {
+        headerHtml += `<div class="text-[10px] text-gray-500 font-mono text-center border-r border-gray-200" style="width:${100/SLOTS}%; min-width:${100/SLOTS}%">${END_HOUR}:00</div>`;
+    } else {
+        headerHtml += `<div class="text-[10px] text-gray-500 font-mono text-center border-r border-gray-200" style="width:${100/SLOTS}%; min-width:${100/SLOTS}%">${END_HOUR}:00</div>`;
     }
     headerEl.innerHTML = headerHtml;
 
@@ -7611,10 +7778,14 @@ function renderCourtTimeline() {
         // Timeline area
         bodyHtml += `<div class="flex-1 relative" style="min-height:40px">`;
 
-        // Grid lines (hour markers)
+        // Grid lines (hour + half-hour markers)
         for (let h = START_HOUR; h < END_HOUR; h++) {
             const leftPct = ((h - START_HOUR) / TOTAL_HOURS) * 100;
             bodyHtml += `<div class="absolute top-0 bottom-0 border-r border-gray-100" style="left:${leftPct}%"></div>`;
+            if (csTimeInterval === 30) {
+                const halfPct = ((h + 0.5 - START_HOUR) / TOTAL_HOURS) * 100;
+                bodyHtml += `<div class="absolute top-0 bottom-0 border-r border-gray-100 border-dashed opacity-50" style="left:${halfPct}%"></div>`;
+            }
         }
 
         // Current time red line (only for today)
@@ -7788,3 +7959,302 @@ function showBookingDetail(invoiceId, courtName, timeLabel) {
 
 
 
+
+// ==========================================
+// WEEK VIEW - Bieu do timeline ca tuan
+// ==========================================
+function renderWeekView() {
+    const headerEl = document.getElementById('timeline-header');
+    const bodyEl = document.getElementById('timeline-body');
+    if (!headerEl || !bodyEl) return;
+
+    const courts = getFilteredCourts();
+    const weekDays = csGetWeekRange(courtStatusDate);
+    const todayStr = csFormatDate(new Date());
+
+    const START_HOUR = siteSettings.operatingStart !== undefined ? siteSettings.operatingStart : 6;
+    const END_HOUR = siteSettings.operatingEnd !== undefined ? siteSettings.operatingEnd : 22;
+    const TOTAL_HOURS = END_HOUR - START_HOUR;
+
+    const allBookings = {};
+    weekDays.forEach(day => { allBookings[day] = getBookingsForDate(day); });
+
+    let headerHtml = '';
+    for (let h = START_HOUR; h <= END_HOUR; h++) {
+        headerHtml += `<div class="text-[10px] text-gray-500 font-mono text-center border-r border-gray-200" style="width:${100/TOTAL_HOURS}%; min-width:${100/TOTAL_HOURS}%">${h}:00</div>`;
+    }
+    headerEl.innerHTML = headerHtml;
+
+    let totalActive = 0, totalUpcoming = 0;
+    const activeCourtsSet = new Set();
+
+    let bodyHtml = '';
+    courts.forEach((court, cIdx) => {
+        weekDays.forEach((dayStr, dIdx) => {
+            const dayDate = csParseDate(dayStr);
+            const isToday = dayStr === todayStr;
+            const dayBookings = (allBookings[dayStr] || []).filter(b => b.court === court.name);
+            const dayLabel = CS_WEEKDAY_NAMES[dayDate.getDay()];
+            const dateShort = `${String(dayDate.getDate()).padStart(2,'0')}/${String(dayDate.getMonth()+1).padStart(2,'0')}`;
+
+            const bgClass = isToday ? 'bg-teal-50' : (dIdx % 2 === 0 ? 'bg-white' : 'bg-gray-50');
+            const borderClass = dIdx === 6 ? 'border-b-2 border-gray-300' : 'border-b';
+
+            bodyHtml += `<div class="flex ${borderClass} ${bgClass} relative timeline-row" style="min-height:32px">`;
+            bodyHtml += `<div class="w-36 flex-shrink-0 flex items-center gap-1 px-2 py-0.5 border-r text-[10px] text-gray-600 truncate">`;
+            if (dIdx === 0) {
+                bodyHtml += `<span class="font-bold text-gray-800 truncate">${court.name}</span>`;
+            }
+            bodyHtml += `<span class="ml-auto font-mono ${isToday ? 'text-teal-700 font-bold' : ''}">${dayLabel} ${dateShort}</span>`;
+            bodyHtml += `</div>`;
+
+            bodyHtml += `<div class="flex-1 relative" style="min-height:32px">`;
+            for (let h = START_HOUR; h < END_HOUR; h++) {
+                bodyHtml += `<div class="absolute top-0 bottom-0 border-r border-gray-100" style="left:${((h-START_HOUR)/TOTAL_HOURS)*100}%"></div>`;
+            }
+            if (isToday) {
+                const now = new Date();
+                const curPct = ((now.getHours() + now.getMinutes()/60 - START_HOUR) / TOTAL_HOURS) * 100;
+                if (curPct >= 0 && curPct <= 100) {
+                    bodyHtml += `<div class="absolute top-0 bottom-0 w-0.5 bg-red-500 z-20 opacity-70" style="left:${curPct}%"></div>`;
+                }
+            }
+            dayBookings.forEach(b => {
+                const startDec = b.startHour + b.startMin / 60;
+                const endDec = b.endHour + b.endMin / 60;
+                const leftPct = ((startDec - START_HOUR) / TOTAL_HOURS) * 100;
+                const widthPct = ((endDec - startDec) / TOTAL_HOURS) * 100;
+                const status = isToday ? getBookingStatus(b) : 'scheduled';
+                let barClass = 'bg-indigo-400 text-white';
+                if (status === 'active') { barClass = 'bg-emerald-500 text-white'; activeCourtsSet.add(court.name); totalActive++; }
+                else if (status === 'upcoming') { barClass = 'bg-blue-500 text-white'; totalUpcoming++; }
+                else if (status === 'completed') { barClass = 'bg-gray-300 text-gray-600'; }
+                const timeLabel = `${String(b.startHour).padStart(2,'0')}:${String(b.startMin).padStart(2,'0')}-${String(b.endHour).padStart(2,'0')}:${String(b.endMin).padStart(2,'0')}`;
+                const displayName = b.customerName.length > 10 ? b.customerName.substring(0,10) + '\u2026' : b.customerName;
+                bodyHtml += `<div class="absolute top-0.5 bottom-0.5 rounded ${barClass} flex items-center px-1 cursor-pointer z-10 transition-all hover:opacity-90 hover:shadow-md timeline-bar" `;
+                bodyHtml += `style="left:${Math.max(0,leftPct)}%;width:${Math.min(widthPct,100-leftPct)}%" `;
+                bodyHtml += `onclick="showBookingDetail('${b.invoiceId.replace(/'/g,"\\'")}','${b.court.replace(/'/g,"\\'")}','${timeLabel}')" `;
+                bodyHtml += `title="${b.customerName} (${timeLabel})\nM\u00e3: ${b.invoiceId}">`;
+                bodyHtml += `<span class="text-[9px] font-bold truncate leading-tight">${displayName}</span>`;
+                bodyHtml += `</div>`;
+            });
+            bodyHtml += `</div></div>`;
+        });
+    });
+    bodyEl.innerHTML = bodyHtml;
+
+    const totalCourts = courts.length;
+    const statActive = document.getElementById('cs-stat-active');
+    const statFree = document.getElementById('cs-stat-free');
+    const statUpcoming = document.getElementById('cs-stat-upcoming');
+    if (statActive) statActive.innerHTML = `${activeCourtsSet.size}/${totalCourts} <span class="text-sm font-medium">s\u00e2n</span>`;
+    if (statFree) statFree.innerHTML = `${totalCourts - activeCourtsSet.size} <span class="text-sm font-medium">s\u00e2n</span>`;
+    if (statUpcoming) statUpcoming.innerHTML = `${totalUpcoming} <span class="text-sm font-medium">l\u1ecbch</span>`;
+
+    const todayBookings = allBookings[todayStr] || [];
+    renderUpcomingList(todayBookings);
+}
+
+
+// ==========================================
+// MONTH VIEW - Lich tong quan thang
+// ==========================================
+function renderMonthView() {
+    const headerEl = document.getElementById('timeline-header');
+    const bodyEl = document.getElementById('timeline-body');
+    if (!headerEl || !bodyEl) return;
+
+    const courts = getFilteredCourts();
+    const { days, firstDay, year, month } = csGetMonthDays(courtStatusDate);
+    const todayStr = csFormatDate(new Date());
+
+    const monthBookings = {};
+    let totalMonthBookings = 0;
+    days.forEach(dayStr => {
+        const courtFilter = courts.map(c => c.name);
+        const dayData = getBookingsForDate(dayStr).filter(b => courtFilter.includes(b.court));
+        monthBookings[dayStr] = dayData;
+        totalMonthBookings += dayData.length;
+    });
+
+    headerEl.innerHTML = ['T2','T3','T4','T5','T6','T7','CN'].map(d =>
+        `<div class="flex-1 text-center text-xs font-bold text-gray-600 py-1 border-r border-gray-200">${d}</div>`
+    ).join('');
+
+    const firstDayOfWeek = (firstDay.getDay() + 6) % 7;
+    let bodyHtml = '<div class="grid grid-cols-7">';
+
+    for (let i = 0; i < firstDayOfWeek; i++) {
+        bodyHtml += `<div class="border-r border-b border-gray-100 bg-gray-50 min-h-[80px]"></div>`;
+    }
+
+    days.forEach(dayStr => {
+        const d = csParseDate(dayStr);
+        const dayNum = d.getDate();
+        const isToday = dayStr === todayStr;
+        const dayBookings = monthBookings[dayStr] || [];
+        const bookingCount = dayBookings.length;
+
+        let bgColor = 'bg-white';
+        if (bookingCount >= 10) bgColor = 'bg-emerald-100';
+        else if (bookingCount >= 5) bgColor = 'bg-emerald-50';
+        else if (bookingCount >= 1) bgColor = 'bg-blue-50';
+
+        const todayRing = isToday ? 'ring-2 ring-teal-500 ring-inset' : '';
+        const isPast = d < new Date(new Date().setHours(0,0,0,0)) && !isToday;
+
+        bodyHtml += `<div class="border-r border-b border-gray-100 ${bgColor} ${todayRing} min-h-[80px] p-1 cursor-pointer hover:bg-teal-50 transition relative group" onclick="csDrillDown('${dayStr}')">`;
+        bodyHtml += `<div class="flex justify-between items-start">`;
+        bodyHtml += `<span class="text-xs font-bold ${isToday ? 'bg-teal-600 text-white w-5 h-5 rounded-full flex items-center justify-center' : isPast ? 'text-gray-400' : 'text-gray-700'}">${dayNum}</span>`;
+        if (bookingCount > 0) {
+            bodyHtml += `<span class="text-[9px] font-bold px-1.5 py-0.5 rounded-full ${bookingCount >= 5 ? 'bg-emerald-600 text-white' : 'bg-blue-100 text-blue-800'}">${bookingCount}</span>`;
+        }
+        bodyHtml += `</div>`;
+
+        if (bookingCount > 0) {
+            bodyHtml += `<div class="mt-1 space-y-0.5">`;
+            const shown = dayBookings.slice(0, 3);
+            shown.forEach(b => {
+                const shortName = b.customerName.length > 8 ? b.customerName.substring(0,8) + '\u2026' : b.customerName;
+                const timeStr = `${String(b.startHour).padStart(2,'0')}:${String(b.startMin).padStart(2,'0')}`;
+                bodyHtml += `<div class="text-[8px] leading-tight truncate px-1 py-0.5 rounded ${isPast ? 'bg-gray-200 text-gray-500' : 'bg-indigo-100 text-indigo-800'}" title="${b.customerName} - ${b.court} (${timeStr})">`;
+                bodyHtml += `<span class="font-semibold">${timeStr}</span> ${shortName}`;
+                bodyHtml += `</div>`;
+            });
+            if (bookingCount > 3) {
+                bodyHtml += `<div class="text-[8px] text-gray-500 font-semibold pl-1">+${bookingCount - 3} l\u1ecbch kh\u00e1c</div>`;
+            }
+            bodyHtml += `</div>`;
+        }
+        bodyHtml += `</div>`;
+    });
+
+    const totalCells = firstDayOfWeek + days.length;
+    const remaining = (7 - (totalCells % 7)) % 7;
+    for (let i = 0; i < remaining; i++) {
+        bodyHtml += `<div class="border-r border-b border-gray-100 bg-gray-50 min-h-[80px]"></div>`;
+    }
+    bodyHtml += '</div>';
+    bodyEl.innerHTML = bodyHtml;
+
+    const totalCourts = courts.length;
+    const statActive = document.getElementById('cs-stat-active');
+    const statFree = document.getElementById('cs-stat-free');
+    const statUpcoming = document.getElementById('cs-stat-upcoming');
+    if (statActive) statActive.innerHTML = `${totalMonthBookings} <span class="text-sm font-medium">l\u1ecbch trong th\u00e1ng</span>`;
+    if (statFree) statFree.innerHTML = `${totalCourts} <span class="text-sm font-medium">s\u00e2n</span>`;
+    if (statUpcoming) statUpcoming.innerHTML = `${days.length} <span class="text-sm font-medium">ng\u00e0y</span>`;
+
+    const todayBookings = monthBookings[todayStr] || [];
+    renderUpcomingList(todayBookings);
+}
+
+function csDrillDown(dateStr) {
+    courtStatusDate = dateStr;
+    const dateInput = document.getElementById('court-status-date');
+    if (dateInput) dateInput.value = dateStr;
+    setCourtViewMode('day');
+}
+
+// ==========================================
+// SIDEBAR TOGGLE
+// ==========================================
+function toggleSidebar() {
+    const sidebar = document.getElementById('sidebar-nav');
+    const overlay = document.getElementById('sidebar-overlay');
+    const mainContent = document.getElementById('main-content-area');
+    if (!sidebar) return;
+
+    const isOpen = sidebar.classList.contains('sidebar-open');
+
+    if (isOpen) {
+        sidebar.classList.remove('sidebar-open');
+        if (overlay) overlay.classList.add('hidden');
+        if (mainContent) mainContent.classList.remove('sidebar-shifted');
+        localStorage.setItem('hba_sidebar_open', 'false');
+    } else {
+        sidebar.classList.add('sidebar-open');
+        if (window.innerWidth < 1024) {
+            if (overlay) overlay.classList.remove('hidden');
+        } else {
+            if (mainContent) mainContent.classList.add('sidebar-shifted');
+        }
+        localStorage.setItem('hba_sidebar_open', 'true');
+    }
+}
+
+// Restore sidebar state on load (desktop only)
+function restoreSidebarState() {
+    if (window.innerWidth >= 1024) {
+        const saved = localStorage.getItem('hba_sidebar_open');
+        if (saved === 'true') {
+            const sidebar = document.getElementById('sidebar-nav');
+            const mainContent = document.getElementById('main-content-area');
+            if (sidebar) sidebar.classList.add('sidebar-open');
+            if (mainContent) mainContent.classList.add('sidebar-shifted');
+        }
+    }
+}
+
+// Call restore after DOM is ready
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', restoreSidebarState);
+} else {
+    restoreSidebarState();
+}
+// ==========================================
+// ZOOM & INTERVAL CONTROLS
+// ==========================================
+const CS_ZOOM_STEPS = [50, 75, 100, 125, 150, 200];
+
+function csZoom(direction) {
+    const currentIdx = CS_ZOOM_STEPS.indexOf(csZoomLevel);
+    let newIdx = currentIdx + direction;
+    if (newIdx < 0) newIdx = 0;
+    if (newIdx >= CS_ZOOM_STEPS.length) newIdx = CS_ZOOM_STEPS.length - 1;
+    csZoomLevel = CS_ZOOM_STEPS[newIdx];
+
+    const label = document.getElementById('cs-zoom-label');
+    if (label) label.textContent = csZoomLevel + '%';
+
+    renderCourtTimeline();
+
+    // Auto-scroll to current time on zoom
+    if (courtViewMode === 'day') {
+        setTimeout(() => {
+            const container = document.getElementById('timeline-scroll-container');
+            const innerEl = document.getElementById('timeline-inner');
+            if (container && innerEl) {
+                const now = new Date();
+                const curHour = now.getHours() + now.getMinutes() / 60;
+                const pct = (curHour - 6) / 16;
+                const scrollTarget = innerEl.scrollWidth * pct - container.clientWidth / 2;
+                container.scrollLeft = Math.max(0, scrollTarget);
+            }
+        }, 50);
+    }
+}
+
+function csSetInterval(minutes) {
+    csTimeInterval = minutes;
+    document.querySelectorAll('.cs-int-pill').forEach(btn => {
+        btn.className = 'cs-int-pill px-2.5 py-1.5 rounded-lg font-semibold text-gray-600 hover:bg-gray-200 cursor-pointer';
+    });
+    const activeId = minutes === 30 ? 'cs-int-30' : 'cs-int-60';
+    const activeBtn = document.getElementById(activeId);
+    if (activeBtn) activeBtn.className = 'cs-int-pill px-2.5 py-1.5 rounded-lg font-bold bg-white text-teal-700 shadow-xs cursor-pointer';
+    renderCourtTimeline();
+}
+
+// Scroll wheel zoom on timeline
+document.addEventListener('DOMContentLoaded', function() {
+    const container = document.getElementById('timeline-scroll-container');
+    if (container) {
+        container.addEventListener('wheel', function(e) {
+            if (e.ctrlKey) {
+                e.preventDefault();
+                csZoom(e.deltaY < 0 ? 1 : -1);
+            }
+        }, { passive: false });
+    }
+});
