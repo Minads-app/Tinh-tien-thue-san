@@ -858,6 +858,24 @@
                         </div>
                     </div>
 
+                    <!-- Khóa Sân -->
+                    <div class="bg-red-50 p-5 rounded-lg border border-red-200">
+                        <div class="flex items-center justify-between mb-4">
+                            <h3 class="text-sm font-bold text-red-700 uppercase"><i class="fa-solid fa-lock mr-1"></i> Khóa Sân</h3>
+                            <button onclick="openLockModal()" class="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-lg cursor-pointer transition flex items-center gap-1"><i class="fa-solid fa-plus"></i> Thêm khóa</button>
+                        </div>
+                        <p class="text-xs text-gray-500 mb-3">Quản lý thời gian sân không khả dụng. Các lượt đặt sân trùng giờ sẽ bị chặn.</p>
+                        <!-- Lock type tabs -->
+                        <div class="flex gap-2 mb-3">
+                            <button onclick="switchLockTab('fixed')" id="lock-tab-fixed" class="lock-tab-pill px-3 py-1.5 text-xs font-bold rounded-lg bg-white text-red-700 shadow-xs border border-red-200 cursor-pointer"><i class="fa-solid fa-lock mr-1"></i> Cố định</button>
+                            <button onclick="switchLockTab('date')" id="lock-tab-date" class="lock-tab-pill px-3 py-1.5 text-xs font-semibold rounded-lg text-gray-600 hover:bg-gray-100 border border-gray-200 cursor-pointer"><i class="fa-solid fa-calendar-xmark mr-1"></i> Theo ngày</button>
+                        </div>
+                        <!-- Lock table -->
+                        <div id="lock-table-container" class="border rounded-lg overflow-hidden bg-white">
+                            <div class="text-xs text-gray-400 italic p-4 text-center">Chưa có khóa nào.</div>
+                        </div>
+                    </div>
+
                     <!-- TK Cá nhân -->
                     <div class="bg-indigo-50 p-5 rounded-lg border border-indigo-200">
                         <h3 class="text-sm font-bold text-indigo-700 uppercase mb-4"><i class="fa-solid fa-credit-card mr-1"></i> Tài khoản KHÔNG lấy hóa đơn</h3>
@@ -2349,6 +2367,78 @@
                     </button>
                 </div>
             </form>
+        </div>
+    </div>
+
+    <!-- MODAL KHÓA SÂN -->
+    <div id="modal-court-lock" class="fixed inset-0 z-50 hidden flex items-center justify-center p-4">
+        <div class="absolute inset-0 bg-black/50" onclick="closeLockModal()"></div>
+        <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto z-10">
+            <div class="sticky top-0 bg-gradient-to-r from-red-600 to-orange-600 text-white px-6 py-4 rounded-t-2xl flex items-center justify-between">
+                <h3 class="text-sm font-bold flex items-center gap-2"><i class="fa-solid fa-lock"></i> <span id="lock-modal-title">Thêm Khóa Sân</span></h3>
+                <button onclick="closeLockModal()" class="w-7 h-7 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center cursor-pointer"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="p-6 space-y-4">
+                <!-- Lock type -->
+                <div>
+                    <label class="block text-xs font-semibold text-gray-600 mb-1.5">Loại khóa</label>
+                    <div class="flex gap-3">
+                        <label class="flex items-center gap-2 cursor-pointer text-sm"><input type="radio" name="lock-type" value="fixed" checked onchange="toggleLockTypeFields()" class="text-red-600"> <span>Cố định (lặp lại)</span></label>
+                        <label class="flex items-center gap-2 cursor-pointer text-sm"><input type="radio" name="lock-type" value="date" onchange="toggleLockTypeFields()"> <span>Theo ngày</span></label>
+                    </div>
+                </div>
+                <!-- Court selection -->
+                <div>
+                    <label class="block text-xs font-semibold text-gray-600 mb-1.5">Chọn sân</label>
+                    <div class="flex items-center gap-2 mb-2">
+                        <label class="flex items-center gap-1.5 cursor-pointer text-sm"><input type="checkbox" id="lock-court-all" checked onchange="toggleLockCourtAll()" class="text-red-600 rounded"> <span class="font-semibold">Tất cả sân</span></label>
+                    </div>
+                    <div id="lock-court-list" class="hidden grid grid-cols-2 gap-1.5 max-h-32 overflow-y-auto p-2 bg-gray-50 rounded-lg border"></div>
+                </div>
+                <!-- Exclude courts -->
+                <div id="lock-exclude-section">
+                    <label class="block text-xs font-semibold text-gray-600 mb-1.5">Sân loại trừ <span class="text-gray-400 font-normal">(không bị khóa)</span></label>
+                    <div id="lock-exclude-list" class="grid grid-cols-2 gap-1.5 p-2 bg-amber-50 rounded-lg border border-amber-200"></div>
+                </div>
+                <!-- Time range -->
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-600 mb-1">Giờ bắt đầu</label>
+                        <input type="time" id="lock-start-time" value="12:00" class="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-red-500 outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-600 mb-1">Giờ kết thúc</label>
+                        <input type="time" id="lock-end-time" value="13:00" class="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-red-500 outline-none">
+                    </div>
+                </div>
+                <!-- Days of week (fixed only) -->
+                <div id="lock-days-section">
+                    <label class="block text-xs font-semibold text-gray-600 mb-1.5">Các ngày trong tuần</label>
+                    <div class="flex flex-wrap gap-2">
+                        <label class="flex items-center gap-1.5 cursor-pointer text-xs bg-gray-100 px-2.5 py-1.5 rounded-lg border"><input type="checkbox" value="1" class="lock-day-check text-red-600 rounded" checked> T2</label>
+                        <label class="flex items-center gap-1.5 cursor-pointer text-xs bg-gray-100 px-2.5 py-1.5 rounded-lg border"><input type="checkbox" value="2" class="lock-day-check text-red-600 rounded" checked> T3</label>
+                        <label class="flex items-center gap-1.5 cursor-pointer text-xs bg-gray-100 px-2.5 py-1.5 rounded-lg border"><input type="checkbox" value="3" class="lock-day-check text-red-600 rounded" checked> T4</label>
+                        <label class="flex items-center gap-1.5 cursor-pointer text-xs bg-gray-100 px-2.5 py-1.5 rounded-lg border"><input type="checkbox" value="4" class="lock-day-check text-red-600 rounded" checked> T5</label>
+                        <label class="flex items-center gap-1.5 cursor-pointer text-xs bg-gray-100 px-2.5 py-1.5 rounded-lg border"><input type="checkbox" value="5" class="lock-day-check text-red-600 rounded" checked> T6</label>
+                        <label class="flex items-center gap-1.5 cursor-pointer text-xs bg-gray-100 px-2.5 py-1.5 rounded-lg border"><input type="checkbox" value="6" class="lock-day-check text-red-600 rounded"> T7</label>
+                        <label class="flex items-center gap-1.5 cursor-pointer text-xs bg-gray-100 px-2.5 py-1.5 rounded-lg border"><input type="checkbox" value="0" class="lock-day-check text-red-600 rounded"> CN</label>
+                    </div>
+                </div>
+                <!-- Date (date lock only) -->
+                <div id="lock-date-section" class="hidden">
+                    <label class="block text-xs font-semibold text-gray-600 mb-1">Ngày áp dụng</label>
+                    <input type="date" id="lock-date-input" class="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-red-500 outline-none">
+                </div>
+                <!-- Reason -->
+                <div>
+                    <label class="block text-xs font-semibold text-gray-600 mb-1">Lý do</label>
+                    <input type="text" id="lock-reason" placeholder="VD: Nghỉ trưa, Bảo trì, Lớp dạy..." class="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-red-500 outline-none">
+                </div>
+            </div>
+            <div class="px-6 pb-6 flex justify-end gap-2">
+                <button onclick="closeLockModal()" class="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg text-xs font-semibold cursor-pointer">Hủy</button>
+                <button onclick="saveLock()" class="px-5 py-2 bg-gradient-to-r from-red-600 to-orange-600 hover:from-red-700 hover:to-orange-700 text-white rounded-lg text-xs font-bold cursor-pointer flex items-center gap-1.5"><i class="fa-solid fa-lock"></i> Lưu Khóa</button>
+            </div>
         </div>
     </div>
 

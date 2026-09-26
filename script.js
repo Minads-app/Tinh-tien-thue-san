@@ -7793,6 +7793,20 @@ function renderCourtTimeline() {
             bodyHtml += `<div class="absolute top-0 bottom-0 w-0.5 bg-red-500 z-20 opacity-70" style="left:${currentTimePercent}%"></div>`;
         }
 
+        // Lock bars (khóa sân)
+        const courtLocks = getLocksForDate(targetDate, court.name);
+        courtLocks.forEach(lock => {
+            const lStartDec = lock.startHour + lock.startMin / 60;
+            const lEndDec = lock.endHour + lock.endMin / 60;
+            const lLeftPct = ((lStartDec - START_HOUR) / TOTAL_HOURS) * 100;
+            const lWidthPct = ((lEndDec - lStartDec) / TOTAL_HOURS) * 100;
+            bodyHtml += `<div class="absolute top-0 bottom-0 lock-bar z-5 flex items-center justify-center" `;
+            bodyHtml += `style="left:${Math.max(0, lLeftPct)}%; width:${Math.min(lWidthPct, 100 - lLeftPct)}%" `;
+            bodyHtml += `title="🔒 ${lock.reason || 'Khóa'}\n${String(lock.startHour).padStart(2,'0')}:${String(lock.startMin).padStart(2,'0')} - ${String(lock.endHour).padStart(2,'0')}:${String(lock.endMin).padStart(2,'0')}">`;
+            bodyHtml += `<span class="text-[9px] font-bold text-red-700/70 truncate px-1">🔒 ${lock.reason || ''}</span>`;
+            bodyHtml += `</div>`;
+        });
+
         // Booking bars
         courtBookings.forEach(b => {
             const startDecimal = b.startHour + b.startMin / 60;
@@ -8258,3 +8272,333 @@ document.addEventListener('DOMContentLoaded', function() {
         }, { passive: false });
     }
 });
+// ==========================================
+// COURT LOCK MANAGEMENT (KhÃ³a SÃ¢n)
+// ==========================================
+
+let cachedCourtLocks = { fixedLocks: [], dateLocks: [] };
+let unsubscribeCourtLocks = null;
+let currentLockTab = 'fixed';
+let editingLockId = null;
+
+function fetchCourtLocks() {
+    if (!db) return;
+    if (unsubscribeCourtLocks) unsubscribeCourtLocks();
+    try {
+        unsubscribeCourtLocks = db.collection('config').doc('courtLocks').onSnapshot(doc => {
+            if (doc.exists) {
+                const d = doc.data();
+                cachedCourtLocks.fixedLocks = d.fixedLocks || [];
+                cachedCourtLocks.dateLocks = d.dateLocks || [];
+            } else {
+                cachedCourtLocks = { fixedLocks: [], dateLocks: [] };
+            }
+            renderLockTable();
+            // Re-render timeline if court-status tab is visible
+            const csTab = document.getElementById('tab-court-status');
+            if (csTab && !csTab.classList.contains('hidden')) renderCourtTimeline();
+        });
+    } catch(e) { console.warn('Error fetching court locks:', e); }
+}
+
+// Call fetchCourtLocks after auth
+const _origFetchSettings = typeof fetchSettings === 'function' ? fetchSettings : null;
+if (_origFetchSettings) {
+    const _wrapFetch = fetchSettings;
+    // We'll call fetchCourtLocks in the existing init flow
+}
+// Safe: just call it when DOM is ready
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => setTimeout(fetchCourtLocks, 2000));
+} else {
+    setTimeout(fetchCourtLocks, 2000);
+}
+
+function getLocksForDate(dateStr, courtName) {
+    const locks = [];
+    const d = new Date(dateStr + 'T00:00:00');
+    const dayOfWeek = d.getDay(); // 0=Sun
+
+    // Check fixed locks
+    (cachedCourtLocks.fixedLocks || []).forEach(lock => {
+        if (!lock.enabled) return;
+        if (!lock.daysOfWeek || !lock.daysOfWeek.includes(dayOfWeek)) return;
+        if (!isCourtAffectedByLock(lock, courtName)) return;
+        locks.push(lock);
+    });
+
+    // Check date locks
+    (cachedCourtLocks.dateLocks || []).forEach(lock => {
+        if (!lock.enabled) return;
+        if (lock.date !== dateStr) return;
+        if (!isCourtAffectedByLock(lock, courtName)) return;
+        locks.push(lock);
+    });
+
+    return locks;
+}
+
+function isCourtAffectedByLock(lock, courtName) {
+    const courts = lock.courts || [];
+    const excludes = lock.excludeCourts || [];
+    if (courts.includes('all')) {
+        return !excludes.includes(courtName);
+    }
+    return courts.includes(courtName);
+}
+
+function isTimeOverlappingLock(lock, startH, startM, endH, endM) {
+    const lockStart = lock.startHour * 60 + lock.startMin;
+    const lockEnd = lock.endHour * 60 + lock.endMin;
+    const bookStart = startH * 60 + startM;
+    const bookEnd = endH * 60 + endM;
+    return bookStart < lockEnd && bookEnd > lockStart;
+}
+
+function checkBookingAgainstLocks(courtName, dateStr, startH, startM, endH, endM) {
+    const locks = getLocksForDate(dateStr, courtName);
+    for (const lock of locks) {
+        if (isTimeOverlappingLock(lock, startH, startM, endH, endM)) {
+            return lock;
+        }
+    }
+    return null;
+}
+
+// --- SETTINGS UI ---
+
+function switchLockTab(tab) {
+    currentLockTab = tab;
+    document.querySelectorAll('.lock-tab-pill').forEach(btn => {
+        btn.className = 'lock-tab-pill px-3 py-1.5 text-xs font-semibold rounded-lg text-gray-600 hover:bg-gray-100 border border-gray-200 cursor-pointer';
+    });
+    const activeId = tab === 'fixed' ? 'lock-tab-fixed' : 'lock-tab-date';
+    const activeBtn = document.getElementById(activeId);
+    if (activeBtn) activeBtn.className = 'lock-tab-pill px-3 py-1.5 text-xs font-bold rounded-lg bg-white text-red-700 shadow-xs border border-red-200 cursor-pointer';
+    renderLockTable();
+}
+
+function renderLockTable() {
+    const container = document.getElementById('lock-table-container');
+    if (!container) return;
+
+    const locks = currentLockTab === 'fixed' ? (cachedCourtLocks.fixedLocks || []) : (cachedCourtLocks.dateLocks || []);
+    
+    if (locks.length === 0) {
+        container.innerHTML = '<div class="text-xs text-gray-400 italic p-4 text-center">ChÆ°a cÃ³ khÃ³a nÃ o.</div>';
+        return;
+    }
+
+    const dayNames = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
+    let html = '<table class="w-full text-xs"><thead><tr class="bg-gray-50 text-gray-500">';
+    html += '<th class="px-3 py-2 text-left font-semibold">SÃ¢n</th>';
+    html += '<th class="px-3 py-2 text-left font-semibold">Khung giá»</th>';
+    html += '<th class="px-3 py-2 text-left font-semibold">' + (currentLockTab === 'fixed' ? 'Thá»©' : 'NgÃ y') + '</th>';
+    html += '<th class="px-3 py-2 text-left font-semibold">LÃ½ do</th>';
+    html += '<th class="px-3 py-2 text-center font-semibold w-16">Tráº¡ng thÃ¡i</th>';
+    html += '<th class="px-3 py-2 text-center font-semibold w-12"></th>';
+    html += '</tr></thead><tbody>';
+
+    locks.forEach((lock, idx) => {
+        const courtLabel = lock.courts.includes('all') 
+            ? ('Táº¥t cáº£' + (lock.excludeCourts && lock.excludeCourts.length ? ' <span class="text-amber-600">(trá»« ' + lock.excludeCourts.join(', ') + ')</span>' : ''))
+            : lock.courts.join(', ');
+        const timeLabel = `${String(lock.startHour).padStart(2,'0')}:${String(lock.startMin).padStart(2,'0')} - ${String(lock.endHour).padStart(2,'0')}:${String(lock.endMin).padStart(2,'0')}`;
+        let periodLabel = '';
+        if (currentLockTab === 'fixed') {
+            periodLabel = (lock.daysOfWeek || []).map(d => dayNames[d]).join(', ');
+        } else {
+            const ld = lock.date ? lock.date.split('-') : [];
+            periodLabel = ld.length === 3 ? `${ld[2]}/${ld[1]}/${ld[0]}` : lock.date;
+        }
+        const enabledClass = lock.enabled ? 'bg-emerald-500' : 'bg-gray-300';
+        const rowBg = idx % 2 === 0 ? '' : 'bg-gray-50';
+
+        html += `<tr class="border-t ${rowBg} hover:bg-red-50">`;
+        html += `<td class="px-3 py-2 font-medium">${courtLabel}</td>`;
+        html += `<td class="px-3 py-2 font-mono">${timeLabel}</td>`;
+        html += `<td class="px-3 py-2">${periodLabel}</td>`;
+        html += `<td class="px-3 py-2">${lock.reason || '-'}</td>`;
+        html += `<td class="px-3 py-2 text-center"><button onclick="toggleCourtLock('${lock.id}','${currentLockTab}')" class="w-10 h-5 rounded-full ${enabledClass} relative cursor-pointer transition-colors"><span class="absolute top-0.5 ${lock.enabled ? 'right-0.5' : 'left-0.5'} w-4 h-4 bg-white rounded-full shadow transition-all"></span></button></td>`;
+        html += `<td class="px-3 py-2 text-center"><button onclick="deleteCourtLock('${lock.id}','${currentLockTab}')" class="text-red-500 hover:text-red-700 cursor-pointer" title="XÃ³a"><i class="fa-solid fa-trash-can"></i></button></td>`;
+        html += '</tr>';
+    });
+
+    html += '</tbody></table>';
+    container.innerHTML = html;
+}
+
+// --- MODAL ---
+
+function openLockModal() {
+    editingLockId = null;
+    document.getElementById('lock-modal-title').textContent = 'ThÃªm KhÃ³a SÃ¢n';
+    // Reset form
+    document.querySelector('input[name="lock-type"][value="fixed"]').checked = true;
+    document.getElementById('lock-court-all').checked = true;
+    document.getElementById('lock-start-time').value = '12:00';
+    document.getElementById('lock-end-time').value = '13:00';
+    document.getElementById('lock-reason').value = '';
+    document.querySelectorAll('.lock-day-check').forEach(cb => cb.checked = true);
+    const today = new Date();
+    document.getElementById('lock-date-input').value = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+    
+    populateLockCourtCheckboxes();
+    toggleLockTypeFields();
+    toggleLockCourtAll();
+    document.getElementById('modal-court-lock').classList.remove('hidden');
+}
+
+function closeLockModal() {
+    document.getElementById('modal-court-lock').classList.add('hidden');
+}
+
+function populateLockCourtCheckboxes() {
+    const listEl = document.getElementById('lock-court-list');
+    const excludeEl = document.getElementById('lock-exclude-list');
+    if (!listEl || !excludeEl) return;
+
+    let allCourts = [];
+    for (const [group, courts] of Object.entries(COURT_MAP)) {
+        if (group === 'KhÃ¡c') continue;
+        courts.forEach(c => allCourts.push(c));
+    }
+
+    listEl.innerHTML = allCourts.map(c => 
+        `<label class="flex items-center gap-1.5 cursor-pointer text-xs"><input type="checkbox" value="${c}" class="lock-court-check text-red-600 rounded"> ${c}</label>`
+    ).join('');
+
+    excludeEl.innerHTML = allCourts.map(c =>
+        `<label class="flex items-center gap-1.5 cursor-pointer text-xs"><input type="checkbox" value="${c}" class="lock-exclude-check text-amber-600 rounded"> ${c}</label>`
+    ).join('');
+}
+
+function toggleLockTypeFields() {
+    const isFixed = document.querySelector('input[name="lock-type"]:checked').value === 'fixed';
+    document.getElementById('lock-days-section').classList.toggle('hidden', !isFixed);
+    document.getElementById('lock-date-section').classList.toggle('hidden', isFixed);
+}
+
+function toggleLockCourtAll() {
+    const isAll = document.getElementById('lock-court-all').checked;
+    document.getElementById('lock-court-list').classList.toggle('hidden', isAll);
+    document.getElementById('lock-exclude-section').classList.toggle('hidden', !isAll);
+}
+
+async function saveLock() {
+    if (!db) return Swal.fire('Lá»—i', 'KhÃ´ng káº¿t ná»‘i Firebase!', 'error');
+
+    const lockType = document.querySelector('input[name="lock-type"]:checked').value;
+    const isAll = document.getElementById('lock-court-all').checked;
+    
+    let courts = [];
+    let excludeCourts = [];
+    if (isAll) {
+        courts = ['all'];
+        document.querySelectorAll('.lock-exclude-check:checked').forEach(cb => excludeCourts.push(cb.value));
+    } else {
+        document.querySelectorAll('.lock-court-check:checked').forEach(cb => courts.push(cb.value));
+        if (courts.length === 0) return Swal.fire('Lá»—i', 'Vui lÃ²ng chá»n Ã­t nháº¥t 1 sÃ¢n!', 'warning');
+    }
+
+    const startParts = document.getElementById('lock-start-time').value.split(':');
+    const endParts = document.getElementById('lock-end-time').value.split(':');
+    const startHour = parseInt(startParts[0]), startMin = parseInt(startParts[1] || 0);
+    const endHour = parseInt(endParts[0]), endMin = parseInt(endParts[1] || 0);
+
+    if (startHour * 60 + startMin >= endHour * 60 + endMin) {
+        return Swal.fire('Lá»—i', 'Giá» báº¯t Ä‘áº§u pháº£i nhá» hÆ¡n giá» káº¿t thÃºc!', 'warning');
+    }
+
+    const reason = document.getElementById('lock-reason').value.trim();
+    const lockId = editingLockId || (lockType === 'fixed' ? 'fl_' : 'dl_') + Date.now();
+
+    const lockObj = {
+        id: lockId,
+        courts,
+        excludeCourts,
+        startHour, startMin,
+        endHour, endMin,
+        reason,
+        enabled: true
+    };
+
+    if (lockType === 'fixed') {
+        const days = [];
+        document.querySelectorAll('.lock-day-check:checked').forEach(cb => days.push(parseInt(cb.value)));
+        if (days.length === 0) return Swal.fire('Lá»—i', 'Chá»n Ã­t nháº¥t 1 ngÃ y trong tuáº§n!', 'warning');
+        lockObj.daysOfWeek = days;
+    } else {
+        const dateVal = document.getElementById('lock-date-input').value;
+        if (!dateVal) return Swal.fire('Lá»—i', 'Vui lÃ²ng chá»n ngÃ y!', 'warning');
+        lockObj.date = dateVal;
+    }
+
+    try {
+        Swal.fire({ title: 'Äang lÆ°u...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+        const docRef = db.collection('config').doc('courtLocks');
+        const doc = await docRef.get();
+        const data = doc.exists ? doc.data() : { fixedLocks: [], dateLocks: [] };
+
+        if (lockType === 'fixed') {
+            const idx = data.fixedLocks.findIndex(l => l.id === lockId);
+            if (idx >= 0) data.fixedLocks[idx] = lockObj;
+            else data.fixedLocks.push(lockObj);
+        } else {
+            const idx = data.dateLocks.findIndex(l => l.id === lockId);
+            if (idx >= 0) data.dateLocks[idx] = lockObj;
+            else data.dateLocks.push(lockObj);
+        }
+
+        await docRef.set(data);
+        closeLockModal();
+        Swal.fire({ icon: 'success', title: 'ÄÃ£ lÆ°u khÃ³a sÃ¢n!', timer: 1500, showConfirmButton: false });
+    } catch(e) {
+        console.error('Error saving lock:', e);
+        Swal.fire('Lá»—i', 'KhÃ´ng thá»ƒ lÆ°u. Vui lÃ²ng thá»­ láº¡i!', 'error');
+    }
+}
+
+async function toggleCourtLock(lockId, type) {
+    if (!db) return;
+    try {
+        const docRef = db.collection('config').doc('courtLocks');
+        const doc = await docRef.get();
+        if (!doc.exists) return;
+        const data = doc.data();
+        const arr = type === 'fixed' ? data.fixedLocks : data.dateLocks;
+        const lock = arr.find(l => l.id === lockId);
+        if (lock) lock.enabled = !lock.enabled;
+        await docRef.set(data);
+    } catch(e) { console.error('Error toggling lock:', e); }
+}
+
+async function deleteCourtLock(lockId, type) {
+    const confirm = await Swal.fire({
+        icon: 'warning',
+        title: 'XÃ³a khÃ³a sÃ¢n?',
+        text: 'HÃ nh Ä‘á»™ng nÃ y khÃ´ng thá»ƒ hoÃ n tÃ¡c.',
+        showCancelButton: true,
+        confirmButtonText: 'XÃ³a',
+        cancelButtonText: 'Há»§y',
+        confirmButtonColor: '#dc2626'
+    });
+    if (!confirm.isConfirmed) return;
+    try {
+        const docRef = db.collection('config').doc('courtLocks');
+        const doc = await docRef.get();
+        if (!doc.exists) return;
+        const data = doc.data();
+        if (type === 'fixed') {
+            data.fixedLocks = (data.fixedLocks || []).filter(l => l.id !== lockId);
+        } else {
+            data.dateLocks = (data.dateLocks || []).filter(l => l.id !== lockId);
+        }
+        await docRef.set(data);
+        Swal.fire({ icon: 'success', title: 'ÄÃ£ xÃ³a!', timer: 1000, showConfirmButton: false });
+    } catch(e) {
+        console.error('Error deleting lock:', e);
+        Swal.fire('Lá»—i', 'KhÃ´ng thá»ƒ xÃ³a!', 'error');
+    }
+}
+
