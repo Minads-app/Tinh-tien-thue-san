@@ -2952,7 +2952,8 @@ function switchTab(tabName) {
             'reports': 'reports_view',
             'customers': 'customers_view',
             'settings': 'settings_view',
-            'staff': 'staff_view'
+            'staff': 'staff_view',
+            'court-status': 'court_status_view'
         };
         const reqPerm = tabPermMap[tabName];
         if (reqPerm && !hasPermission(reqPerm)) {
@@ -2966,7 +2967,7 @@ function switchTab(tabName) {
         }
     }
 
-    document.querySelectorAll('[id^="tab-booking"], [id^="tab-config"], [id^="tab-reports"], [id^="tab-settings"], [id^="tab-customers"], [id^="tab-staff"]').forEach(el => el.classList.add('hidden'));
+    document.querySelectorAll('[id^="tab-booking"], [id^="tab-config"], [id^="tab-reports"], [id^="tab-settings"], [id^="tab-customers"], [id^="tab-staff"], [id^="tab-court-status"]').forEach(el => el.classList.add('hidden'));
     const targetTab = document.getElementById(`tab-${tabName}`);
     if (targetTab) targetTab.classList.remove('hidden');
     
@@ -2976,11 +2977,12 @@ function switchTab(tabName) {
     const btnCustomers = document.getElementById('tab-btn-customers');
     const btnSettings = document.getElementById('tab-btn-settings');
     const btnStaff = document.getElementById('tab-btn-staff');
+    const btnCourtStatus = document.getElementById('tab-btn-court-status');
     
     const activeClass = "tab-active py-4 px-1 inline-flex items-center text-sm border-b-2 border-indigo-600 font-bold text-indigo-700 cursor-pointer whitespace-nowrap";
     const inactiveClass = "tab-inactive py-4 px-1 inline-flex items-center text-sm border-b-2 border-transparent font-medium text-gray-500 hover:text-gray-800 transition cursor-pointer whitespace-nowrap";
 
-    [btnBooking, btnConfig, btnReports, btnCustomers, btnSettings, btnStaff].forEach(btn => { if(btn) btn.className = inactiveClass; });
+    [btnBooking, btnConfig, btnReports, btnCustomers, btnSettings, btnStaff, btnCourtStatus].forEach(btn => { if(btn) btn.className = inactiveClass; });
 
     if(tabName === 'booking') {
         if(btnBooking) btnBooking.className = activeClass;
@@ -2999,6 +3001,9 @@ function switchTab(tabName) {
     } else if(tabName === 'staff') {
         if(btnStaff) btnStaff.className = activeClass;
         renderStaffTable();
+    } else if(tabName === 'court-status') {
+        if(btnCourtStatus) btnCourtStatus.className = activeClass;
+        renderCourtTimeline();
     }
 }
 function backupData() {
@@ -7403,6 +7408,381 @@ function initModalManager() {
             });
         });
         observer.observe(modalEl, { attributes: true, attributeFilter: ['class'] });
+    });
+}
+
+// ==========================================
+// COURT STATUS TIMELINE (Trạng Thái Sân)
+// ==========================================
+
+let courtStatusFilter = 'all';
+let courtStatusDate = null;
+let courtTimelineInterval = null;
+
+function initCourtStatusDate() {
+    const dateInput = document.getElementById('court-status-date');
+    if (!dateInput) return;
+    const today = new Date();
+    const yyyy = today.getFullYear();
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    const dd = String(today.getDate()).padStart(2, '0');
+    dateInput.value = `${yyyy}-${mm}-${dd}`;
+    courtStatusDate = dateInput.value;
+    dateInput.addEventListener('change', function() {
+        courtStatusDate = this.value;
+        renderCourtTimeline();
+    });
+}
+
+function filterCourtTimeline(filter) {
+    courtStatusFilter = filter;
+    // Update pill styles
+    document.querySelectorAll('.cs-filter-pill').forEach(btn => {
+        btn.className = 'cs-filter-pill px-3 py-1.5 rounded-lg font-semibold text-gray-600 hover:bg-gray-200 cursor-pointer';
+    });
+    // Find the clicked button and activate it
+    const pillMap = {
+        'all': 'cs-filter-all',
+        'Cầu lông': 'cs-filter-cl',
+        'Bóng rổ': 'cs-filter-br',
+        'Bóng đá': 'cs-filter-bd',
+        'Hồ bơi': 'cs-filter-hb'
+    };
+    const activeBtn = document.getElementById(pillMap[filter]);
+    if (activeBtn) {
+        activeBtn.className = 'cs-filter-pill px-3 py-1.5 rounded-lg font-bold bg-white text-teal-700 shadow-xs cursor-pointer';
+    }
+    renderCourtTimeline();
+}
+
+function getFilteredCourts() {
+    const allCourts = [];
+    const sportMapping = {
+        'Cầu lông': ['Cầu lông'],
+        'Bóng rổ': ['Bóng rổ Full', 'Bóng rổ 1/2'],
+        'Bóng đá': ['Bóng đá'],
+        'Hồ bơi': ['Hồ bơi']
+    };
+
+    for (const [group, courts] of Object.entries(COURT_MAP)) {
+        if (group === 'Khác') continue;
+        if (courtStatusFilter !== 'all') {
+            const allowedGroups = sportMapping[courtStatusFilter] || [];
+            if (!allowedGroups.includes(group)) continue;
+        }
+        courts.forEach(courtName => {
+            allCourts.push({ name: courtName, group: group });
+        });
+    }
+    return allCourts;
+}
+
+function getBookingsForDate(targetDate) {
+    const bookings = [];
+    if (!cachedTransactions || cachedTransactions.length === 0) return bookings;
+
+    cachedTransactions.forEach(tx => {
+        if (tx.status === 'cancelled') return;
+        if (!tx.items || !Array.isArray(tx.items)) return;
+
+        tx.items.forEach(item => {
+            if (!item.sessions || !Array.isArray(item.sessions)) return;
+
+            // Check if this item has a session on the target date
+            const hasSession = item.sessions.some(s => s.isoDate === targetDate);
+            if (!hasSession) return;
+
+            // Extract court name from item name like "Cầu lông [Sân cầu lông 1]"
+            let courtName = '';
+            const bracketMatch = item.name.match(/\[(.+?)\]/);
+            if (bracketMatch) {
+                courtName = bracketMatch[1];
+            } else {
+                courtName = item.name;
+            }
+
+            // Parse time
+            const desc = item.desc || '';
+            let timeStart = '', timeEnd = '';
+            const timeMatch = desc.match(/(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})/);
+            if (timeMatch) {
+                timeStart = timeMatch[1];
+                timeEnd = timeMatch[2];
+            }
+            if (!timeStart || !timeEnd) return;
+
+            const [sh, sm] = timeStart.split(':').map(Number);
+            const [eh, em] = timeEnd.split(':').map(Number);
+
+            bookings.push({
+                court: courtName,
+                sport: item.name.split('[')[0].trim() || '',
+                startHour: sh,
+                startMin: sm,
+                endHour: eh,
+                endMin: em,
+                customerName: tx.customerName || 'N/A',
+                customerPhone: tx.customerPhone || '',
+                invoiceId: tx.id || '',
+                totalPrice: item.price || 0,
+                duration: item.duration || 0,
+                txStatus: tx.status || 'unpaid'
+            });
+        });
+    });
+
+    return bookings;
+}
+
+function getBookingStatus(booking) {
+    const now = new Date();
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+    
+    // If viewing a different date, all bookings are "neutral"
+    if (courtStatusDate !== todayStr) {
+        return 'scheduled';
+    }
+
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+    const startMinutes = booking.startHour * 60 + booking.startMin;
+    const endMinutes = booking.endHour * 60 + booking.endMin;
+
+    if (currentMinutes >= startMinutes && currentMinutes < endMinutes) return 'active';
+    if (currentMinutes < startMinutes) return 'upcoming';
+    return 'completed';
+}
+
+function renderCourtTimeline() {
+    if (!courtStatusDate) initCourtStatusDate();
+    const targetDate = courtStatusDate;
+    const courts = getFilteredCourts();
+    const bookings = getBookingsForDate(targetDate);
+
+    // Render time header (6:00 - 22:00)
+    const headerEl = document.getElementById('timeline-header');
+    const bodyEl = document.getElementById('timeline-body');
+    if (!headerEl || !bodyEl) return;
+
+    const START_HOUR = 6;
+    const END_HOUR = 22;
+    const TOTAL_HOURS = END_HOUR - START_HOUR;
+
+    // Time header
+    let headerHtml = '';
+    for (let h = START_HOUR; h <= END_HOUR; h++) {
+        headerHtml += `<div class="text-[10px] text-gray-500 font-mono text-center border-r border-gray-200" style="width:${100/TOTAL_HOURS}%; min-width:${100/TOTAL_HOURS}%">${h}:00</div>`;
+    }
+    headerEl.innerHTML = headerHtml;
+
+    // Current time indicator position
+    const now = new Date();
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+    const isToday = targetDate === todayStr;
+    const currentHourDecimal = now.getHours() + now.getMinutes() / 60;
+    const currentTimePercent = isToday ? ((currentHourDecimal - START_HOUR) / TOTAL_HOURS) * 100 : -1;
+
+    // Stats counters
+    let activeCount = 0;
+    let upcomingCount = 0;
+    const activeCourts = new Set();
+
+    // Render court rows
+    let bodyHtml = '';
+    courts.forEach((court, idx) => {
+        const courtBookings = bookings.filter(b => b.court === court.name);
+        const isEven = idx % 2 === 0;
+        const bgClass = isEven ? 'bg-white' : 'bg-gray-50';
+
+        // Determine sport icon & short label
+        let sportIcon = 'fa-circle';
+        let sportColor = 'text-gray-400';
+        if (court.group.includes('Cầu lông')) { sportIcon = 'fa-shuttlecock'; sportColor = 'text-green-600'; }
+        else if (court.group.includes('Bóng rổ')) { sportIcon = 'fa-basketball'; sportColor = 'text-orange-600'; }
+        else if (court.group.includes('Bóng đá')) { sportIcon = 'fa-futbol'; sportColor = 'text-blue-600'; }
+        else if (court.group.includes('Hồ bơi')) { sportIcon = 'fa-person-swimming'; sportColor = 'text-cyan-600'; }
+
+        bodyHtml += `<div class="flex border-b ${bgClass} relative timeline-row" style="min-height:40px">`;
+        // Court name label
+        bodyHtml += `<div class="w-36 flex-shrink-0 flex items-center gap-1.5 px-2 py-1 border-r text-xs font-semibold text-gray-700 truncate">`;
+        bodyHtml += `<i class="fa-solid ${sportIcon} ${sportColor} text-[10px]"></i>`;
+        bodyHtml += `<span class="truncate">${court.name}</span>`;
+        bodyHtml += `</div>`;
+
+        // Timeline area
+        bodyHtml += `<div class="flex-1 relative" style="min-height:40px">`;
+
+        // Grid lines (hour markers)
+        for (let h = START_HOUR; h < END_HOUR; h++) {
+            const leftPct = ((h - START_HOUR) / TOTAL_HOURS) * 100;
+            bodyHtml += `<div class="absolute top-0 bottom-0 border-r border-gray-100" style="left:${leftPct}%"></div>`;
+        }
+
+        // Current time red line (only for today)
+        if (currentTimePercent >= 0 && currentTimePercent <= 100) {
+            bodyHtml += `<div class="absolute top-0 bottom-0 w-0.5 bg-red-500 z-20 opacity-70" style="left:${currentTimePercent}%"></div>`;
+        }
+
+        // Booking bars
+        courtBookings.forEach(b => {
+            const startDecimal = b.startHour + b.startMin / 60;
+            const endDecimal = b.endHour + b.endMin / 60;
+            const leftPct = ((startDecimal - START_HOUR) / TOTAL_HOURS) * 100;
+            const widthPct = ((endDecimal - startDecimal) / TOTAL_HOURS) * 100;
+
+            const status = getBookingStatus(b);
+            let barClass = '';
+            if (status === 'active') {
+                barClass = 'bg-emerald-500 text-white';
+                activeCourts.add(court.name);
+                activeCount++;
+            } else if (status === 'upcoming') {
+                barClass = 'bg-blue-500 text-white';
+                upcomingCount++;
+            } else if (status === 'completed') {
+                barClass = 'bg-gray-300 text-gray-600';
+            } else {
+                // 'scheduled' for non-today dates
+                barClass = 'bg-indigo-400 text-white';
+            }
+
+            const timeLabel = `${String(b.startHour).padStart(2,'0')}:${String(b.startMin).padStart(2,'0')}-${String(b.endHour).padStart(2,'0')}:${String(b.endMin).padStart(2,'0')}`;
+            const displayName = b.customerName.length > 12 ? b.customerName.substring(0, 12) + '…' : b.customerName;
+
+            bodyHtml += `<div class="absolute top-1 bottom-1 rounded ${barClass} flex items-center px-1.5 cursor-pointer z-10 transition-all hover:opacity-90 hover:shadow-md timeline-bar" `;
+            bodyHtml += `style="left:${Math.max(0, leftPct)}%; width:${Math.min(widthPct, 100 - leftPct)}%" `;
+            bodyHtml += `onclick="showBookingDetail('${b.invoiceId.replace(/'/g, "\\'")}', '${b.court.replace(/'/g, "\\'")}', '${timeLabel}')" `;
+            bodyHtml += `title="${b.customerName} (${timeLabel})\nMã: ${b.invoiceId}">`;
+            bodyHtml += `<span class="text-[10px] font-bold truncate leading-tight">${displayName}</span>`;
+            bodyHtml += `</div>`;
+        });
+
+        bodyHtml += `</div>`; // end timeline area
+        bodyHtml += `</div>`; // end row
+    });
+
+    bodyEl.innerHTML = bodyHtml;
+
+    // Update sidebar stats
+    const totalCourts = courts.length;
+    const freeCourts = totalCourts - activeCourts.size;
+    const statActive = document.getElementById('cs-stat-active');
+    const statFree = document.getElementById('cs-stat-free');
+    const statUpcoming = document.getElementById('cs-stat-upcoming');
+    if (statActive) statActive.innerHTML = `${activeCourts.size}/${totalCourts} <span class="text-sm font-medium">sân</span>`;
+    if (statFree) statFree.innerHTML = `${freeCourts} <span class="text-sm font-medium">sân</span>`;
+    if (statUpcoming) statUpcoming.innerHTML = `${upcomingCount} <span class="text-sm font-medium">lịch</span>`;
+
+    // Update upcoming list
+    renderUpcomingList(bookings);
+
+    // Set up auto-refresh for current time line
+    if (courtTimelineInterval) clearInterval(courtTimelineInterval);
+    if (isToday) {
+        courtTimelineInterval = setInterval(() => {
+            const tabEl = document.getElementById('tab-court-status');
+            if (tabEl && !tabEl.classList.contains('hidden')) {
+                renderCourtTimeline();
+            } else {
+                clearInterval(courtTimelineInterval);
+                courtTimelineInterval = null;
+            }
+        }, 60000); // refresh every minute
+    }
+}
+
+function renderUpcomingList(bookings) {
+    const listEl = document.getElementById('cs-upcoming-list');
+    if (!listEl) return;
+
+    const now = new Date();
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+    const isToday = courtStatusDate === todayStr;
+
+    let upcomingBookings = [];
+    if (isToday) {
+        const currentMinutes = now.getHours() * 60 + now.getMinutes();
+        upcomingBookings = bookings.filter(b => {
+            const startMin = b.startHour * 60 + b.startMin;
+            return startMin > currentMinutes;
+        }).sort((a, b) => (a.startHour * 60 + a.startMin) - (b.startHour * 60 + b.startMin));
+    } else {
+        upcomingBookings = bookings.sort((a, b) => (a.startHour * 60 + a.startMin) - (b.startHour * 60 + b.startMin));
+    }
+
+    upcomingBookings = upcomingBookings.slice(0, 5);
+
+    if (upcomingBookings.length === 0) {
+        listEl.innerHTML = '<div class="text-xs text-gray-400 italic py-2">Không có lịch sắp tới.</div>';
+        return;
+    }
+
+    let html = '';
+    upcomingBookings.forEach(b => {
+        const timeLabel = `${String(b.startHour).padStart(2,'0')}:${String(b.startMin).padStart(2,'0')} - ${String(b.endHour).padStart(2,'0')}:${String(b.endMin).padStart(2,'0')}`;
+        html += `<div class="flex items-center gap-2 p-2 bg-amber-50 rounded border border-amber-100">`;
+        html += `<i class="fa-solid fa-clock text-amber-500 text-[10px]"></i>`;
+        html += `<div class="flex-1 min-w-0">`;
+        html += `<div class="text-xs font-bold text-gray-800 truncate">${b.customerName}</div>`;
+        html += `<div class="text-[10px] text-gray-500">${b.court} · ${timeLabel}</div>`;
+        html += `</div>`;
+        html += `</div>`;
+    });
+    listEl.innerHTML = html;
+}
+
+function showBookingDetail(invoiceId, courtName, timeLabel) {
+    if (!invoiceId) return;
+    const tx = cachedTransactions.find(t => t.id === invoiceId);
+    if (!tx) {
+        Swal.fire({ icon: 'info', title: 'Không tìm thấy', text: 'Không tìm thấy phiếu ' + invoiceId, confirmButtonColor: '#4f46e5' });
+        return;
+    }
+
+    const statusMap = {
+        'paid': '<span class="text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full text-xs font-bold">✅ Đã TT</span>',
+        'partial': '<span class="text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full text-xs font-bold">⏳ TT 1 phần</span>',
+        'unpaid': '<span class="text-red-700 bg-red-100 px-2 py-0.5 rounded-full text-xs font-bold">❌ Chưa TT</span>',
+        'overpaid': '<span class="text-blue-700 bg-blue-100 px-2 py-0.5 rounded-full text-xs font-bold">💰 Dư</span>',
+    };
+    const statusBadge = statusMap[tx.status] || tx.status;
+    const totalFormatted = (tx.totalAmount || 0).toLocaleString('vi-VN') + ' ₫';
+    const paidFormatted = (tx.paidAmount || 0).toLocaleString('vi-VN') + ' ₫';
+
+    Swal.fire({
+        title: `<div class="text-left"><div class="text-base font-bold text-gray-800"><i class="fa-solid fa-receipt text-teal-600 mr-1"></i> Chi tiết đặt sân</div></div>`,
+        html: `
+            <div class="text-left space-y-3 text-sm">
+                <div class="bg-gray-50 p-3 rounded-lg border">
+                    <div class="grid grid-cols-2 gap-2">
+                        <div><span class="text-gray-500 text-xs">Mã phiếu:</span><br><span class="font-mono font-bold text-indigo-700">${tx.id}</span></div>
+                        <div class="text-right"><span class="text-gray-500 text-xs">Trạng thái:</span><br>${statusBadge}</div>
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div><span class="text-gray-500 text-xs block">Khách hàng:</span><span class="font-bold">${tx.customerName || 'N/A'}</span></div>
+                    <div><span class="text-gray-500 text-xs block">SĐT:</span><span class="font-mono">${tx.customerPhone || 'N/A'}</span></div>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div><span class="text-gray-500 text-xs block">Sân:</span><span class="font-semibold text-teal-700">${courtName}</span></div>
+                    <div><span class="text-gray-500 text-xs block">Giờ:</span><span class="font-mono font-bold">${timeLabel}</span></div>
+                </div>
+                <div class="border-t pt-2 grid grid-cols-2 gap-3">
+                    <div><span class="text-gray-500 text-xs block">Tổng phiếu:</span><span class="font-bold text-blue-800">${totalFormatted}</span></div>
+                    <div><span class="text-gray-500 text-xs block">Đã thanh toán:</span><span class="font-bold text-emerald-700">${paidFormatted}</span></div>
+                </div>
+            </div>
+        `,
+        showCancelButton: true,
+        confirmButtonText: '<i class="fa-solid fa-eye mr-1"></i> Xem phiếu đầy đủ',
+        cancelButtonText: 'Đóng',
+        confirmButtonColor: '#4f46e5',
+        cancelButtonColor: '#6b7280',
+        customClass: { popup: 'rounded-xl' }
+    }).then(result => {
+        if (result.isConfirmed) {
+            // Navigate to the report and highlight this invoice
+            switchTab('reports');
+        }
     });
 }
 
