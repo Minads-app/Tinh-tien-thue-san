@@ -94,6 +94,1077 @@ try {
     console.error("Firebase Init Error:", e);
 }
 
+// ==========================================
+// 1.1 AUTHENTICATION & PERMISSIONS ENGINE
+// ==========================================
+
+let auth = null;
+try {
+    if (firebase.auth) {
+        auth = firebase.auth();
+    }
+} catch (e) {
+    console.warn("Firebase Auth not loaded or enabled:", e);
+}
+
+let currentUser = null;
+let cachedStaffList = [];
+let unsubscribeStaff = null;
+
+// 41 MÃ PHÂN QUYỀN TRÊN 6 MÔ-ĐUN
+const ALL_PERMISSION_KEYS = [
+    // Module 1: Tạo Phiếu / Tính Tiền (8)
+    'booking_view', 'booking_create', 'booking_edit', 'booking_edit_full',
+    'booking_discount', 'booking_vat_toggle', 'booking_schedule_edit', 'booking_save',
+    // Module 2: Cấu Hình Bảng Giá (5)
+    'config_view', 'config_create', 'config_edit', 'config_delete', 'config_backup',
+    // Module 3: Báo Cáo Thu / Chi & Quản Lý Phiếu (7)
+    'reports_view', 'reports_view_summary', 'reports_view_detail', 'reports_edit_bill',
+    'reports_delete_bill', 'reports_manual_payment', 'reports_renew',
+    // Module 4: Quản Lý Khách Hàng (10)
+    'customers_view', 'customers_create', 'customers_edit', 'customers_delete',
+    'customers_view_profile', 'customers_export_vat', 'customers_vat_status',
+    'customers_comp_manage', 'customers_comp_complete', 'customers_comp_delete',
+    // Module 5: Cài Đặt Hệ Thống (4)
+    'settings_view', 'settings_edit_venue', 'settings_edit_bank_personal', 'settings_edit_bank_company',
+    // Module 6: Quản Lý Nhân Sự (6)
+    'staff_view', 'staff_create', 'staff_edit', 'staff_toggle_active', 'staff_delete', 'staff_reset_password'
+];
+
+const ROLE_TEMPLATES = {
+    admin: {
+        label: 'Quản trị viên',
+        badgeClass: 'bg-purple-100 text-purple-800 border-purple-200',
+        badgeIcon: '👑',
+        permissions: ALL_PERMISSION_KEYS.reduce((acc, k) => { acc[k] = true; return acc; }, {})
+    },
+    quan_ly: {
+        label: 'Quản lý',
+        badgeClass: 'bg-blue-100 text-blue-800 border-blue-200',
+        badgeIcon: '💼',
+        permissions: {
+            booking_view: true, booking_create: true, booking_edit: true, booking_edit_full: true,
+            booking_discount: true, booking_vat_toggle: true, booking_schedule_edit: true, booking_save: true,
+            config_view: true, config_create: true, config_edit: true, config_delete: false, config_backup: false,
+            reports_view: true, reports_view_summary: true, reports_view_detail: true, reports_edit_bill: true,
+            reports_delete_bill: false, reports_manual_payment: true, reports_renew: true,
+            customers_view: true, customers_create: true, customers_edit: true, customers_delete: false,
+            customers_view_profile: true, customers_export_vat: true, customers_vat_status: true,
+            customers_comp_manage: true, customers_comp_complete: true, customers_comp_delete: false,
+            settings_view: true, settings_edit_venue: false, settings_edit_bank_personal: false, settings_edit_bank_company: false,
+            staff_view: false, staff_create: false, staff_edit: false, staff_toggle_active: false, staff_delete: false, staff_reset_password: false
+        }
+    },
+    thu_ngan: {
+        label: 'Thu ngân',
+        badgeClass: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+        badgeIcon: '💰',
+        permissions: {
+            booking_view: true, booking_create: true, booking_edit: true, booking_edit_full: false,
+            booking_discount: false, booking_vat_toggle: false, booking_schedule_edit: true, booking_save: true,
+            config_view: false, config_create: false, config_edit: false, config_delete: false, config_backup: false,
+            reports_view: true, reports_view_summary: false, reports_view_detail: true, reports_edit_bill: false,
+            reports_delete_bill: false, reports_manual_payment: true, reports_renew: true,
+            customers_view: true, customers_create: true, customers_edit: false, customers_delete: false,
+            customers_view_profile: true, customers_export_vat: false, customers_vat_status: false,
+            customers_comp_manage: true, customers_comp_complete: true, customers_comp_delete: false,
+            settings_view: false, settings_edit_venue: false, settings_edit_bank_personal: false, settings_edit_bank_company: false,
+            staff_view: false, staff_create: false, staff_edit: false, staff_toggle_active: false, staff_delete: false, staff_reset_password: false
+        }
+    },
+    ke_toan: {
+        label: 'Kế toán',
+        badgeClass: 'bg-indigo-100 text-indigo-800 border-indigo-200',
+        badgeIcon: '📊',
+        permissions: {
+            booking_view: false, booking_create: false, booking_edit: false, booking_edit_full: false,
+            booking_discount: false, booking_vat_toggle: true, booking_schedule_edit: false, booking_save: false,
+            config_view: false, config_create: false, config_edit: false, config_delete: false, config_backup: false,
+            reports_view: true, reports_view_summary: true, reports_view_detail: true, reports_edit_bill: false,
+            reports_delete_bill: false, reports_manual_payment: false, reports_renew: false,
+            customers_view: true, customers_create: false, customers_edit: false, customers_delete: false,
+            customers_view_profile: true, customers_export_vat: true, customers_vat_status: true,
+            customers_comp_manage: false, customers_comp_complete: false, customers_comp_delete: false,
+            settings_view: false, settings_edit_venue: false, settings_edit_bank_personal: false, settings_edit_bank_company: false,
+            staff_view: false, staff_create: false, staff_edit: false, staff_toggle_active: false, staff_delete: false, staff_reset_password: false
+        }
+    },
+    nhan_vien: {
+        label: 'Nhân viên',
+        badgeClass: 'bg-gray-100 text-gray-800 border-gray-200',
+        badgeIcon: '👷',
+        permissions: {
+            booking_view: false, booking_create: false, booking_edit: false, booking_edit_full: false,
+            booking_discount: false, booking_vat_toggle: false, booking_schedule_edit: false, booking_save: false,
+            config_view: false, config_create: false, config_edit: false, config_delete: false, config_backup: false,
+            reports_view: true, reports_view_summary: false, reports_view_detail: true, reports_edit_bill: false,
+            reports_delete_bill: false, reports_manual_payment: false, reports_renew: false,
+            customers_view: true, customers_create: false, customers_edit: false, customers_delete: false,
+            customers_view_profile: false, customers_export_vat: false, customers_vat_status: false,
+            customers_comp_manage: false, customers_comp_complete: false, customers_comp_delete: false,
+            settings_view: false, settings_edit_venue: false, settings_edit_bank_personal: false, settings_edit_bank_company: false,
+            staff_view: false, staff_create: false, staff_edit: false, staff_toggle_active: false, staff_delete: false, staff_reset_password: false
+        }
+    },
+    custom: {
+        label: 'Tùy chỉnh',
+        badgeClass: 'bg-amber-100 text-amber-800 border-amber-200',
+        badgeIcon: '⚙️',
+        permissions: {}
+    }
+};
+
+// Web Crypto API helpers
+async function sha256Hash(message) {
+    const msgBuffer = new TextEncoder().encode(message);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+function generateSalt() {
+    return 'hba_' + Math.random().toString(36).substring(2, 10) + Date.now().toString(36);
+}
+
+function hasPermission(code) {
+    if (!currentUser) return false;
+    if (currentUser.role === 'admin') return true;
+    return !!(currentUser.permissions && currentUser.permissions[code]);
+}
+
+async function initAuth() {
+    let savedUser = null;
+    try {
+        const rawLocal = localStorage.getItem('hba_auth_user');
+        const rawSession = sessionStorage.getItem('hba_auth_user');
+        if (rawLocal) savedUser = JSON.parse(rawLocal);
+        else if (rawSession) savedUser = JSON.parse(rawSession);
+    } catch (e) {
+        console.warn("Lỗi đọc session auth:", e);
+    }
+
+    if (savedUser && savedUser.id) {
+        if (db) {
+            try {
+                const userDoc = await db.collection('users').doc(savedUser.id).get();
+                if (userDoc.exists && userDoc.data().isActive !== false) {
+                    const data = userDoc.data();
+                    setCurrentUser(data, userDoc.id, !!localStorage.getItem('hba_auth_user'));
+                    showAppUI();
+                    startAppSession();
+                    return;
+                }
+            } catch (err) {
+                console.warn("Không thể tải realtime user data, dùng cache phiên:", err);
+                setCurrentUser(savedUser, savedUser.id, !!localStorage.getItem('hba_auth_user'));
+                showAppUI();
+                startAppSession();
+                return;
+            }
+        } else {
+            setCurrentUser(savedUser, savedUser.id, false);
+            showAppUI();
+            startAppSession();
+            return;
+        }
+    }
+
+    showLoginUI();
+}
+
+function showLoginUI() {
+    const loginScreen = document.getElementById('login-screen');
+    const appContainer = document.getElementById('app-container');
+    if (loginScreen) loginScreen.classList.remove('hidden');
+    if (appContainer) appContainer.classList.add('hidden');
+}
+
+function showAppUI() {
+    const loginScreen = document.getElementById('login-screen');
+    const appContainer = document.getElementById('app-container');
+    if (loginScreen) loginScreen.classList.add('hidden');
+    if (appContainer) appContainer.classList.remove('hidden');
+}
+
+function setCurrentUser(userData, docId, remember = true) {
+    currentUser = {
+        id: docId,
+        username: userData.username || '',
+        displayName: userData.displayName || userData.username || 'Người dùng',
+        email: userData.email || '',
+        phone: userData.phone || '',
+        role: userData.role || 'nhan_vien',
+        roleLabel: ROLE_TEMPLATES[userData.role]?.label || userData.role || 'Nhân viên',
+        permissions: userData.permissions || (ROLE_TEMPLATES[userData.role]?.permissions) || {},
+        isActive: userData.isActive !== false
+    };
+
+    const sessionData = JSON.stringify(currentUser);
+    if (remember) {
+        localStorage.setItem('hba_auth_user', sessionData);
+        sessionStorage.removeItem('hba_auth_user');
+    } else {
+        sessionStorage.setItem('hba_auth_user', sessionData);
+        localStorage.removeItem('hba_auth_user');
+    }
+}
+
+function startAppSession() {
+    // 1. Tải danh sách cấu hình và dữ liệu
+    fetchPricingRules();
+    fetchReports();
+    fetchSettings();
+    fetchCustomers();
+    fetchStaffUsers();
+
+    // 2. Cập nhật thông tin Navbar
+    updateNavUserDisplay();
+
+    // 3. Thực thi phân quyền UI
+    applyPermissions();
+}
+
+function updateNavUserDisplay() {
+    if (!currentUser) return;
+    const nameEl = document.getElementById('nav-user-name');
+    const roleBadgeEl = document.getElementById('nav-user-role-badge');
+    const avatarEl = document.getElementById('nav-user-avatar-text');
+    const nameMobileEl = document.getElementById('nav-user-name-mobile');
+    const roleMobileEl = document.getElementById('nav-user-role-mobile');
+
+    const roleInfo = ROLE_TEMPLATES[currentUser.role] || {
+        label: currentUser.role,
+        badgeClass: 'bg-gray-100 text-gray-800 border-gray-200',
+        badgeIcon: '👤'
+    };
+
+    if (nameEl) nameEl.innerHTML = `<span>${currentUser.displayName}</span>`;
+    if (roleBadgeEl) {
+        roleBadgeEl.className = `px-2 py-0.5 text-[10px] font-bold rounded-full border ${roleInfo.badgeClass}`;
+        roleBadgeEl.textContent = `${roleInfo.badgeIcon} ${roleInfo.label}`;
+    }
+    if (avatarEl) {
+        const firstLetter = (currentUser.displayName || currentUser.username || 'A').trim().charAt(0).toUpperCase();
+        avatarEl.textContent = firstLetter;
+    }
+    if (nameMobileEl) nameMobileEl.textContent = currentUser.displayName;
+    if (roleMobileEl) roleMobileEl.textContent = `${roleInfo.badgeIcon} ${roleInfo.label}`;
+}
+
+function toggleUserDropdown() {
+    const dropdown = document.getElementById('nav-user-dropdown');
+    if (dropdown) dropdown.classList.toggle('hidden');
+}
+
+// Đóng dropdown khi nhấp ra ngoài
+document.addEventListener('click', (e) => {
+    const btn = document.getElementById('nav-user-btn');
+    const dropdown = document.getElementById('nav-user-dropdown');
+    if (!btn || !dropdown) return;
+    if (!btn.contains(e.target) && !dropdown.contains(e.target)) {
+        dropdown.classList.add('hidden');
+    }
+});
+
+function togglePasswordVisibility(inputId, eyeIconId) {
+    const input = document.getElementById(inputId);
+    const eye = document.getElementById(eyeIconId);
+    if (!input || !eye) return;
+    if (input.type === 'password') {
+        input.type = 'text';
+        eye.className = 'fa-solid fa-eye-slash text-sm';
+    } else {
+        input.type = 'password';
+        eye.className = 'fa-solid fa-eye text-sm';
+    }
+}
+
+function applyPermissions() {
+    if (!currentUser) return;
+
+    // 1. Phân quyền hiển thị các tab điều hướng
+    const tabPermMap = {
+        'tab-btn-booking': 'booking_view',
+        'tab-btn-config': 'config_view',
+        'tab-btn-reports': 'reports_view',
+        'tab-btn-customers': 'customers_view',
+        'tab-btn-settings': 'settings_view',
+        'tab-btn-staff': 'staff_view'
+    };
+
+    for (const [btnId, permCode] of Object.entries(tabPermMap)) {
+        const el = document.getElementById(btnId);
+        if (el) {
+            if (hasPermission(permCode)) {
+                el.classList.remove('hidden');
+            } else {
+                el.classList.add('hidden');
+            }
+        }
+    }
+
+    const navStaffLink = document.getElementById('nav-item-staff-link');
+    if (navStaffLink) {
+        if (hasPermission('staff_view')) navStaffLink.classList.remove('hidden');
+        else navStaffLink.classList.add('hidden');
+    }
+
+    // 2. Phân quyền chi tiết trong các module
+    const btnDiscount = document.getElementById('btn-discount-toggle');
+    if (btnDiscount) btnDiscount.style.display = hasPermission('booking_discount') ? '' : 'none';
+
+    const btnAddRule = document.querySelector('button[onclick="openModal()"]');
+    if (btnAddRule) btnAddRule.style.display = hasPermission('config_create') ? '' : 'none';
+
+    const btnBackup = document.querySelector('button[onclick="backupData()"]');
+    if (btnBackup) btnBackup.style.display = hasPermission('config_backup') ? '' : 'none';
+
+    const btnRestore = document.querySelector('input[onchange="restoreData(this)"]')?.parentElement;
+    if (btnRestore) btnRestore.style.display = hasPermission('config_backup') ? '' : 'none';
+
+    const reportsSummary = document.getElementById('reports-summary-cards');
+    if (reportsSummary) reportsSummary.style.display = hasPermission('reports_view_summary') ? '' : 'none';
+
+    const btnAddCust = document.querySelector('button[onclick="openCustomerModal()"]');
+    if (btnAddCust) btnAddCust.style.display = hasPermission('customers_create') ? '' : 'none';
+
+    const btnAddStaff = document.getElementById('btn-add-staff');
+    if (btnAddStaff) btnAddStaff.style.display = hasPermission('staff_create') ? '' : 'none';
+
+    // 3. Tự động chuyển về tab được phép nếu tab hiện tại không có quyền
+    const activeTab = getCurrentlyActiveTab();
+    if (activeTab) {
+        const moduleToPerm = {
+            'booking': 'booking_view',
+            'config': 'config_view',
+            'reports': 'reports_view',
+            'customers': 'customers_view',
+            'settings': 'settings_view',
+            'staff': 'staff_view'
+        };
+        const currentReq = moduleToPerm[activeTab];
+        if (currentReq && !hasPermission(currentReq)) {
+            const tabsOrder = ['booking', 'reports', 'customers', 'config', 'settings', 'staff'];
+            const allowedTab = tabsOrder.find(t => hasPermission(moduleToPerm[t]));
+            if (allowedTab) {
+                switchTab(allowedTab);
+            }
+        }
+    }
+}
+
+function getCurrentlyActiveTab() {
+    const tabs = ['booking', 'config', 'reports', 'customers', 'settings', 'staff'];
+    for (const t of tabs) {
+        const el = document.getElementById(`tab-${t}`);
+        if (el && !el.classList.contains('hidden')) return t;
+    }
+    return 'booking';
+}
+
+async function handleLoginSubmit(e) {
+    e.preventDefault();
+    const btnSubmit = document.getElementById('btn-login-submit');
+    const btnText = document.getElementById('btn-login-text');
+    const usernameInput = (document.getElementById('login-username')?.value || '').trim();
+    const passwordInput = document.getElementById('login-password')?.value || '';
+    const rememberMe = document.getElementById('login-remember')?.checked;
+
+    if (!usernameInput || !passwordInput) {
+        return Swal.fire('Thông báo', 'Vui lòng nhập tên đăng nhập và mật khẩu!', 'warning');
+    }
+
+    if (btnSubmit) btnSubmit.disabled = true;
+    if (btnText) btnText.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Đang đăng nhập...';
+
+    try {
+        if (!db) {
+            throw new Error("Không thể kết nối cơ sở dữ liệu Firestore!");
+        }
+
+        // Tìm user theo username hoặc email
+        let querySnapshot = await db.collection('users').where('username', '==', usernameInput.toLowerCase()).get();
+        if (querySnapshot.empty) {
+            querySnapshot = await db.collection('users').where('email', '==', usernameInput).get();
+        }
+
+        if (querySnapshot.empty) {
+            if (btnSubmit) btnSubmit.disabled = false;
+            if (btnText) btnText.innerHTML = 'ĐĂNG NHẬP HỆ THỐNG';
+            return Swal.fire({
+                icon: 'error',
+                title: 'Tài khoản không tồn tại',
+                text: 'Không tìm thấy người dùng với thông tin này! Vui lòng kiểm tra lại.',
+                confirmButtonColor: '#4f46e5'
+            });
+        }
+
+        const userDoc = querySnapshot.docs[0];
+        const userData = userDoc.data();
+
+        // Kiểm tra trạng thái khóa
+        if (userData.isActive === false) {
+            if (btnSubmit) btnSubmit.disabled = false;
+            if (btnText) btnText.innerHTML = 'ĐĂNG NHẬP HỆ THỐNG';
+            return Swal.fire({
+                icon: 'error',
+                title: 'Tài khoản bị vô hiệu hóa',
+                text: 'Tài khoản của bạn đã bị khóa bởi Quản trị viên! Vui lòng liên hệ ban quản lý.',
+                confirmButtonColor: '#ef4444'
+            });
+        }
+
+        // Kiểm tra mật khẩu
+        const inputHash = await sha256Hash((userData.salt || '') + passwordInput);
+        if (inputHash !== userData.passwordHash) {
+            if (btnSubmit) btnSubmit.disabled = false;
+            if (btnText) btnText.innerHTML = 'ĐĂNG NHẬP HỆ THỐNG';
+            return Swal.fire({
+                icon: 'error',
+                title: 'Mật khẩu không chính xác',
+                text: 'Mật khẩu bạn vừa nhập không đúng. Vui lòng thử lại!',
+                confirmButtonColor: '#ef4444'
+            });
+        }
+
+        // Cập nhật lastLoginAt
+        try {
+            await db.collection('users').doc(userDoc.id).update({
+                lastLoginAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+        } catch(e) {}
+
+        // Đăng nhập thành công!
+        setCurrentUser(userData, userDoc.id, rememberMe);
+        showAppUI();
+        startAppSession();
+
+        Swal.fire({
+            icon: 'success',
+            title: 'Đăng nhập thành công!',
+            text: `Xin chào, ${currentUser.displayName}!`,
+            timer: 2000,
+            showConfirmButton: false
+        });
+
+    } catch (err) {
+        console.error("Login error:", err);
+        Swal.fire('Lỗi đăng nhập', err.message || 'Đã xảy ra sự cố trong quá trình xác thực!', 'error');
+    } finally {
+        if (btnSubmit) btnSubmit.disabled = false;
+        if (btnText) btnText.innerHTML = 'ĐĂNG NHẬP HỆ THỐNG';
+    }
+}
+
+async function handleLogout() {
+    const result = await Swal.fire({
+        title: 'Đăng xuất?',
+        text: 'Bạn có chắc chắn muốn thoát khỏi hệ thống?',
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonColor: '#ef4444',
+        cancelButtonColor: '#6b7280',
+        confirmButtonText: '<i class="fa-solid fa-right-from-bracket mr-1"></i> Đăng xuất ngay',
+        cancelButtonText: 'Ở lại',
+        reverseButtons: true
+    });
+
+    if (!result.isConfirmed) return;
+
+    // Clear state
+    localStorage.removeItem('hba_auth_user');
+    sessionStorage.removeItem('hba_auth_user');
+    currentUser = null;
+
+    // Unsubscribe listeners
+    if (unsubscribeReports) { unsubscribeReports(); unsubscribeReports = null; }
+    if (unsubscribeRules) { unsubscribeRules(); unsubscribeRules = null; }
+    if (unsubscribeStaff) { unsubscribeStaff(); unsubscribeStaff = null; }
+
+    const dropdown = document.getElementById('nav-user-dropdown');
+    if (dropdown) dropdown.classList.add('hidden');
+
+    showLoginUI();
+    Swal.fire({
+        icon: 'info',
+        title: 'Đã đăng xuất',
+        text: 'Hẹn gặp lại bạn lần sau!',
+        timer: 1500,
+        showConfirmButton: false
+    });
+}
+
+// ==========================================
+// 1.2 QUẢN LÝ NHÂN SỰ (STAFF CRUD)
+// ==========================================
+
+function fetchStaffUsers() {
+    if (!db) return;
+    if (unsubscribeStaff) unsubscribeStaff();
+    try {
+        unsubscribeStaff = db.collection('users').onSnapshot(snap => {
+            cachedStaffList = [];
+            snap.forEach(doc => {
+                cachedStaffList.push({ id: doc.id, ...doc.data() });
+            });
+            cachedStaffList.sort((a, b) => {
+                if (a.role === 'admin' && b.role !== 'admin') return -1;
+                if (a.role !== 'admin' && b.role === 'admin') return 1;
+                return (a.displayName || '').localeCompare(b.displayName || '');
+            });
+            renderStaffTable();
+            updateStaffStats();
+        }, err => {
+            console.warn("Realtime users snapshot error:", err);
+            db.collection('users').get().then(snap => {
+                cachedStaffList = [];
+                snap.forEach(doc => {
+                    cachedStaffList.push({ id: doc.id, ...doc.data() });
+                });
+                renderStaffTable();
+                updateStaffStats();
+            });
+        });
+    } catch (e) {
+        console.error("fetchStaffUsers error:", e);
+    }
+}
+
+function updateStaffStats() {
+    const totalEl = document.getElementById('staff-stat-total');
+    const activeEl = document.getElementById('staff-stat-active');
+    const lockedEl = document.getElementById('staff-stat-locked');
+    if (!totalEl) return;
+
+    const total = cachedStaffList.length;
+    const active = cachedStaffList.filter(u => u.isActive !== false).length;
+    const locked = total - active;
+
+    totalEl.textContent = total;
+    if (activeEl) activeEl.textContent = active;
+    if (lockedEl) lockedEl.textContent = locked;
+}
+
+function renderStaffTable() {
+    const tbody = document.getElementById('staff-table-body');
+    const emptyState = document.getElementById('staff-empty-state');
+    if (!tbody) return;
+
+    const searchTxt = removeVietnameseTones(document.getElementById('staff-search-input')?.value || '');
+    const filterRole = document.getElementById('staff-filter-role')?.value || '';
+    const filterStatus = document.getElementById('staff-filter-status')?.value || '';
+
+    const filtered = cachedStaffList.filter(u => {
+        if (filterRole && u.role !== filterRole) return false;
+        if (filterStatus === 'active' && u.isActive === false) return false;
+        if (filterStatus === 'inactive' && u.isActive !== false) return false;
+        if (searchTxt) {
+            const combined = removeVietnameseTones(`${u.displayName || ''} ${u.username || ''} ${u.phone || ''} ${u.email || ''}`);
+            if (!combined.includes(searchTxt)) return false;
+        }
+        return true;
+    });
+
+    if (filtered.length === 0) {
+        tbody.innerHTML = '';
+        if (emptyState) emptyState.classList.remove('hidden');
+        return;
+    }
+
+    if (emptyState) emptyState.classList.add('hidden');
+
+    tbody.innerHTML = filtered.map((u, idx) => {
+        const isSelf = currentUser && currentUser.id === u.id;
+        const roleInfo = ROLE_TEMPLATES[u.role] || {
+            label: u.role || 'Chưa định nghĩa',
+            badgeClass: 'bg-gray-100 text-gray-800 border-gray-200',
+            badgeIcon: '👤'
+        };
+        const isActive = u.isActive !== false;
+        const firstLetter = (u.displayName || u.username || 'U').trim().charAt(0).toUpperCase();
+
+        let lastLoginStr = 'Chưa đăng nhập';
+        if (u.lastLoginAt) {
+            try {
+                const dateObj = u.lastLoginAt.toDate ? u.lastLoginAt.toDate() : new Date(u.lastLoginAt);
+                lastLoginStr = dateObj.toLocaleDateString('vi-VN', {
+                    day: '2-digit', month: '2-digit', year: 'numeric',
+                    hour: '2-digit', minute: '2-digit'
+                });
+            } catch(e) {}
+        }
+
+        const canEdit = hasPermission('staff_edit');
+        const canToggleActive = hasPermission('staff_toggle_active') && !isSelf;
+        const canDelete = hasPermission('staff_delete') && !isSelf && u.username !== 'admin';
+        const canResetPwd = hasPermission('staff_reset_password');
+
+        return `
+            <tr class="hover:bg-gray-50/80 transition ${!isActive ? 'opacity-60 bg-gray-50/40' : ''}">
+                <td class="p-3.5 text-center font-medium text-gray-500">${idx + 1}</td>
+                <td class="p-3.5">
+                    <div class="flex items-center gap-2.5">
+                        <div class="w-8 h-8 rounded-full bg-gradient-to-tr from-purple-500 to-indigo-600 text-white font-bold flex items-center justify-center text-xs shadow-sm">
+                            ${firstLetter}
+                        </div>
+                        <div>
+                            <div class="font-bold text-gray-900 flex items-center gap-1.5">
+                                <span>${u.displayName || 'Chưa có tên'}</span>
+                                ${isSelf ? '<span class="px-1.5 py-0.2 text-[9px] bg-indigo-100 text-indigo-700 font-bold rounded">Bạn</span>' : ''}
+                            </div>
+                            <div class="text-[11px] text-gray-400">ID: ${u.id.slice(0, 8)}...</div>
+                        </div>
+                    </div>
+                </td>
+                <td class="p-3.5 font-mono font-medium text-gray-700">@${u.username || '---'}</td>
+                <td class="p-3.5">
+                    <div class="text-gray-800 font-medium">${u.phone || '---'}</div>
+                    <div class="text-gray-400 text-[11px]">${u.email || ''}</div>
+                </td>
+                <td class="p-3.5 text-center">
+                    <span class="inline-flex items-center gap-1 px-2.5 py-0.5 text-[11px] font-bold rounded-full border ${roleInfo.badgeClass}">
+                        <span>${roleInfo.badgeIcon}</span>
+                        <span>${roleInfo.label}</span>
+                    </span>
+                </td>
+                <td class="p-3.5 text-center">
+                    ${isActive
+                        ? '<span class="inline-flex items-center gap-1 text-emerald-700 font-semibold"><i class="fa-solid fa-circle text-[8px] text-emerald-500 animate-pulse"></i> Hoạt động</span>'
+                        : '<span class="inline-flex items-center gap-1 text-red-600 font-semibold"><i class="fa-solid fa-circle text-[8px] text-red-500"></i> Đã khóa</span>'
+                    }
+                </td>
+                <td class="p-3.5 text-center text-gray-500 text-[11px]">${lastLoginStr}</td>
+                <td class="p-3.5 text-right">
+                    <div class="flex items-center justify-end gap-1">
+                        ${canEdit ? `
+                            <button onclick="openStaffModal('${u.id}')" title="Chỉnh sửa thông tin & phân quyền"
+                                class="p-1.5 text-indigo-600 hover:text-indigo-900 hover:bg-indigo-50 rounded-md transition cursor-pointer">
+                                <i class="fa-solid fa-pen-to-square text-sm"></i>
+                            </button>
+                        ` : ''}
+                        ${canResetPwd ? `
+                            <button onclick="openResetPasswordModal('${u.id}', '${u.displayName || u.username}')" title="Đặt lại mật khẩu"
+                                class="p-1.5 text-amber-600 hover:text-amber-900 hover:bg-amber-50 rounded-md transition cursor-pointer">
+                                <i class="fa-solid fa-key text-sm"></i>
+                            </button>
+                        ` : ''}
+                        ${canToggleActive ? `
+                            <button onclick="toggleStaffStatus('${u.id}', ${isActive})" title="${isActive ? 'Khóa tài khoản' : 'Mở khóa tài khoản'}"
+                                class="p-1.5 ${isActive ? 'text-gray-500 hover:text-red-600 hover:bg-red-50' : 'text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50'} rounded-md transition cursor-pointer">
+                                <i class="fa-solid ${isActive ? 'fa-lock' : 'fa-lock-open'} text-sm"></i>
+                            </button>
+                        ` : ''}
+                        ${canDelete ? `
+                            <button onclick="deleteStaffUser('${u.id}', '${u.displayName || u.username}')" title="Xóa tài khoản"
+                                class="p-1.5 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-md transition cursor-pointer">
+                                <i class="fa-solid fa-trash text-sm"></i>
+                            </button>
+                        ` : ''}
+                    </div>
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
+
+function filterStaffTable() {
+    renderStaffTable();
+}
+
+function openStaffModal(staffId = null) {
+    const modal = document.getElementById('staff-modal');
+    const modalTitle = document.getElementById('staff-modal-title');
+    const editIdInput = document.getElementById('staff-edit-id');
+    const displayNameInput = document.getElementById('staff-displayname');
+    const usernameInput = document.getElementById('staff-username');
+    const phoneInput = document.getElementById('staff-phone');
+    const emailInput = document.getElementById('staff-email');
+    const passwordInput = document.getElementById('staff-password');
+    const passwordReqMark = document.getElementById('staff-password-required-mark');
+    const passwordHint = document.getElementById('staff-password-hint');
+    const roleSelect = document.getElementById('staff-role');
+    const isActiveCheck = document.getElementById('staff-is-active');
+
+    if (!modal) return;
+
+    if (staffId) {
+        const staff = cachedStaffList.find(s => s.id === staffId);
+        if (!staff) return Swal.fire('Lỗi', 'Không tìm thấy thông tin nhân viên!', 'error');
+
+        modalTitle.textContent = `Chỉnh Sửa Nhân Viên: ${staff.displayName || staff.username}`;
+        editIdInput.value = staff.id;
+        displayNameInput.value = staff.displayName || '';
+        usernameInput.value = staff.username || '';
+        usernameInput.disabled = (staff.username === 'admin');
+        phoneInput.value = staff.phone || '';
+        emailInput.value = staff.email || '';
+        passwordInput.value = '';
+        passwordInput.required = false;
+        if (passwordReqMark) passwordReqMark.classList.add('hidden');
+        if (passwordHint) passwordHint.classList.remove('hidden');
+        roleSelect.value = staff.role || 'custom';
+        isActiveCheck.checked = (staff.isActive !== false);
+
+        const perms = staff.permissions || (ROLE_TEMPLATES[staff.role]?.permissions) || {};
+        document.querySelectorAll('#staff-modal .perm-check').forEach(cb => {
+            const key = cb.getAttribute('data-perm');
+            cb.checked = !!perms[key];
+        });
+    } else {
+        modalTitle.textContent = 'Thêm Nhân Viên Mới';
+        editIdInput.value = '';
+        displayNameInput.value = '';
+        usernameInput.value = '';
+        usernameInput.disabled = false;
+        phoneInput.value = '';
+        emailInput.value = '';
+        passwordInput.value = '';
+        passwordInput.required = true;
+        if (passwordReqMark) passwordReqMark.classList.remove('hidden');
+        if (passwordHint) passwordHint.classList.add('hidden');
+        roleSelect.value = 'thu_ngan';
+        isActiveCheck.checked = true;
+
+        applyTemplateToCheckboxes('thu_ngan');
+    }
+
+    modal.classList.remove('hidden');
+}
+
+function closeStaffModal() {
+    const modal = document.getElementById('staff-modal');
+    if (modal) modal.classList.add('hidden');
+}
+
+function onStaffRoleSelectChange() {
+    const roleSelect = document.getElementById('staff-role');
+    const role = roleSelect?.value;
+    if (role && role !== 'custom') {
+        applyTemplateToCheckboxes(role);
+    }
+}
+
+function onPermCheckboxChanged() {
+    const roleSelect = document.getElementById('staff-role');
+    if (roleSelect && roleSelect.value !== 'custom') {
+        roleSelect.value = 'custom';
+    }
+}
+
+function applyTemplateToCheckboxes(role) {
+    const template = ROLE_TEMPLATES[role]?.permissions || {};
+    document.querySelectorAll('#staff-modal .perm-check').forEach(cb => {
+        const key = cb.getAttribute('data-perm');
+        cb.checked = !!template[key];
+    });
+}
+
+function applyRolePermissionsTemplate() {
+    const roleSelect = document.getElementById('staff-role');
+    const role = roleSelect?.value;
+    if (role && role !== 'custom') {
+        applyTemplateToCheckboxes(role);
+        Swal.fire({
+            icon: 'info',
+            title: 'Đã áp dụng mẫu quyền',
+            text: `Đã áp dụng các quyền theo vai trò ${ROLE_TEMPLATES[role]?.label || role}`,
+            timer: 1200,
+            showConfirmButton: false
+        });
+    } else {
+        Swal.fire('Thông báo', 'Vui lòng chọn một vai trò cụ thể để áp dụng mẫu quyền!', 'info');
+    }
+}
+
+function toggleAllPermissions(checked) {
+    document.querySelectorAll('#staff-modal .perm-check').forEach(cb => {
+        cb.checked = checked;
+    });
+    const roleSelect = document.getElementById('staff-role');
+    if (roleSelect) roleSelect.value = checked ? 'admin' : 'custom';
+}
+
+async function handleStaffFormSubmit(e) {
+    e.preventDefault();
+    if (!hasPermission('staff_create') && !hasPermission('staff_edit')) {
+        return Swal.fire('Từ chối', 'Bạn không có quyền thực hiện thao tác này!', 'error');
+    }
+
+    const editId = document.getElementById('staff-edit-id')?.value.trim();
+    const displayName = document.getElementById('staff-displayname')?.value.trim();
+    const username = document.getElementById('staff-username')?.value.trim().toLowerCase();
+    const phone = document.getElementById('staff-phone')?.value.trim();
+    const email = document.getElementById('staff-email')?.value.trim();
+    const password = document.getElementById('staff-password')?.value;
+    const role = document.getElementById('staff-role')?.value || 'custom';
+    const isActive = document.getElementById('staff-is-active')?.checked;
+
+    if (!displayName || !username) {
+        return Swal.fire('Thông báo', 'Vui lòng điền đầy đủ họ tên và tên đăng nhập!', 'warning');
+    }
+
+    const usernameRegex = /^[a-zA-Z0-9_\-\.]+$/;
+    if (!usernameRegex.test(username)) {
+        return Swal.fire('Lỗi', 'Tên đăng nhập chỉ được chứa chữ cái không dấu, chữ số, dấu gạch nối hoặc dấu chấm!', 'warning');
+    }
+
+    const duplicate = cachedStaffList.find(s => s.username === username && s.id !== editId);
+    if (duplicate) {
+        return Swal.fire('Lỗi trùng lặp', 'Tên đăng nhập này đã có người sử dụng. Vui lòng chọn tên khác!', 'error');
+    }
+
+    const permissions = {};
+    document.querySelectorAll('#staff-modal .perm-check').forEach(cb => {
+        const key = cb.getAttribute('data-perm');
+        if (key) permissions[key] = cb.checked;
+    });
+
+    const btnSave = document.getElementById('btn-save-staff');
+    if (btnSave) btnSave.disabled = true;
+
+    try {
+        if (!db) throw new Error("Mất kết nối với cơ sở dữ liệu!");
+
+        if (editId) {
+            const updateData = {
+                displayName,
+                phone: phone || '',
+                email: email || '',
+                role,
+                roleLabel: ROLE_TEMPLATES[role]?.label || role,
+                isActive,
+                permissions,
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            };
+
+            if (username !== 'admin') {
+                updateData.username = username;
+            }
+
+            if (password && password.length >= 6) {
+                const salt = generateSalt();
+                updateData.salt = salt;
+                updateData.passwordHash = await sha256Hash(salt + password);
+            }
+
+            await db.collection('users').doc(editId).update(updateData);
+
+            if (currentUser && currentUser.id === editId) {
+                setCurrentUser({ ...currentUser, ...updateData }, editId);
+                updateNavUserDisplay();
+                applyPermissions();
+            }
+
+            closeStaffModal();
+            Swal.fire('Thành công', 'Đã cập nhật thông tin nhân viên!', 'success');
+
+        } else {
+            if (!password || password.length < 6) {
+                if (btnSave) btnSave.disabled = false;
+                return Swal.fire('Lỗi', 'Vui lòng nhập mật khẩu tối thiểu 6 ký tự cho nhân viên mới!', 'warning');
+            }
+
+            const salt = generateSalt();
+            const passwordHash = await sha256Hash(salt + password);
+
+            const newStaff = {
+                username,
+                displayName,
+                phone: phone || '',
+                email: email || '',
+                role,
+                roleLabel: ROLE_TEMPLATES[role]?.label || role,
+                salt,
+                passwordHash,
+                isActive,
+                permissions,
+                createdBy: currentUser ? currentUser.id : 'system',
+                createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                lastLoginAt: null
+            };
+
+            await db.collection('users').add(newStaff);
+            closeStaffModal();
+            Swal.fire('Thành công', `Đã tạo tài khoản cho nhân viên ${displayName}!`, 'success');
+        }
+
+    } catch (err) {
+        console.error("Save staff error:", err);
+        Swal.fire('Lỗi', err.message || 'Không thể lưu thông tin nhân viên!', 'error');
+    } finally {
+        if (btnSave) btnSave.disabled = false;
+    }
+}
+
+async function toggleStaffStatus(staffId, currentStatus) {
+    if (!hasPermission('staff_toggle_active')) {
+        return Swal.fire('Từ chối', 'Bạn không có quyền khóa hoặc mở khóa tài khoản!', 'error');
+    }
+    if (currentUser && currentUser.id === staffId) {
+        return Swal.fire('Cảnh báo', 'Bạn không thể tự khóa tài khoản của chính mình!', 'warning');
+    }
+
+    const staff = cachedStaffList.find(s => s.id === staffId);
+    const actionText = currentStatus ? 'khóa' : 'mở khóa';
+
+    const result = await Swal.fire({
+        title: `Xác nhận ${actionText}?`,
+        html: `Bạn có chắc chắn muốn ${actionText} tài khoản <b class="text-indigo-600">${staff?.displayName || staff?.username}</b>?`,
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonColor: currentStatus ? '#ef4444' : '#10b981',
+        cancelButtonColor: '#6b7280',
+        confirmButtonText: `<i class="fa-solid fa-check mr-1"></i> Đồng ý ${actionText}`,
+        cancelButtonText: 'Hủy'
+    });
+
+    if (!result.isConfirmed) return;
+
+    try {
+        await db.collection('users').doc(staffId).update({
+            isActive: !currentStatus,
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        Swal.fire('Thành công', `Đã ${actionText} tài khoản!`, 'success');
+    } catch (err) {
+        Swal.fire('Lỗi', err.message, 'error');
+    }
+}
+
+async function deleteStaffUser(staffId, staffName) {
+    if (!hasPermission('staff_delete')) {
+        return Swal.fire('Từ chối', 'Bạn không có quyền xóa tài khoản nhân viên!', 'error');
+    }
+    if (currentUser && currentUser.id === staffId) {
+        return Swal.fire('Cảnh báo', 'Bạn không thể tự xóa tài khoản của chính mình!', 'warning');
+    }
+
+    const result = await Swal.fire({
+        title: 'Xóa tài khoản nhân viên?',
+        html: `Tài khoản <b class="text-red-600">${staffName}</b> sẽ bị xóa hoàn toàn khỏi hệ thống!`,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#ef4444',
+        cancelButtonColor: '#6b7280',
+        confirmButtonText: '<i class="fa-solid fa-trash mr-1"></i> Xóa vĩnh viễn',
+        cancelButtonText: 'Hủy'
+    });
+
+    if (!result.isConfirmed) return;
+
+    try {
+        await db.collection('users').doc(staffId).delete();
+        Swal.fire('Đã xóa', `Tài khoản ${staffName} đã được gỡ bỏ khỏi hệ thống!`, 'success');
+    } catch (err) {
+        Swal.fire('Lỗi', err.message, 'error');
+    }
+}
+
+function openResetPasswordModal(staffId, staffName) {
+    const modal = document.getElementById('reset-password-modal');
+    const idInput = document.getElementById('rp-user-id');
+    const displayEl = document.getElementById('rp-user-display');
+    const pwdInput = document.getElementById('rp-new-password');
+
+    if (!modal) return;
+    if (idInput) idInput.value = staffId;
+    if (displayEl) displayEl.textContent = staffName;
+    if (pwdInput) pwdInput.value = '';
+
+    modal.classList.remove('hidden');
+}
+
+function closeResetPasswordModal() {
+    const modal = document.getElementById('reset-password-modal');
+    if (modal) modal.classList.add('hidden');
+}
+
+async function handleResetPasswordSubmit(e) {
+    e.preventDefault();
+    if (!hasPermission('staff_reset_password')) {
+        return Swal.fire('Từ chối', 'Bạn không có quyền đặt lại mật khẩu!', 'error');
+    }
+
+    const userId = document.getElementById('rp-user-id')?.value;
+    const newPwd = document.getElementById('rp-new-password')?.value;
+
+    if (!newPwd || newPwd.length < 6) {
+        return Swal.fire('Lỗi', 'Mật khẩu mới phải có tối thiểu 6 ký tự!', 'warning');
+    }
+
+    try {
+        const salt = generateSalt();
+        const passwordHash = await sha256Hash(salt + newPwd);
+
+        await db.collection('users').doc(userId).update({
+            salt,
+            passwordHash,
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+
+        closeResetPasswordModal();
+        Swal.fire('Thành công', 'Đã đặt lại mật khẩu mới cho nhân viên!', 'success');
+    } catch (err) {
+        Swal.fire('Lỗi', err.message, 'error');
+    }
+}
+
+function openChangePasswordModal() {
+    const modal = document.getElementById('change-password-modal');
+    if (!modal) return;
+    document.getElementById('cp-current-password').value = '';
+    document.getElementById('cp-new-password').value = '';
+    document.getElementById('cp-confirm-password').value = '';
+    modal.classList.remove('hidden');
+}
+
+function closeChangePasswordModal() {
+    const modal = document.getElementById('change-password-modal');
+    if (modal) modal.classList.add('hidden');
+}
+
+async function handleChangePasswordSubmit(e) {
+    e.preventDefault();
+    if (!currentUser) return;
+
+    const currentPwd = document.getElementById('cp-current-password')?.value;
+    const newPwd = document.getElementById('cp-new-password')?.value;
+    const confirmPwd = document.getElementById('cp-confirm-password')?.value;
+
+    if (newPwd !== confirmPwd) {
+        return Swal.fire('Lỗi', 'Mật khẩu mới và xác nhận mật khẩu không khớp nhau!', 'warning');
+    }
+    if (newPwd.length < 6) {
+        return Swal.fire('Lỗi', 'Mật khẩu mới phải có ít nhất 6 ký tự!', 'warning');
+    }
+
+    try {
+        const userDoc = await db.collection('users').doc(currentUser.id).get();
+        if (!userDoc.exists) throw new Error("Không tìm thấy thông tin tài khoản trên máy chủ!");
+
+        const userData = userDoc.data();
+        const currentHash = await sha256Hash((userData.salt || '') + currentPwd);
+
+        if (currentHash !== userData.passwordHash) {
+            return Swal.fire('Lỗi', 'Mật khẩu hiện tại không đúng!', 'error');
+        }
+
+        const newSalt = generateSalt();
+        const newHash = await sha256Hash(newSalt + newPwd);
+
+        await db.collection('users').doc(currentUser.id).update({
+            salt: newSalt,
+            passwordHash: newHash,
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+
+        closeChangePasswordModal();
+        Swal.fire('Thành công', 'Đã đổi mật khẩu thành công! Vui lòng ghi nhớ mật khẩu mới.', 'success');
+    } catch (err) {
+        Swal.fire('Lỗi', err.message, 'error');
+    }
+}
+
 let unsubscribeRules = null;
 async function fetchPricingRules() {
     // 1. Luôn load từ máy tính (localStorage) trước để có dữ liệu dùng ngay
@@ -219,14 +1290,11 @@ document.addEventListener('DOMContentLoaded', () => {
     initSelectors();
     renderWeekdays('weekday-container', []);
 
-    // Tải danh sách ngân hàng trước
+    // Tải danh sách ngân hàng
     fetchBankList();
 
-    // Tải dữ liệu từ Firebase
-    fetchPricingRules();
-    fetchReports();
-    fetchSettings();
-    fetchCustomers();
+    // Khởi tạo Hệ thống Xác thực & Phân quyền
+    initAuth();
     setupAutocomplete();
     initModalManager();
 
@@ -1877,19 +2945,42 @@ const openExcludeModalForItem = openScheduleEditModalForItem;
 const clearExcludeDatesForItem = resetScheduleForItem;
 
 function switchTab(tabName) {
-    document.querySelectorAll('[id^="tab-booking"], [id^="tab-config"], [id^="tab-reports"], [id^="tab-settings"], [id^="tab-customers"]').forEach(el => el.classList.add('hidden'));
-    document.getElementById(`tab-${tabName}`).classList.remove('hidden');
+    if (currentUser && currentUser.role !== 'admin') {
+        const tabPermMap = {
+            'booking': 'booking_view',
+            'config': 'config_view',
+            'reports': 'reports_view',
+            'customers': 'customers_view',
+            'settings': 'settings_view',
+            'staff': 'staff_view'
+        };
+        const reqPerm = tabPermMap[tabName];
+        if (reqPerm && !hasPermission(reqPerm)) {
+            Swal.fire({
+                icon: 'warning',
+                title: 'Không có quyền truy cập',
+                text: 'Tài khoản của bạn không được phân quyền xem phân hệ này!',
+                confirmButtonColor: '#4f46e5'
+            });
+            return;
+        }
+    }
+
+    document.querySelectorAll('[id^="tab-booking"], [id^="tab-config"], [id^="tab-reports"], [id^="tab-settings"], [id^="tab-customers"], [id^="tab-staff"]').forEach(el => el.classList.add('hidden'));
+    const targetTab = document.getElementById(`tab-${tabName}`);
+    if (targetTab) targetTab.classList.remove('hidden');
     
     const btnBooking = document.getElementById('tab-btn-booking');
     const btnConfig = document.getElementById('tab-btn-config');
     const btnReports = document.getElementById('tab-btn-reports');
     const btnCustomers = document.getElementById('tab-btn-customers');
     const btnSettings = document.getElementById('tab-btn-settings');
+    const btnStaff = document.getElementById('tab-btn-staff');
     
-    const activeClass = "tab-active py-4 px-1 inline-flex items-center text-sm border-b-2 border-indigo-600 font-bold text-indigo-700 cursor-pointer";
-    const inactiveClass = "tab-inactive py-4 px-1 inline-flex items-center text-sm border-b-2 border-transparent font-medium text-gray-500 hover:text-gray-800 transition cursor-pointer";
+    const activeClass = "tab-active py-4 px-1 inline-flex items-center text-sm border-b-2 border-indigo-600 font-bold text-indigo-700 cursor-pointer whitespace-nowrap";
+    const inactiveClass = "tab-inactive py-4 px-1 inline-flex items-center text-sm border-b-2 border-transparent font-medium text-gray-500 hover:text-gray-800 transition cursor-pointer whitespace-nowrap";
 
-    [btnBooking, btnConfig, btnReports, btnCustomers, btnSettings].forEach(btn => { if(btn) btn.className = inactiveClass; });
+    [btnBooking, btnConfig, btnReports, btnCustomers, btnSettings, btnStaff].forEach(btn => { if(btn) btn.className = inactiveClass; });
 
     if(tabName === 'booking') {
         if(btnBooking) btnBooking.className = activeClass;
@@ -1905,6 +2996,9 @@ function switchTab(tabName) {
     } else if(tabName === 'settings') {
         if(btnSettings) btnSettings.className = activeClass;
         populateSettingsForm();
+    } else if(tabName === 'staff') {
+        if(btnStaff) btnStaff.className = activeClass;
+        renderStaffTable();
     }
 }
 function backupData() {
@@ -2022,6 +3116,9 @@ function saveRule() {
     closeModal();
 }
 function deleteRule(id) {
+    if (!hasPermission('config_delete')) {
+        return Swal.fire('Từ chối', 'Bạn không có quyền xóa quy tắc bảng giá!', 'error');
+    }
     if(confirm("Xóa quy tắc này?")) {
         pricingRules = pricingRules.filter(r => r.id !== id);
         syncRulesToFirebase();
@@ -2338,6 +3435,9 @@ async function fetchSettings() {
 }
 
 async function saveSettings() {
+    if (!hasPermission('settings_edit_venue') && !hasPermission('settings_edit_bank_personal') && !hasPermission('settings_edit_bank_company')) {
+        return Swal.fire('Từ chối', 'Bạn không có quyền sửa cài đặt hệ thống!', 'error');
+    }
     if (!db) { Swal.fire('Lỗi', 'Không kết nối được với Firebase!', 'error'); return; }
 
     const elVal = (id) => document.getElementById(id).value.trim();
@@ -2722,6 +3822,9 @@ let currentManualPaymentData = null;
 let currentManualPaymentBase64 = null;
 
 function openManualPaymentModal(data) {
+    if (!hasPermission('reports_manual_payment')) {
+        return Swal.fire('Từ chối', 'Bạn không có quyền thực hiện gạch nợ thủ công!', 'error');
+    }
     if (!data) return;
     currentManualPaymentData = data;
     currentManualPaymentBase64 = null;
@@ -3217,6 +4320,9 @@ async function saveBillEdit() {
 }
 
 async function deleteBill(docId, invId) {
+    if (!hasPermission('reports_delete_bill')) {
+        return Swal.fire('Từ chối', 'Bạn không có quyền xóa phiếu thanh toán!', 'error');
+    }
     const result = await Swal.fire({
         title: 'Xác nhận xóa phiếu?',
         html: `Phiếu <b class="text-red-600">${invId}</b> sẽ bị xóa vĩnh viễn và không thể khôi phục!`,
@@ -3528,6 +4634,9 @@ async function saveCustomerModal() {
 }
 
 async function deleteCustomer(phoneId, customerName) {
+    if (!hasPermission('customers_delete')) {
+        return Swal.fire('Từ chối', 'Bạn không có quyền xóa khách hàng!', 'error');
+    }
     const result = await Swal.fire({
         title: 'Xác nhận xóa khách hàng?',
         html: `Khách hàng <b class="text-blue-700">${customerName || phoneId}</b> (SĐT: ${phoneId}) sẽ bị xóa vĩnh viễn khỏi danh bạ!`,
@@ -5663,7 +6772,10 @@ const ALL_MANAGED_MODALS = [
     'vat-export-modal',
     'vat-preview-modal',
     'manual-payment-modal',
-    'rule-modal'
+    'rule-modal',
+    'staff-modal',
+    'change-password-modal',
+    'reset-password-modal'
 ];
 
 let globalModalMaxZIndex = 100;

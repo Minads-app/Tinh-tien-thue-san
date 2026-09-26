@@ -46,10 +46,12 @@ body {
     /* Ẩn tất cả các phần không cần thiết */
     .no-print, 
     #main-nav, 
+    #login-screen,
     #tab-config,
     #tab-reports,
     #tab-settings,
     #tab-customers,
+    #tab-staff,
     .swal2-container { 
         display: none !important; 
     }

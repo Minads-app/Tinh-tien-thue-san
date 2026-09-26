@@ -20,35 +20,143 @@
     <!-- Firebase SDK (Compat version for Vanilla JS) -->
     <script src="https://www.gstatic.com/firebasejs/10.9.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.9.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.9.0/firebase-auth-compat.js"></script>
 
     <!-- xlsx-js-style for Excel export with borders, fonts and formatting -->
     <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 
     <link rel="stylesheet" href="style.css">
 </head>
-<body>
+<body class="bg-gray-100 min-h-screen text-gray-800">
 
-    <div id="main-nav" class="bg-white shadow-sm sticky top-0 z-50 no-print">
-        <div class="max-w-7xl mx-auto px-4">
-            <div class="flex space-x-8">
-                <button onclick="switchTab('booking')" id="tab-btn-booking" class="tab-active py-4 px-1 inline-flex items-center text-sm border-b-2 font-medium">
-                    <i class="fa-solid fa-file-invoice-dollar mr-2"></i> Tạo Phiếu / Tính Tiền
+    <!-- MÀN HÌNH ĐĂNG NHẬP (LOGIN SCREEN) -->
+    <div id="login-screen" class="fixed inset-0 z-[100] flex items-center justify-center bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 p-4 min-h-screen overflow-y-auto">
+        <div class="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-gray-100 p-6 md:p-8 relative">
+            <div class="text-center mb-6">
+                <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-tr from-indigo-600 to-blue-500 text-white shadow-lg shadow-indigo-500/30 mb-3">
+                    <i class="fa-solid fa-futbol text-2xl"></i>
+                </div>
+                <h1 class="text-xl md:text-2xl font-black text-gray-900 tracking-tight">QUẢN LÝ SÂN HBA</h1>
+                <p class="text-xs text-gray-500 mt-1">Hệ thống tính tiền & quản lý dịch vụ thể thao</p>
+            </div>
+
+            <form id="login-form" onsubmit="handleLoginSubmit(event)" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-semibold text-gray-700 mb-1">
+                        <i class="fa-solid fa-user text-indigo-600 mr-1"></i> Tên đăng nhập hoặc Email
+                    </label>
+                    <input type="text" id="login-username" required autocomplete="username"
+                        class="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:bg-white outline-none transition"
+                        placeholder="Nhập tên đăng nhập hoặc email...">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold text-gray-700 mb-1">
+                        <i class="fa-solid fa-lock text-indigo-600 mr-1"></i> Mật khẩu
+                    </label>
+                    <div class="relative">
+                        <input type="password" id="login-password" required autocomplete="current-password"
+                            class="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:bg-white outline-none transition pr-10"
+                            placeholder="Nhập mật khẩu...">
+                        <button type="button" onclick="togglePasswordVisibility('login-password', 'login-pwd-eye')"
+                            class="absolute right-3 top-2.5 text-gray-400 hover:text-gray-600 focus:outline-none cursor-pointer">
+                            <i id="login-pwd-eye" class="fa-solid fa-eye text-sm"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="flex items-center justify-between text-xs pt-1">
+                    <label class="flex items-center text-gray-600 cursor-pointer select-none">
+                        <input type="checkbox" id="login-remember" checked class="rounded text-indigo-600 focus:ring-indigo-500 mr-2">
+                        <span>Ghi nhớ đăng nhập</span>
+                    </label>
+                    <span class="text-gray-400 italic">Bảo mật nội bộ</span>
+                </div>
+
+                <button type="submit" id="btn-login-submit"
+                    class="w-full py-3 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white font-bold rounded-xl shadow-lg shadow-indigo-500/25 transition duration-200 flex items-center justify-center gap-2 cursor-pointer text-sm">
+                    <i class="fa-solid fa-right-to-bracket"></i>
+                    <span id="btn-login-text">ĐĂNG NHẬP HỆ THỐNG</span>
                 </button>
-                <button onclick="switchTab('config')" id="tab-btn-config" class="tab-inactive py-4 px-1 inline-flex items-center text-sm border-b-2 border-transparent font-medium">
-                    <i class="fa-solid fa-sliders mr-2"></i> Cấu Hình Bảng Giá
-                </button>
-                <button onclick="switchTab('reports')" id="tab-btn-reports" class="tab-inactive py-4 px-1 inline-flex items-center text-sm border-b-2 border-transparent font-medium text-gray-500 hover:text-gray-800 transition">
-                    <i class="fa-solid fa-chart-pie mr-2 text-indigo-500"></i> Báo Cáo Thu / Chi
-                </button>
-                <button onclick="switchTab('customers')" id="tab-btn-customers" class="tab-inactive py-4 px-1 inline-flex items-center text-sm border-b-2 border-transparent font-medium text-gray-500 hover:text-gray-800 transition">
-                    <i class="fa-solid fa-users mr-2 text-blue-500"></i> Khách Hàng
-                </button>
-                <button onclick="switchTab('settings')" id="tab-btn-settings" class="tab-inactive py-4 px-1 inline-flex items-center text-sm border-b-2 border-transparent font-medium text-gray-500 hover:text-gray-800 transition">
-                    <i class="fa-solid fa-gear mr-2"></i> Cài Đặt
-                </button>
+            </form>
+
+            <div class="mt-6 pt-4 border-t border-gray-100 text-center">
+                <div class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 rounded-lg text-indigo-800 text-xs">
+                    <i class="fa-solid fa-circle-info text-indigo-500"></i>
+                    <span>Tài khoản ban đầu: <b>admin</b> / MK: <b>admin123</b></span>
+                </div>
             </div>
         </div>
     </div>
+
+    <!-- KHUNG CHÍNH CỦA ỨNG DỤNG (CHỈ HIỂN THỊ KHI ĐÃ ĐĂNG NHẬP) -->
+    <div id="app-container" class="hidden">
+
+        <div id="main-nav" class="bg-white shadow-sm sticky top-0 z-40 no-print border-b border-gray-200">
+            <div class="max-w-7xl mx-auto px-4">
+                <div class="flex items-center justify-between">
+                    <!-- Nav buttons -->
+                    <div class="flex space-x-4 md:space-x-8 overflow-x-auto py-1">
+                        <button onclick="switchTab('booking')" id="tab-btn-booking" class="tab-active py-4 px-1 inline-flex items-center text-sm border-b-2 font-medium whitespace-nowrap">
+                            <i class="fa-solid fa-file-invoice-dollar mr-2"></i> Tạo Phiếu / Tính Tiền
+                        </button>
+                        <button onclick="switchTab('config')" id="tab-btn-config" class="tab-inactive py-4 px-1 inline-flex items-center text-sm border-b-2 border-transparent font-medium whitespace-nowrap">
+                            <i class="fa-solid fa-sliders mr-2"></i> Cấu Hình Bảng Giá
+                        </button>
+                        <button onclick="switchTab('reports')" id="tab-btn-reports" class="tab-inactive py-4 px-1 inline-flex items-center text-sm border-b-2 border-transparent font-medium text-gray-500 hover:text-gray-800 transition whitespace-nowrap">
+                            <i class="fa-solid fa-chart-pie mr-2 text-indigo-500"></i> Báo Cáo Thu / Chi
+                        </button>
+                        <button onclick="switchTab('customers')" id="tab-btn-customers" class="tab-inactive py-4 px-1 inline-flex items-center text-sm border-b-2 border-transparent font-medium text-gray-500 hover:text-gray-800 transition whitespace-nowrap">
+                            <i class="fa-solid fa-users mr-2 text-blue-500"></i> Khách Hàng
+                        </button>
+                        <button onclick="switchTab('settings')" id="tab-btn-settings" class="tab-inactive py-4 px-1 inline-flex items-center text-sm border-b-2 border-transparent font-medium text-gray-500 hover:text-gray-800 transition whitespace-nowrap">
+                            <i class="fa-solid fa-gear mr-2"></i> Cài Đặt
+                        </button>
+                        <button onclick="switchTab('staff')" id="tab-btn-staff" class="tab-inactive py-4 px-1 inline-flex items-center text-sm border-b-2 border-transparent font-medium text-gray-500 hover:text-gray-800 transition whitespace-nowrap">
+                            <i class="fa-solid fa-user-shield mr-2 text-purple-600"></i> Quản Lý Nhân Sự
+                        </button>
+                    </div>
+
+                    <!-- User Profile Dropdown Widget -->
+                    <div class="relative py-2 flex items-center flex-shrink-0">
+                        <div class="flex items-center gap-3 pl-3 border-l border-gray-200">
+                            <div class="text-right hidden sm:block">
+                                <div class="text-xs font-bold text-gray-800 flex items-center justify-end gap-1.5" id="nav-user-name">
+                                    <span>Đang tải...</span>
+                                </div>
+                                <div class="flex items-center justify-end gap-1 mt-0.5">
+                                    <span id="nav-user-role-badge" class="px-2 py-0.5 text-[10px] font-bold rounded-full bg-purple-100 text-purple-800 border border-purple-200">
+                                        👑 Admin
+                                    </span>
+                                </div>
+                            </div>
+                            <div class="relative">
+                                <button onclick="toggleUserDropdown()" id="nav-user-btn" class="w-9 h-9 rounded-full bg-gradient-to-tr from-indigo-600 to-purple-600 text-white flex items-center justify-center font-bold text-sm shadow hover:opacity-90 focus:outline-none cursor-pointer">
+                                    <span id="nav-user-avatar-text">A</span>
+                                </button>
+                                <!-- Dropdown menu -->
+                                <div id="nav-user-dropdown" class="absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-xl border border-gray-100 py-2 hidden z-50">
+                                    <div class="px-4 py-2 border-b border-gray-100 sm:hidden">
+                                        <div class="text-xs font-bold text-gray-800" id="nav-user-name-mobile">Quản Trị Viên</div>
+                                        <div class="text-[10px] text-gray-500" id="nav-user-role-mobile">👑 Admin</div>
+                                    </div>
+                                    <button onclick="openChangePasswordModal()" class="w-full text-left px-4 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 flex items-center gap-2 cursor-pointer">
+                                        <i class="fa-solid fa-key text-indigo-500 w-4"></i> Đổi mật khẩu
+                                    </button>
+                                    <button onclick="switchTab('staff')" id="nav-item-staff-link" class="w-full text-left px-4 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 flex items-center gap-2 cursor-pointer">
+                                        <i class="fa-solid fa-users-gear text-purple-500 w-4"></i> Quản lý nhân sự
+                                    </button>
+                                    <div class="border-t border-gray-100 my-1"></div>
+                                    <button onclick="handleLogout()" class="w-full text-left px-4 py-2 text-xs font-bold text-red-600 hover:bg-red-50 flex items-center gap-2 cursor-pointer">
+                                        <i class="fa-solid fa-right-from-bracket text-red-500 w-4"></i> Đăng xuất
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
 
     <div class="max-w-7xl mx-auto p-4 md:p-6">
         
@@ -573,6 +681,86 @@
                     <button onclick="saveSettings()" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded shadow transition flex justify-center items-center text-sm">
                         <i class="fa-solid fa-floppy-disk mr-2"></i> LƯU CÀI ĐẶT LÊN HỆ THỐNG
                     </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 6: QUẢN LÝ NHÂN SỰ -->
+        <div id="tab-staff" class="hidden space-y-6">
+            <!-- Header & Filter card -->
+            <div class="bg-white p-5 rounded-xl shadow-sm border border-gray-100">
+                <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                    <div>
+                        <h2 class="text-lg font-bold text-gray-800 flex items-center gap-2">
+                            <i class="fa-solid fa-user-shield text-purple-600"></i> Quản Lý Nhân Sự & Phân Quyền
+                        </h2>
+                        <p class="text-xs text-gray-500 mt-0.5">Quản lý tài khoản đăng nhập, vai trò và phân quyền thao tác chi tiết theo từng mô-đun</p>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button onclick="openStaffModal()" id="btn-add-staff" class="px-4 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white rounded-lg text-xs font-bold shadow-md shadow-purple-500/20 flex items-center gap-2 transition cursor-pointer">
+                            <i class="fa-solid fa-user-plus"></i> Thêm Nhân Viên Mới
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Thống kê nhanh & Bộ lọc -->
+                <div class="grid grid-cols-1 md:grid-cols-12 gap-3 mt-5 pt-4 border-t border-gray-100 items-center">
+                    <div class="md:col-span-3 flex items-center gap-2 text-xs">
+                        <span class="px-2.5 py-1 rounded-lg bg-gray-100 font-medium text-gray-700">Tổng: <b id="staff-stat-total" class="text-purple-600">0</b></span>
+                        <span class="px-2.5 py-1 rounded-lg bg-green-50 font-medium text-green-700">Hoạt động: <b id="staff-stat-active" class="text-green-600">0</b></span>
+                        <span class="px-2.5 py-1 rounded-lg bg-red-50 font-medium text-red-700">Đã khóa: <b id="staff-stat-locked" class="text-red-600">0</b></span>
+                    </div>
+                    <div class="relative md:col-span-4">
+                        <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-gray-400 text-xs"></i>
+                        <input type="text" id="staff-search-input" oninput="filterStaffTable()"
+                            placeholder="Tìm kiếm theo họ tên, tài khoản, SĐT..."
+                            class="w-full pl-8 pr-3 py-2 border rounded-lg text-xs outline-none focus:ring-2 focus:ring-purple-500 bg-gray-50 focus:bg-white transition">
+                    </div>
+                    <div class="md:col-span-3">
+                        <select id="staff-filter-role" onchange="filterStaffTable()" class="w-full px-3 py-2 border rounded-lg text-xs bg-gray-50 outline-none focus:ring-2 focus:ring-purple-500">
+                            <option value="">Tất cả vai trò</option>
+                            <option value="admin">👑 Quản trị viên (Admin)</option>
+                            <option value="quan_ly">💼 Quản lý</option>
+                            <option value="thu_ngan">💰 Thu ngân</option>
+                            <option value="ke_toan">📊 Kế toán</option>
+                            <option value="nhan_vien">👷 Nhân viên</option>
+                            <option value="custom">⚙️ Tùy chỉnh</option>
+                        </select>
+                    </div>
+                    <div class="md:col-span-2">
+                        <select id="staff-filter-status" onchange="filterStaffTable()" class="w-full px-3 py-2 border rounded-lg text-xs bg-gray-50 outline-none focus:ring-2 focus:ring-purple-500">
+                            <option value="">Tất cả trạng thái</option>
+                            <option value="active">🟢 Đang hoạt động</option>
+                            <option value="inactive">🔴 Đã khóa</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bảng danh sách nhân viên -->
+            <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse text-xs">
+                        <thead>
+                            <tr class="bg-gray-50 text-gray-600 uppercase font-semibold border-b border-gray-200">
+                                <th class="p-3.5 text-center w-12">#</th>
+                                <th class="p-3.5">Nhân viên</th>
+                                <th class="p-3.5">Tài khoản</th>
+                                <th class="p-3.5">Liên hệ</th>
+                                <th class="p-3.5 text-center">Vai trò</th>
+                                <th class="p-3.5 text-center">Trạng thái</th>
+                                <th class="p-3.5 text-center">Đăng nhập cuối</th>
+                                <th class="p-3.5 text-right w-44">Thao tác</th>
+                            </tr>
+                        </thead>
+                        <tbody id="staff-table-body" class="divide-y divide-gray-100">
+                            <!-- Render bằng JavaScript -->
+                        </tbody>
+                    </table>
+                </div>
+                <div id="staff-empty-state" class="hidden text-center py-12 text-gray-400">
+                    <i class="fa-solid fa-users-slash text-4xl mb-3 text-gray-300 block"></i>
+                    <span>Chưa có nhân viên nào phù hợp với bộ lọc</span>
                 </div>
             </div>
         </div>
@@ -1521,6 +1709,421 @@
             </div>
         </div>
     </div>
+
+    <!-- MODAL ĐỔI MẬT KHẨU CÁ NHÂN -->
+    <div id="change-password-modal" class="fixed inset-0 bg-black bg-opacity-60 hidden flex items-center justify-center z-[90] p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+            <div class="bg-gradient-to-r from-indigo-600 to-purple-600 p-4 flex justify-between items-center text-white cursor-move select-none" title="Nhấp giữ để di chuyển popup">
+                <div class="flex items-center space-x-2">
+                    <i class="fa-solid fa-key text-lg text-indigo-200"></i>
+                    <h3 class="font-bold text-sm md:text-base">Đổi Mật Khẩu Cá Nhân</h3>
+                </div>
+                <button onclick="closeChangePasswordModal()" class="text-indigo-200 hover:text-white transition"><i class="fa-solid fa-xmark text-lg"></i></button>
+            </div>
+            <form onsubmit="handleChangePasswordSubmit(event)" class="p-5 space-y-4">
+                <div>
+                    <label class="block text-xs font-semibold text-gray-700 mb-1">Mật khẩu hiện tại (*)</label>
+                    <input type="password" id="cp-current-password" required
+                        class="w-full px-3 py-2 border rounded-lg text-xs outline-none focus:ring-2 focus:ring-indigo-500">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-700 mb-1">Mật khẩu mới (*) (tối thiểu 6 ký tự)</label>
+                    <input type="password" id="cp-new-password" required minlength="6"
+                        class="w-full px-3 py-2 border rounded-lg text-xs outline-none focus:ring-2 focus:ring-indigo-500">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-700 mb-1">Xác nhận mật khẩu mới (*)</label>
+                    <input type="password" id="cp-confirm-password" required minlength="6"
+                        class="w-full px-3 py-2 border rounded-lg text-xs outline-none focus:ring-2 focus:ring-indigo-500">
+                </div>
+                <div class="flex justify-end gap-2 pt-3 border-t">
+                    <button type="button" onclick="closeChangePasswordModal()" class="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg text-xs font-semibold transition">Hủy</button>
+                    <button type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition flex items-center gap-1.5 shadow">
+                        <i class="fa-solid fa-check"></i> Cập Nhật Mật Khẩu
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL ĐẶT LẠI MẬT KHẨU NHÂN VIÊN (CHO ADMIN) -->
+    <div id="reset-password-modal" class="fixed inset-0 bg-black bg-opacity-60 hidden flex items-center justify-center z-[90] p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+            <div class="bg-gradient-to-r from-amber-600 to-orange-600 p-4 flex justify-between items-center text-white cursor-move select-none" title="Nhấp giữ để di chuyển popup">
+                <div class="flex items-center space-x-2">
+                    <i class="fa-solid fa-rotate text-lg text-amber-200"></i>
+                    <h3 class="font-bold text-sm md:text-base">Đặt Lại Mật Khẩu Cho Nhân Viên</h3>
+                </div>
+                <button onclick="closeResetPasswordModal()" class="text-amber-200 hover:text-white transition"><i class="fa-solid fa-xmark text-lg"></i></button>
+            </div>
+            <form onsubmit="handleResetPasswordSubmit(event)" class="p-5 space-y-4">
+                <input type="hidden" id="rp-user-id">
+                <div class="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">
+                    Đặt mật khẩu mới cho tài khoản: <b id="rp-user-display" class="font-bold text-amber-900">...</b>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-700 mb-1">Mật khẩu mới (*) (tối thiểu 6 ký tự)</label>
+                    <input type="password" id="rp-new-password" required minlength="6" placeholder="Nhập mật khẩu mới..."
+                        class="w-full px-3 py-2 border rounded-lg text-xs outline-none focus:ring-2 focus:ring-amber-500">
+                </div>
+                <div class="flex justify-end gap-2 pt-3 border-t">
+                    <button type="button" onclick="closeResetPasswordModal()" class="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg text-xs font-semibold transition">Hủy</button>
+                    <button type="submit" class="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold transition flex items-center gap-1.5 shadow">
+                        <i class="fa-solid fa-key"></i> Xác Nhận Đặt Lại
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL THÊM / SỬA NHÂN VIÊN & PHÂN QUYỀN (STAFF MODAL) -->
+    <div id="staff-modal" class="fixed inset-0 bg-black bg-opacity-70 hidden flex items-center justify-center z-[85] p-3 md:p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-4xl overflow-hidden flex flex-col max-h-[94vh]">
+            <!-- Header modal -->
+            <div class="bg-gradient-to-r from-purple-700 to-indigo-800 p-4 flex justify-between items-center text-white cursor-move select-none" title="Nhấp giữ để di chuyển popup - Nhấp đúp để về giữa">
+                <div class="flex items-center space-x-2.5">
+                    <i class="fa-solid fa-grip-lines-vertical opacity-50 text-xs"></i>
+                    <i class="fa-solid fa-user-shield text-2xl text-purple-200"></i>
+                    <div>
+                        <h2 class="text-base md:text-lg font-bold" id="staff-modal-title">Thêm Nhân Viên Mới</h2>
+                        <p class="text-xs text-purple-100">Thiết lập tài khoản và các quyền hạn chi tiết cho nhân viên</p>
+                    </div>
+                </div>
+                <button onclick="closeStaffModal()" class="text-purple-200 hover:text-white transition cursor-pointer"><i class="fa-solid fa-xmark text-xl"></i></button>
+            </div>
+
+            <!-- Body modal -->
+            <form id="staff-form" onsubmit="handleStaffFormSubmit(event)" class="overflow-y-auto p-4 md:p-6 space-y-6 flex-1 bg-gray-50/50">
+                <input type="hidden" id="staff-edit-id">
+
+                <!-- 1. Thông tin cơ bản -->
+                <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm space-y-3">
+                    <h3 class="text-xs font-bold text-gray-700 uppercase flex items-center gap-1.5 border-b pb-2">
+                        <i class="fa-solid fa-id-card text-purple-600"></i> 1. Thông Tin Tài Khoản
+                    </h3>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-xs font-semibold text-gray-700 mb-1">Họ và tên (*)</label>
+                            <input type="text" id="staff-displayname" required placeholder="VD: Nguyễn Văn A"
+                                class="w-full px-3 py-2 border rounded-lg text-xs outline-none focus:ring-2 focus:ring-purple-500">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-gray-700 mb-1">Tên đăng nhập (*) (viết liền không dấu)</label>
+                            <input type="text" id="staff-username" required placeholder="VD: thungan1, nguyenva..."
+                                class="w-full px-3 py-2 border rounded-lg text-xs outline-none focus:ring-2 focus:ring-purple-500">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-gray-700 mb-1">Số điện thoại</label>
+                            <input type="tel" id="staff-phone" placeholder="VD: 0901234567"
+                                class="w-full px-3 py-2 border rounded-lg text-xs outline-none focus:ring-2 focus:ring-purple-500">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-gray-700 mb-1">Email</label>
+                            <input type="email" id="staff-email" placeholder="VD: a@hba.vn"
+                                class="w-full px-3 py-2 border rounded-lg text-xs outline-none focus:ring-2 focus:ring-purple-500">
+                        </div>
+                        <div id="staff-password-field-container">
+                            <label class="block text-xs font-semibold text-gray-700 mb-1">
+                                Mật khẩu <span id="staff-password-required-mark" class="text-red-500">(*)</span>
+                                <span id="staff-password-hint" class="text-[10px] text-gray-400 font-normal italic hidden">(để trống nếu giữ nguyên)</span>
+                            </label>
+                            <input type="password" id="staff-password" minlength="6" placeholder="Tối thiểu 6 ký tự..."
+                                class="w-full px-3 py-2 border rounded-lg text-xs outline-none focus:ring-2 focus:ring-purple-500">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-gray-700 mb-1">Vai trò chính (*)</label>
+                            <select id="staff-role" onchange="onStaffRoleSelectChange()"
+                                class="w-full px-3 py-2 border rounded-lg text-xs outline-none focus:ring-2 focus:ring-purple-500 bg-white font-medium">
+                                <option value="admin">👑 Quản trị viên (Admin - Toàn quyền)</option>
+                                <option value="quan_ly">💼 Quản lý (Điều hành sân)</option>
+                                <option value="thu_ngan" selected>💰 Thu ngân (Tạo phiếu & thu tiền)</option>
+                                <option value="ke_toan">📊 Kế toán (Báo cáo & Xuất VAT)</option>
+                                <option value="nhan_vien">👷 Nhân viên (Chỉ xem lịch & khách)</option>
+                                <option value="custom">⚙️ Tùy chỉnh (Tự chọn từng quyền)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="pt-2 flex items-center justify-between border-t border-gray-100">
+                        <label class="inline-flex items-center text-xs font-semibold text-gray-700 cursor-pointer select-none">
+                            <input type="checkbox" id="staff-is-active" checked class="rounded text-purple-600 focus:ring-purple-500 mr-2 w-4 h-4">
+                            <span>Cho phép tài khoản hoạt động (Mở khóa)</span>
+                        </label>
+                        <span class="text-[11px] text-gray-400 italic">Bỏ chọn để khóa tạm thời tài khoản</span>
+                    </div>
+                </div>
+
+                <!-- 2. BẢNG PHÂN QUYỀN CHI TIẾT (41 QUYỀN) -->
+                <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm space-y-4">
+                    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b pb-3">
+                        <div>
+                            <h3 class="text-xs font-bold text-gray-700 uppercase flex items-center gap-1.5">
+                                <i class="fa-solid fa-list-check text-purple-600"></i> 2. Bảng Phân Quyền Chi Tiết (41 Quyền)
+                            </h3>
+                            <p class="text-[11px] text-gray-500">Tick chọn các quyền thao tác cho nhân viên trong từng mô-đun</p>
+                        </div>
+                        <div class="flex items-center gap-1.5 flex-wrap">
+                            <button type="button" onclick="applyRolePermissionsTemplate()" class="px-2.5 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 rounded-lg text-[11px] font-semibold transition cursor-pointer">
+                                <i class="fa-solid fa-rotate mr-1"></i> Áp theo vai trò
+                            </button>
+                            <button type="button" onclick="toggleAllPermissions(true)" class="px-2.5 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-[11px] font-semibold transition cursor-pointer">
+                                <i class="fa-solid fa-check-double mr-1"></i> Chọn tất cả
+                            </button>
+                            <button type="button" onclick="toggleAllPermissions(false)" class="px-2.5 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-[11px] font-semibold transition cursor-pointer">
+                                <i class="fa-solid fa-xmark mr-1"></i> Bỏ tất cả
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Lưới 6 Module -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+                        <!-- Module 1: Tạo Phiếu / Tính Tiền -->
+                        <div class="border border-blue-200 rounded-xl p-3.5 bg-blue-50/30">
+                            <div class="flex items-center justify-between font-bold text-xs text-blue-900 border-b border-blue-200 pb-2 mb-2.5">
+                                <span class="flex items-center gap-1.5">
+                                    <i class="fa-solid fa-file-invoice-dollar text-blue-600"></i> Tạo Phiếu / Tính Tiền
+                                </span>
+                                <span class="text-[10px] bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded font-mono">8 quyền</span>
+                            </div>
+                            <div class="space-y-2 text-xs">
+                                <label class="flex items-start gap-2 cursor-pointer">
+                                    <input type="checkbox" data-perm="booking_view" class="perm-check rounded text-blue-600 mt-0.5" onchange="onPermCheckboxChanged()">
+                                    <span>Xem tab Tạo Phiếu / Tính Tiền</span>
+                                </label>
+                                <label class="flex items-start gap-2 cursor-pointer">
+                                    <input type="checkbox" data-perm="booking_create" class="perm-check rounded text-blue-600 mt-0.5" onchange="onPermCheckboxChanged()">
+                                    <span>Tạo phiếu mới</span>
+                                </label>
+                                <label class="flex items-start gap-2 cursor-pointer">
+                                    <input type="checkbox" data-perm="booking_edit" class="perm-check rounded text-blue-600 mt-0.5" onchange="onPermCheckboxChanged()">
+                                    <span>Sửa phiếu đang tạo (thêm/bớt dòng, đổi sân)</span>
+                                </label>
+                                <label class="flex items-start gap-2 cursor-pointer">
+                                    <input type="checkbox" data-perm="booking_edit_full" class="perm-check rounded text-blue-600 mt-0.5" onchange="onPermCheckboxChanged()">
+                                    <span class="text-amber-800 font-medium">Sửa toàn diện phiếu cũ (nạp lại vào bảng)</span>
+                                </label>
+                                <label class="flex items-start gap-2 cursor-pointer">
+                                    <input type="checkbox" data-perm="booking_discount" class="perm-check rounded text-blue-600 mt-0.5" onchange="onPermCheckboxChanged()">
+                                    <span class="text-amber-800 font-medium">Áp dụng chiết khấu / giảm giá</span>
+                                </label>
+                                <label class="flex items-start gap-2 cursor-pointer">
+                                    <input type="checkbox" data-perm="booking_vat_toggle" class="perm-check rounded text-blue-600 mt-0.5" onchange="onPermCheckboxChanged()">
+                                    <span>Bật / Tắt lấy hóa đơn VAT (+10%)</span>
+                                </label>
+                                <label class="flex items-start gap-2 cursor-pointer">
+                                    <input type="checkbox" data-perm="booking_schedule_edit" class="perm-check rounded text-blue-600 mt-0.5" onchange="onPermCheckboxChanged()">
+                                    <span>Sửa lịch chi tiết (thêm / bớt ngày nghỉ)</span>
+                                </label>
+                                <label class="flex items-start gap-2 cursor-pointer">
+                                    <input type="checkbox" data-perm="booking_save" class="perm-check rounded text-blue-600 mt-0.5" onchange="onPermCheckboxChanged()">
+                                    <span>Lưu phiếu & In phiếu</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- Module 2: Cấu Hình Bảng Giá -->
+                        <div class="border border-emerald-200 rounded-xl p-3.5 bg-emerald-50/30">
+                            <div class="flex items-center justify-between font-bold text-xs text-emerald-900 border-b border-emerald-200 pb-2 mb-2.5">
+                                <span class="flex items-center gap-1.5">
+                                    <i class="fa-solid fa-sliders text-emerald-600"></i> Cấu Hình Bảng Giá
+                                </span>
+                                <span class="text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded font-mono">5 quyền</span>
+                            </div>
+                            <div class="space-y-2 text-xs">
+                                <label class="flex items-start gap-2 cursor-pointer">
+                                    <input type="checkbox" data-perm="config_view" class="perm-check rounded text-emerald-600 mt-0.5" onchange="onPermCheckboxChanged()">
+                                    <span>Xem tab Cấu Hình Bảng Giá</span>
+                                </label>
+                                <label class="flex items-start gap-2 cursor-pointer">
+                                    <input type="checkbox" data-perm="config_create" class="perm-check rounded text-emerald-600 mt-0.5" onchange="onPermCheckboxChanged()">
+                                    <span>Thêm quy tắc giá mới</span>
+                                </label>
+                                <label class="flex items-start gap-2 cursor-pointer">
+                                    <input type="checkbox" data-perm="config_edit" class="perm-check rounded text-emerald-600 mt-0.5" onchange="onPermCheckboxChanged()">
+                                    <span>Sửa quy tắc giá</span>
+                                </label>
+                                <label class="flex items-start gap-2 cursor-pointer">
+                                    <input type="checkbox" data-perm="config_delete" class="perm-check rounded text-emerald-600 mt-0.5" onchange="onPermCheckboxChanged()">
+                                    <span class="text-red-700 font-medium">Xóa quy tắc giá</span>
+                                </label>
+                                <label class="flex items-start gap-2 cursor-pointer">
+                                    <input type="checkbox" data-perm="config_backup" class="perm-check rounded text-emerald-600 mt-0.5" onchange="onPermCheckboxChanged()">
+                                    <span>Sao lưu / Khôi phục file JSON</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- Module 3: Báo Cáo Thu/Chi & Quản Lý Phiếu -->
+                        <div class="border border-indigo-200 rounded-xl p-3.5 bg-indigo-50/30">
+                            <div class="flex items-center justify-between font-bold text-xs text-indigo-900 border-b border-indigo-200 pb-2 mb-2.5">
+                                <span class="flex items-center gap-1.5">
+                                    <i class="fa-solid fa-chart-pie text-indigo-600"></i> Báo Cáo Thu / Chi & Quản Lý Phiếu
+                                </span>
+                                <span class="text-[10px] bg-indigo-100 text-indigo-800 px-1.5 py-0.5 rounded font-mono">7 quyền</span>
+                            </div>
+                            <div class="space-y-2 text-xs">
+                                <label class="flex items-start gap-2 cursor-pointer">
+                                    <input type="checkbox" data-perm="reports_view" class="perm-check rounded text-indigo-600 mt-0.5" onchange="onPermCheckboxChanged()">
+                                    <span>Xem tab Báo Cáo Thu / Chi</span>
+                                </label>
+                                <label class="flex items-start gap-2 cursor-pointer">
+                                    <input type="checkbox" data-perm="reports_view_summary" class="perm-check rounded text-indigo-600 mt-0.5" onchange="onPermCheckboxChanged()">
+                                    <span class="text-indigo-950 font-medium">Xem số liệu Tổng Thu & Tổng Công Nợ</span>
+                                </label>
+                                <label class="flex items-start gap-2 cursor-pointer">
+                                    <input type="checkbox" data-perm="reports_view_detail" class="perm-check rounded text-indigo-600 mt-0.5" onchange="onPermCheckboxChanged()">
+                                    <span>Xem chi tiết phiếu & lịch sử thanh toán</span>
+                                </label>
+                                <label class="flex items-start gap-2 cursor-pointer">
+                                    <input type="checkbox" data-perm="reports_edit_bill" class="perm-check rounded text-indigo-600 mt-0.5" onchange="onPermCheckboxChanged()">
+                                    <span class="text-amber-800 font-medium">Sửa nhanh thông tin phiếu (ngày, giờ, giá)</span>
+                                </label>
+                                <label class="flex items-start gap-2 cursor-pointer">
+                                    <input type="checkbox" data-perm="reports_delete_bill" class="perm-check rounded text-indigo-600 mt-0.5" onchange="onPermCheckboxChanged()">
+                                    <span class="text-red-700 font-bold">Xóa phiếu thanh toán vĩnh viễn</span>
+                                </label>
+                                <label class="flex items-start gap-2 cursor-pointer">
+                                    <input type="checkbox" data-perm="reports_manual_payment" class="perm-check rounded text-indigo-600 mt-0.5" onchange="onPermCheckboxChanged()">
+                                    <span class="text-emerald-800 font-medium">Gạch nợ thủ công (Tiền mặt / Chuyển khoản)</span>
+                                </label>
+                                <label class="flex items-start gap-2 cursor-pointer">
+                                    <input type="checkbox" data-perm="reports_renew" class="perm-check rounded text-indigo-600 mt-0.5" onchange="onPermCheckboxChanged()">
+                                    <span>Gia hạn phiếu thuê sang tháng mới</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- Module 4: Quản Lý Khách Hàng -->
+                        <div class="border border-sky-200 rounded-xl p-3.5 bg-sky-50/30">
+                            <div class="flex items-center justify-between font-bold text-xs text-sky-900 border-b border-sky-200 pb-2 mb-2.5">
+                                <span class="flex items-center gap-1.5">
+                                    <i class="fa-solid fa-users text-sky-600"></i> Quản Lý Khách Hàng
+                                </span>
+                                <span class="text-[10px] bg-sky-100 text-sky-800 px-1.5 py-0.5 rounded font-mono">10 quyền</span>
+                            </div>
+                            <div class="space-y-2 text-xs">
+                                <label class="flex items-start gap-2 cursor-pointer">
+                                    <input type="checkbox" data-perm="customers_view" class="perm-check rounded text-sky-600 mt-0.5" onchange="onPermCheckboxChanged()">
+                                    <span>Xem tab Khách Hàng & danh bạ</span>
+                                </label>
+                                <label class="flex items-start gap-2 cursor-pointer">
+                                    <input type="checkbox" data-perm="customers_create" class="perm-check rounded text-sky-600 mt-0.5" onchange="onPermCheckboxChanged()">
+                                    <span>Thêm mới khách hàng</span>
+                                </label>
+                                <label class="flex items-start gap-2 cursor-pointer">
+                                    <input type="checkbox" data-perm="customers_edit" class="perm-check rounded text-sky-600 mt-0.5" onchange="onPermCheckboxChanged()">
+                                    <span>Sửa thông tin khách hàng</span>
+                                </label>
+                                <label class="flex items-start gap-2 cursor-pointer">
+                                    <input type="checkbox" data-perm="customers_delete" class="perm-check rounded text-sky-600 mt-0.5" onchange="onPermCheckboxChanged()">
+                                    <span class="text-red-700 font-medium">Xóa khách hàng khỏi danh bạ</span>
+                                </label>
+                                <label class="flex items-start gap-2 cursor-pointer">
+                                    <input type="checkbox" data-perm="customers_view_profile" class="perm-check rounded text-sky-600 mt-0.5" onchange="onPermCheckboxChanged()">
+                                    <span>Xem hồ sơ chi tiết (lịch sử thuê, bù sân)</span>
+                                </label>
+                                <label class="flex items-start gap-2 cursor-pointer">
+                                    <input type="checkbox" data-perm="customers_export_vat" class="perm-check rounded text-sky-600 mt-0.5" onchange="onPermCheckboxChanged()">
+                                    <span>Xuất bảng kê hóa đơn VAT sang Excel</span>
+                                </label>
+                                <label class="flex items-start gap-2 cursor-pointer">
+                                    <input type="checkbox" data-perm="customers_vat_status" class="perm-check rounded text-sky-600 mt-0.5" onchange="onPermCheckboxChanged()">
+                                    <span>Cập nhật trạng thái xuất VAT</span>
+                                </label>
+                                <label class="flex items-start gap-2 cursor-pointer">
+                                    <input type="checkbox" data-perm="customers_comp_manage" class="perm-check rounded text-sky-600 mt-0.5" onchange="onPermCheckboxChanged()">
+                                    <span>Thêm / Sửa ghi chú bù sân</span>
+                                </label>
+                                <label class="flex items-start gap-2 cursor-pointer">
+                                    <input type="checkbox" data-perm="customers_comp_complete" class="perm-check rounded text-sky-600 mt-0.5" onchange="onPermCheckboxChanged()">
+                                    <span>Đánh dấu trạng thái "Đã bù"</span>
+                                </label>
+                                <label class="flex items-start gap-2 cursor-pointer">
+                                    <input type="checkbox" data-perm="customers_comp_delete" class="perm-check rounded text-sky-600 mt-0.5" onchange="onPermCheckboxChanged()">
+                                    <span class="text-red-700 font-medium">Xóa ghi chú bù sân</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- Module 5: Cài Đặt Hệ Thống -->
+                        <div class="border border-amber-200 rounded-xl p-3.5 bg-amber-50/30">
+                            <div class="flex items-center justify-between font-bold text-xs text-amber-900 border-b border-amber-200 pb-2 mb-2.5">
+                                <span class="flex items-center gap-1.5">
+                                    <i class="fa-solid fa-gear text-amber-600"></i> Cài Đặt Hệ Thống
+                                </span>
+                                <span class="text-[10px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded font-mono">4 quyền</span>
+                            </div>
+                            <div class="space-y-2 text-xs">
+                                <label class="flex items-start gap-2 cursor-pointer">
+                                    <input type="checkbox" data-perm="settings_view" class="perm-check rounded text-amber-600 mt-0.5" onchange="onPermCheckboxChanged()">
+                                    <span>Xem tab Cài Đặt</span>
+                                </label>
+                                <label class="flex items-start gap-2 cursor-pointer">
+                                    <input type="checkbox" data-perm="settings_edit_venue" class="perm-check rounded text-amber-600 mt-0.5" onchange="onPermCheckboxChanged()">
+                                    <span class="text-amber-900 font-medium">Sửa thông tin sân (tên, mô tả, địa chỉ)</span>
+                                </label>
+                                <label class="flex items-start gap-2 cursor-pointer">
+                                    <input type="checkbox" data-perm="settings_edit_bank_personal" class="perm-check rounded text-amber-600 mt-0.5" onchange="onPermCheckboxChanged()">
+                                    <span class="text-red-700 font-medium">Sửa tài khoản NH Cá Nhân (không VAT)</span>
+                                </label>
+                                <label class="flex items-start gap-2 cursor-pointer">
+                                    <input type="checkbox" data-perm="settings_edit_bank_company" class="perm-check rounded text-amber-600 mt-0.5" onchange="onPermCheckboxChanged()">
+                                    <span class="text-red-700 font-medium">Sửa tài khoản NH Công Ty (lấy VAT)</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- Module 6: Quản Lý Nhân Sự -->
+                        <div class="border border-purple-200 rounded-xl p-3.5 bg-purple-50/30">
+                            <div class="flex items-center justify-between font-bold text-xs text-purple-900 border-b border-purple-200 pb-2 mb-2.5">
+                                <span class="flex items-center gap-1.5">
+                                    <i class="fa-solid fa-user-shield text-purple-600"></i> Quản Lý Nhân Sự
+                                </span>
+                                <span class="text-[10px] bg-purple-100 text-purple-800 px-1.5 py-0.5 rounded font-mono">6 quyền</span>
+                            </div>
+                            <div class="space-y-2 text-xs">
+                                <label class="flex items-start gap-2 cursor-pointer">
+                                    <input type="checkbox" data-perm="staff_view" class="perm-check rounded text-purple-600 mt-0.5" onchange="onPermCheckboxChanged()">
+                                    <span>Xem tab Quản Lý Nhân Sự</span>
+                                </label>
+                                <label class="flex items-start gap-2 cursor-pointer">
+                                    <input type="checkbox" data-perm="staff_create" class="perm-check rounded text-purple-600 mt-0.5" onchange="onPermCheckboxChanged()">
+                                    <span>Thêm tài khoản nhân viên mới</span>
+                                </label>
+                                <label class="flex items-start gap-2 cursor-pointer">
+                                    <input type="checkbox" data-perm="staff_edit" class="perm-check rounded text-purple-600 mt-0.5" onchange="onPermCheckboxChanged()">
+                                    <span>Sửa thông tin & phân quyền nhân viên</span>
+                                </label>
+                                <label class="flex items-start gap-2 cursor-pointer">
+                                    <input type="checkbox" data-perm="staff_toggle_active" class="perm-check rounded text-purple-600 mt-0.5" onchange="onPermCheckboxChanged()">
+                                    <span>Khóa / Mở khóa tài khoản nhân viên</span>
+                                </label>
+                                <label class="flex items-start gap-2 cursor-pointer">
+                                    <input type="checkbox" data-perm="staff_delete" class="perm-check rounded text-purple-600 mt-0.5" onchange="onPermCheckboxChanged()">
+                                    <span class="text-red-700 font-bold">Xóa tài khoản nhân viên</span>
+                                </label>
+                                <label class="flex items-start gap-2 cursor-pointer">
+                                    <input type="checkbox" data-perm="staff_reset_password" class="perm-check rounded text-purple-600 mt-0.5" onchange="onPermCheckboxChanged()">
+                                    <span>Đặt lại mật khẩu cho nhân viên</span>
+                                </label>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+
+                <div class="flex justify-end gap-2 pt-3 border-t">
+                    <button type="button" onclick="closeStaffModal()" class="px-5 py-2.5 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg text-xs font-semibold transition cursor-pointer">Hủy</button>
+                    <button type="submit" id="btn-save-staff" class="px-6 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white rounded-lg text-xs font-bold transition flex items-center gap-1.5 shadow-md shadow-purple-500/20 cursor-pointer">
+                        <i class="fa-solid fa-floppy-disk"></i> Lưu Nhân Viên
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    </div><!-- ĐÓNG KHUNG APP CONTAINER -->
 
     <script src="script.js"></script>
 </body>
