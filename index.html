@@ -569,26 +569,47 @@
 
         <div id="tab-customers" class="hidden">
             <div class="bg-white p-6 rounded-lg shadow-sm">
-                <div class="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
-                    <h2 class="text-xl font-bold text-gray-800 uppercase border-l-4 border-blue-600 pl-3"><i class="fa-solid fa-users-viewfinder text-blue-600 mr-2"></i> Quản Lý Danh Bạ Khách</h2>
-                    <div class="flex gap-2 w-full md:w-auto">
-                        <div class="relative w-full md:w-64">
-                            <i class="fa-solid fa-magnifying-glass absolute left-3 top-3 text-gray-400"></i>
-                            <input type="text" id="customer-search" class="pl-9 pr-3 py-2 border rounded text-sm w-full outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="Tìm tên, SĐT, Cty, MST...">
+                <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-5 gap-3.5">
+                    <div class="flex items-center gap-3">
+                        <h2 class="text-xl font-bold text-gray-800 uppercase border-l-4 border-blue-600 pl-3">
+                            <i class="fa-solid fa-users-viewfinder text-blue-600 mr-2"></i> Quản Lý Danh Bạ Khách
+                        </h2>
+                        <span id="cust-total-badge" class="text-xs font-bold bg-blue-100 text-blue-800 px-2.5 py-0.5 rounded-full hidden sm:inline-block">0 khách</span>
+                    </div>
+
+                    <div class="flex flex-wrap items-center gap-2.5 w-full lg:w-auto">
+                        <!-- Bộ lọc thời hạn HĐ -->
+                        <div class="flex items-center gap-1 bg-gray-100 p-1 rounded-xl text-xs overflow-x-auto w-full sm:w-auto border border-gray-200 shadow-2xs">
+                            <button type="button" onclick="setCustomerExpiryFilter('all')" id="cust-pill-all" class="px-3 py-1.5 rounded-lg font-bold transition shadow-xs bg-white text-blue-700 cursor-pointer flex items-center gap-1">
+                                Tất cả (<span id="cust-count-all">0</span>)
+                            </button>
+                            <button type="button" onclick="setCustomerExpiryFilter('expiring_soon')" id="cust-pill-expiring_soon" class="px-3 py-1.5 rounded-lg font-semibold transition text-amber-800 hover:bg-amber-100/70 cursor-pointer flex items-center gap-1.5">
+                                <i class="fa-solid fa-bolt text-amber-600"></i> Sắp hết hạn (<span id="cust-count-expiring" class="font-bold">0</span>)
+                            </button>
+                            <button type="button" onclick="setCustomerExpiryFilter('expired')" id="cust-pill-expired" class="px-3 py-1.5 rounded-lg font-semibold transition text-red-700 hover:bg-red-100/70 cursor-pointer flex items-center gap-1.5">
+                                <i class="fa-solid fa-triangle-exclamation text-red-500"></i> Đã hết hạn (<span id="cust-count-expired" class="font-bold">0</span>)
+                            </button>
+                            <button type="button" onclick="setCustomerExpiryFilter('active')" id="cust-pill-active" class="px-3 py-1.5 rounded-lg font-semibold transition text-emerald-800 hover:bg-emerald-100/70 cursor-pointer flex items-center gap-1.5">
+                                <i class="fa-solid fa-circle-check text-emerald-600"></i> Còn hạn (<span id="cust-count-active" class="font-bold">0</span>)
+                            </button>
                         </div>
-                        <button onclick="openAddCustomerModal()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded text-sm font-bold shadow transition whitespace-nowrap hidden lg:flex items-center">
-                            <i class="fa-solid fa-user-plus mr-2"></i> Khách Mới
+
+                        <!-- Ô tìm kiếm -->
+                        <div class="relative flex-1 sm:w-60">
+                            <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-gray-400 text-xs"></i>
+                            <input type="text" id="customer-search" oninput="renderCustomerTable()" class="pl-8 pr-3 py-1.5 border border-gray-300 rounded-lg text-xs w-full outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-white shadow-2xs" placeholder="Tìm tên, SĐT, Cty, MST...">
+                        </div>
+
+                        <!-- Nút Thêm Khách Mới -->
+                        <button onclick="openAddCustomerModal()" class="bg-blue-600 hover:bg-blue-700 text-white px-3.5 py-1.5 rounded-lg text-xs font-bold shadow transition whitespace-nowrap flex items-center cursor-pointer">
+                            <i class="fa-solid fa-user-plus mr-1.5"></i> Khách Mới
                         </button>
                     </div>
                 </div>
-                <!-- Bút thêm trên mobile -->
-                <button onclick="openAddCustomerModal()" class="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded text-sm font-bold shadow transition lg:hidden mb-4 flex justify-center items-center">
-                    <i class="fa-solid fa-user-plus mr-2"></i> Thêm Khách Hàng Mới
-                </button>
                 <div class="overflow-x-auto border rounded-xl">
                     <table class="w-full text-left text-sm border-collapse">
                         <thead>
-                            <tr class="bg-blue-50 text-blue-800 border-b text-xs uppercase">
+                            <tr class="bg-blue-50 text-blue-900 border-b text-xs uppercase">
                                 <th class="p-3 border-r font-bold">Mã KH</th>
                                 <th class="p-3 border-r font-bold">Họ & Tên</th>
                                 <th class="p-3 border-r font-bold">Điện Thoại</th>
@@ -596,8 +617,8 @@
                                 <th class="p-3 border-r font-bold">Đội Bóng/Cty</th>
                                 <th class="p-3 border-r text-center font-bold">Lượt Thuê</th>
                                 <th class="p-3 border-r text-right font-bold w-32 py-4">Tổng Doanh Thu</th>
-                                <th class="p-3 border-r font-bold">Ngày Chơi Cuối</th>
-                                <th class="p-3 font-bold text-center w-28">Thao Tác</th>
+                                <th class="p-3 border-r text-center font-bold">Thời Hạn HĐ / Chơi Cuối</th>
+                                <th class="p-3 font-bold text-center w-36">Thao Tác</th>
                             </tr>
                         </thead>
                         <tbody id="customer-table-body" class="bg-white">
@@ -1071,14 +1092,19 @@
             </div>
 
             <div class="px-5 pb-4">
-                <h3 class="text-sm font-bold text-gray-800 border-b pb-2 mb-2"><i class="fa-solid fa-clock-rotate-left mr-1"></i> Lịch sử thanh toán</h3>
-                <table class="w-full text-left text-sm border">
+                <h3 class="text-sm font-bold text-gray-800 border-b pb-2 mb-2 flex items-center"><i class="fa-solid fa-clock-rotate-left text-blue-600 mr-2"></i> Lịch sử thanh toán</h3>
+                <table class="w-full text-left text-sm border rounded-lg overflow-hidden">
                     <thead>
-                        <tr class="bg-gray-100 text-gray-600"><th class="p-2 border">Ngày</th><th class="p-2 border">Số tiền</th><th class="p-2 border">Mã giao dịch SePay</th></tr>
+                        <tr class="bg-gray-100 text-gray-700 text-xs uppercase">
+                            <th class="p-2.5 border text-center w-36">Thời Gian</th>
+                            <th class="p-2.5 border text-right w-32">Số Tiền</th>
+                            <th class="p-2.5 border">Hình Thức / Kênh TT</th>
+                            <th class="p-2.5 border text-center w-28">Chứng Từ</th>
+                        </tr>
                     </thead>
                     <tbody id="payment-history-table"></tbody>
                 </table>
-                <div id="payment-history-empty" class="text-xs text-gray-500 italic py-2 text-center">Đang tải lịch sử thanh toán...</div>
+                <div id="payment-history-empty" class="text-xs text-gray-500 italic py-3 text-center">Đang tải lịch sử thanh toán...</div>
             </div>
             
             <!-- Footer actions sắp xếp 2 tầng gọn gàng -->

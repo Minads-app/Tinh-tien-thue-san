@@ -3651,7 +3651,7 @@ function viewReceipt(dataStrEncoded) {
                     let dateStr = '---';
                     if (payData.paidAt && payData.paidAt.toDate) {
                         const d = payData.paidAt.toDate();
-                        dateStr = `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')} ${d.getDate()}/${d.getMonth()+1}/${d.getFullYear()}`;
+                        dateStr = `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')} ${d.getDate().toString().padStart(2, '0')}/${(d.getMonth()+1).toString().padStart(2, '0')}/${d.getFullYear()}`;
                     }
                     // Lưu ảnh chứng từ vào global cache để tránh truyền chuỗi Base64 dài vào DOM
                     if (payData.proofImage) {
@@ -3659,33 +3659,34 @@ function viewReceipt(dataStrEncoded) {
                         window._paymentProofImages[doc.id] = payData.proofImage;
                     }
 
-                    let proofBtn = '';
-                    if (payData.proofImage) {
-                        proofBtn = `
-                            <div class="inline-flex items-center gap-1.5 ml-2 cursor-pointer group" onclick="viewPaymentProofImage(window._paymentProofImages['${doc.id}'])" title="Bấm để xem ảnh chứng từ / ủy nhiệm chi">
-                                <img src="${payData.proofImage}" class="w-8 h-8 rounded object-cover border border-blue-300 group-hover:scale-110 transition shadow-xs inline-block">
-                                <span class="px-2 py-0.5 bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 rounded text-[10px] font-bold inline-flex items-center gap-1">
-                                    <i class="fa-solid fa-image"></i> Xem bill
-                                </span>
-                            </div>`;
+                    // Format phương thức thanh toán đẹp mắt (không chèn thumbnail vào cột này)
+                    let channelDisplay = '';
+                    if (payData.channel === 'company_transfer') {
+                        channelDisplay = `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-50 text-blue-800 font-semibold border border-blue-200 text-xs"><i class="fa-solid fa-building text-blue-600"></i> CK Công ty</span> ${payData.note ? '<span class="text-gray-500 text-xs ml-1 font-normal">(' + escapeVatHtml(payData.note) + ')</span>' : ''}`;
+                    } else if (payData.channel === 'wrong_syntax_transfer') {
+                        channelDisplay = `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-purple-50 text-purple-800 font-semibold border border-purple-200 text-xs"><i class="fa-solid fa-user-tag text-purple-600"></i> CK Sai cú pháp</span> ${payData.note ? '<span class="text-gray-500 text-xs ml-1 font-normal">(' + escapeVatHtml(payData.note) + ')</span>' : ''}`;
+                    } else if (payData.channel === 'cash') {
+                        channelDisplay = `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 font-semibold border border-emerald-200 text-xs"><i class="fa-solid fa-money-bill-wave text-emerald-600"></i> Tiền mặt</span> ${payData.note ? '<span class="text-gray-500 text-xs ml-1 font-normal">(' + escapeVatHtml(payData.note) + ')</span>' : ''}`;
+                    } else {
+                        channelDisplay = `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-indigo-50 text-indigo-800 font-semibold border border-indigo-200 text-xs font-mono"><i class="fa-solid fa-qrcode text-indigo-600"></i> ${escapeVatHtml(payData.sepayTransactionId || 'Chuyển khoản')}</span>`;
                     }
 
-                    // Format phương thức thanh toán đẹp mắt
-                    let channelDisplay = payData.sepayTransactionId || '---';
-                    if (payData.channel === 'company_transfer') {
-                        channelDisplay = `<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-blue-50 text-blue-800 font-semibold border border-blue-200 text-[10px]"><i class="fa-solid fa-building text-blue-600"></i> CK Công ty</span> ${payData.note ? '<span class="text-gray-600 text-[10px] font-normal">(' + escapeVatHtml(payData.note) + ')</span>' : ''}`;
-                    } else if (payData.channel === 'wrong_syntax_transfer') {
-                        channelDisplay = `<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-purple-50 text-purple-800 font-semibold border border-purple-200 text-[10px]"><i class="fa-solid fa-user-tag text-purple-600"></i> CK Sai cú pháp</span> ${payData.note ? '<span class="text-gray-600 text-[10px] font-normal">(' + escapeVatHtml(payData.note) + ')</span>' : ''}`;
-                    } else if (payData.channel === 'cash') {
-                        channelDisplay = `<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-800 font-semibold border border-emerald-200 text-[10px]"><i class="fa-solid fa-money-bill-wave text-emerald-600"></i> Tiền mặt</span> ${payData.note ? '<span class="text-gray-600 text-[10px] font-normal">(' + escapeVatHtml(payData.note) + ')</span>' : ''}`;
+                    // Cột Chứng Từ: CHỈ có duy nhất 1 nút "Xem bill" nếu có ảnh, không nhồi nhét thumbnail thừa vào dòng
+                    let proofColHtml = '<span class="text-gray-400 text-xs italic">---</span>';
+                    if (payData.proofImage) {
+                        proofColHtml = `
+                            <button type="button" onclick="viewPaymentProofImage(window._paymentProofImages['${doc.id}'])" class="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded text-xs font-bold inline-flex items-center gap-1 cursor-pointer transition shadow-2xs" title="Bấm để xem ảnh chứng từ">
+                                <i class="fa-solid fa-image"></i> Xem bill
+                            </button>`;
                     }
 
                     const tr = document.createElement('tr');
-                    tr.className = "border-b text-gray-700 hover:bg-gray-50";
+                    tr.className = "border-b text-gray-700 hover:bg-gray-50 text-xs";
                     tr.innerHTML = `
-                        <td class="p-2 border text-[11px] font-medium whitespace-nowrap">${dateStr}</td>
-                        <td class="p-2 border font-bold text-green-700 text-xs text-right whitespace-nowrap">${formatVND(payData.amount)}</td>
-                        <td class="p-2 border font-mono text-[10px] text-gray-700">${channelDisplay}${proofBtn}</td>
+                        <td class="p-2.5 border text-center font-medium text-gray-600 whitespace-nowrap">${dateStr}</td>
+                        <td class="p-2.5 border font-bold text-emerald-700 text-sm text-right whitespace-nowrap">${formatVND(payData.amount)}</td>
+                        <td class="p-2.5 border">${channelDisplay}</td>
+                        <td class="p-2.5 border text-center whitespace-nowrap">${proofColHtml}</td>
                     `;
                     historyTableBody.appendChild(tr);
                 });
@@ -4548,6 +4549,65 @@ function fetchCustomers() {
     });
 }
 
+let currentCustomerExpiryFilter = 'all';
+
+function setCustomerExpiryFilter(filterVal) {
+    currentCustomerExpiryFilter = filterVal || 'all';
+    renderCustomerTable();
+}
+
+function updateCustomerFilterPillsUI() {
+    const pills = {
+        'all': { el: document.getElementById('cust-pill-all'), activeCls: 'bg-white text-blue-700 shadow-xs font-bold border border-blue-200', inactiveCls: 'text-gray-600 hover:bg-gray-200/70 font-semibold' },
+        'expiring_soon': { el: document.getElementById('cust-pill-expiring_soon'), activeCls: 'bg-amber-500 text-white shadow-xs font-bold', inactiveCls: 'text-amber-800 hover:bg-amber-100/70 font-semibold' },
+        'expired': { el: document.getElementById('cust-pill-expired'), activeCls: 'bg-red-600 text-white shadow-xs font-bold', inactiveCls: 'text-red-700 hover:bg-red-100/70 font-semibold' },
+        'active': { el: document.getElementById('cust-pill-active'), activeCls: 'bg-emerald-600 text-white shadow-xs font-bold', inactiveCls: 'text-emerald-800 hover:bg-emerald-100/70 font-semibold' }
+    };
+
+    Object.keys(pills).forEach(k => {
+        const item = pills[k];
+        if (!item.el) return;
+        const baseClass = "px-3 py-1.5 rounded-lg transition cursor-pointer flex items-center gap-1.5 ";
+        if (currentCustomerExpiryFilter === k) {
+            item.el.className = baseClass + item.activeCls;
+        } else {
+            item.el.className = baseClass + item.inactiveCls;
+        }
+    });
+}
+
+function openRenewModalFromCust(phoneId) {
+    if (!phoneId) return;
+    const cleanPhone = phoneId.replace(/\D/g, '');
+    let userTrans = [];
+    if (cachedTransactions && cachedTransactions.length > 0) {
+        userTrans = cachedTransactions.filter(t => {
+            const tp = (t.customerPhone || '').replace(/\D/g, '');
+            return (cleanPhone && tp && tp === cleanPhone) || (t.customerPhone === phoneId);
+        });
+    }
+
+    if (!userTrans || userTrans.length === 0) {
+        return Swal.fire('Thông báo', 'Khách hàng này chưa có phiếu nào để gia hạn.', 'info');
+    }
+
+    // Ưu tiên phiếu có hạn hợp đồng muộn nhất
+    userTrans.sort((a, b) => {
+        const dateA = getEffectiveTransactionDates(a);
+        const dateB = getEffectiveTransactionDates(b);
+        const endA = dateA.endDateObj ? dateA.endDateObj.getTime() : 0;
+        const endB = dateB.endDateObj ? dateB.endDateObj.getTime() : 0;
+        if (endB !== endA) return endB - endA;
+        const tA = (a.createdAt && a.createdAt.toDate) ? a.createdAt.toDate().getTime() : 0;
+        const tB = (b.createdAt && b.createdAt.toDate) ? b.createdAt.toDate().getTime() : 0;
+        return tB - tA;
+    });
+
+    const targetTrans = userTrans[0];
+    const dataStr = encodeURIComponent(JSON.stringify(targetTrans));
+    openRenewModal(dataStr);
+}
+
 function renderCustomerTable() {
     const tbody = document.getElementById('customer-table-body');
     const emptyMsg = document.getElementById('empty-customer-msg');
@@ -4555,10 +4615,105 @@ function renderCustomerTable() {
 
     if (!tbody) return;
 
-    let filtered = customersList;
+    updateCustomerFilterPillsUI();
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    let countAll = customersList.length;
+    let countExpiring = 0;
+    let countExpired = 0;
+    let countActive = 0;
+
+    // Phân tích trạng thái hợp đồng cho từng khách hàng
+    const analyzedCustomers = customersList.map(c => {
+        const cleanPhone = (c.phoneId || '').replace(/\D/g, '');
+        let userTrans = [];
+        if (cachedTransactions && cachedTransactions.length > 0) {
+            userTrans = cachedTransactions.filter(t => {
+                const tPhone = (t.customerPhone || '').replace(/\D/g, '');
+                return (cleanPhone && tPhone && tPhone === cleanPhone) || (t.customerPhone === c.phoneId);
+            });
+        }
+
+        const ticketCount = userTrans.length;
+        const totalSpent = userTrans.reduce((sum, t) => sum + (t.totalAmount || 0), 0);
+
+        let maxEndDateObj = null;
+        let latestTrans = null;
+
+        userTrans.forEach(t => {
+            const eff = getEffectiveTransactionDates(t);
+            if (eff && eff.endDateObj) {
+                if (!maxEndDateObj || eff.endDateObj > maxEndDateObj) {
+                    maxEndDateObj = eff.endDateObj;
+                    latestTrans = t;
+                }
+            }
+        });
+
+        if (!latestTrans && userTrans.length > 0) {
+            latestTrans = userTrans[0];
+        }
+
+        let expiryStatus = 'walk_in';
+        let diffDays = null;
+        let endDateFormatted = '';
+
+        if (maxEndDateObj) {
+            const endD = new Date(maxEndDateObj);
+            endD.setHours(0, 0, 0, 0);
+            diffDays = Math.ceil((endD.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+
+            const ey = endD.getFullYear();
+            const em = (endD.getMonth() + 1).toString().padStart(2, '0');
+            const ed = endD.getDate().toString().padStart(2, '0');
+            endDateFormatted = `${ed}/${em}/${ey}`;
+
+            if (diffDays < 0) {
+                expiryStatus = 'expired';
+                countExpired++;
+            } else if (diffDays <= 7) {
+                expiryStatus = 'expiring_soon';
+                countExpiring++;
+            } else {
+                expiryStatus = 'active';
+                countActive++;
+            }
+        }
+
+        return {
+            ...c,
+            displayTicketCount: ticketCount,
+            displayTotalSpent: totalSpent,
+            maxEndDateObj,
+            latestTrans,
+            expiryStatus,
+            diffDays,
+            endDateFormatted
+        };
+    });
+
+    if (document.getElementById('cust-count-all')) document.getElementById('cust-count-all').textContent = countAll;
+    if (document.getElementById('cust-count-expiring')) document.getElementById('cust-count-expiring').textContent = countExpiring;
+    if (document.getElementById('cust-count-expired')) document.getElementById('cust-count-expired').textContent = countExpired;
+    if (document.getElementById('cust-count-active')) document.getElementById('cust-count-active').textContent = countActive;
+
+    let filtered = analyzedCustomers;
+
+    // 1. Lọc theo trạng thái hạn HĐ
+    if (currentCustomerExpiryFilter === 'expiring_soon') {
+        filtered = filtered.filter(c => c.expiryStatus === 'expiring_soon');
+    } else if (currentCustomerExpiryFilter === 'expired') {
+        filtered = filtered.filter(c => c.expiryStatus === 'expired');
+    } else if (currentCustomerExpiryFilter === 'active') {
+        filtered = filtered.filter(c => c.expiryStatus === 'active');
+    }
+
+    // 2. Lọc theo từ khóa tìm kiếm
     if (searchVal) {
         const normSearch = removeVietnameseTones(searchVal);
-        filtered = customersList.filter(c => {
+        filtered = filtered.filter(c => {
             const name = c.name || '';
             const phone = c.phoneId || '';
             const code = c.customerCode || '';
@@ -4579,8 +4734,12 @@ function renderCustomerTable() {
         });
     }
 
+    if (document.getElementById('cust-total-badge')) {
+        document.getElementById('cust-total-badge').textContent = `${filtered.length} / ${countAll} khách`;
+    }
+
     tbody.innerHTML = '';
-    
+
     if (filtered.length === 0) {
         if(emptyMsg) emptyMsg.classList.remove('hidden');
     } else {
@@ -4604,39 +4763,71 @@ function renderCustomerTable() {
                 orgDisplay += `<br><span class="text-[11px] font-mono text-blue-600 bg-blue-50 px-1 py-0.5 rounded">MST: ${c.taxCode}</span>`;
             }
 
-            let displayTicketCount = c.ticketCount || 0;
-            let displayTotalSpent = c.totalSpent || 0;
+            // Badge thời hạn HĐ / Ngày chơi
+            let expiryColHtml = '';
+            if (c.expiryStatus === 'expiring_soon') {
+                expiryColHtml = `
+                    <div class="flex flex-col items-center">
+                        <span class="px-2 py-0.5 bg-amber-100 text-amber-900 border border-amber-300 rounded-full font-bold text-[10px] inline-flex items-center gap-1 animate-pulse" title="Hạn hợp đồng đến: ${c.endDateFormatted}">
+                            <i class="fa-solid fa-bolt text-amber-600"></i> Sắp hết (${c.diffDays} ngày)
+                        </span>
+                        <span class="text-[10px] text-amber-900 font-bold mt-0.5">Đến ${c.endDateFormatted}</span>
+                    </div>`;
+            } else if (c.expiryStatus === 'expired') {
+                expiryColHtml = `
+                    <div class="flex flex-col items-center">
+                        <span class="px-2 py-0.5 bg-red-100 text-red-700 border border-red-200 rounded-full font-bold text-[10px] inline-flex items-center gap-1" title="Đã hết hạn ngày: ${c.endDateFormatted}">
+                            <i class="fa-solid fa-triangle-exclamation"></i> Hết hạn (${Math.abs(c.diffDays)} ngày)
+                        </span>
+                        <span class="text-[10px] text-gray-400 mt-0.5">Đến ${c.endDateFormatted}</span>
+                    </div>`;
+            } else if (c.expiryStatus === 'active') {
+                expiryColHtml = `
+                    <div class="flex flex-col items-center">
+                        <span class="px-2 py-0.5 bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-full font-semibold text-[10px] inline-flex items-center gap-1" title="Hạn hợp đồng đến: ${c.endDateFormatted}">
+                            <i class="fa-solid fa-circle-check text-emerald-600"></i> Còn ${c.diffDays} ngày
+                        </span>
+                        <span class="text-[10px] text-gray-500 mt-0.5">Đến ${c.endDateFormatted}</span>
+                    </div>`;
+            } else {
+                expiryColHtml = `
+                    <div class="flex flex-col items-center">
+                        <span class="text-gray-400 italic text-[11px]">Vãng lai</span>
+                        <span class="text-[10px] text-gray-400 mt-0.5"><i class="fa-regular fa-calendar mr-1"></i> ${lastVisitStr}</span>
+                    </div>`;
+            }
 
-            if (cachedTransactions && cachedTransactions.length > 0) {
-                const cleanPhone = (c.phoneId || '').replace(/\D/g, '');
-                const userTrans = cachedTransactions.filter(t => {
-                    const tPhone = (t.customerPhone || '').replace(/\D/g, '');
-                    return (cleanPhone && tPhone && tPhone === cleanPhone) || (t.customerPhone === c.phoneId);
-                });
-                displayTicketCount = userTrans.length;
-                displayTotalSpent = userTrans.reduce((sum, t) => sum + (t.totalAmount || 0), 0);
+            // Nút Gia Hạn nhanh nếu khách có phiếu hợp đồng
+            let renewBtnHtml = '';
+            if (c.latestTrans) {
+                renewBtnHtml = `
+                    <button onclick="openRenewModalFromCust('${c.phoneId}')" class="px-2.5 py-1 bg-teal-600 hover:bg-teal-700 text-white rounded text-[11px] font-bold shadow-2xs transition inline-flex items-center gap-1 cursor-pointer mr-1" title="Gia hạn hợp đồng mới cho khách này">
+                        <i class="fa-solid fa-calendar-plus"></i> Gia Hạn
+                    </button>
+                `;
             }
 
             const safeName = (c.name || '').replace(/'/g, "\\'");
             const tr = document.createElement('tr');
-            tr.className = "border-b hover:bg-blue-50 transition text-sm text-gray-700";
+            tr.className = `border-b hover:bg-blue-50 transition text-sm text-gray-700 ${c.expiryStatus === 'expiring_soon' ? 'bg-amber-50/40' : ''}`;
             tr.innerHTML = `
                 <td class="p-3 border-r font-mono text-xs font-bold text-gray-500">${c.customerCode || '---'}</td>
                 <td class="p-3 border-r font-bold text-blue-700 cursor-pointer hover:underline" onclick="viewCustomer('${c.phoneId}')" title="Click xem chi tiết">${c.name || '---'}</td>
                 <td class="p-3 border-r font-mono font-bold">${c.phoneId || '---'}</td>
                 <td class="p-3 border-r text-gray-600">${c.gender || '---'}</td>
                 <td class="p-3 border-r text-gray-600">${orgDisplay}</td>
-                <td class="p-3 border-r text-center font-bold text-gray-800">${displayTicketCount}</td>
-                <td class="p-3 border-r text-right font-bold text-green-700 text-base">${formatVND(displayTotalSpent)}</td>
-                <td class="p-3 border-r text-gray-500 whitespace-nowrap"><i class="fa-regular fa-calendar mr-1"></i> ${lastVisitStr}</td>
+                <td class="p-3 border-r text-center font-bold text-gray-800">${c.displayTicketCount}</td>
+                <td class="p-3 border-r text-right font-bold text-green-700 text-base">${formatVND(c.displayTotalSpent)}</td>
+                <td class="p-3 border-r text-center whitespace-nowrap">${expiryColHtml}</td>
                 <td class="p-3 text-center whitespace-nowrap">
-                    <button onclick="viewCustomer('${c.phoneId}')" title="Xem chi tiết" class="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 hover:bg-indigo-100 hover:text-indigo-800 transition mr-1">
+                    ${renewBtnHtml}
+                    <button onclick="viewCustomer('${c.phoneId}')" title="Xem chi tiết" class="inline-flex items-center justify-center w-7 h-7 rounded bg-indigo-50 text-indigo-600 hover:bg-indigo-100 hover:text-indigo-800 transition mr-1 cursor-pointer">
                         <i class="fa-solid fa-eye text-xs"></i>
                     </button>
-                    <button onclick="openEditCustomerModal('${c.phoneId}')" title="Sửa thông tin" class="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 hover:text-blue-800 transition mr-1">
+                    <button onclick="openEditCustomerModal('${c.phoneId}')" title="Sửa thông tin" class="inline-flex items-center justify-center w-7 h-7 rounded bg-blue-50 text-blue-600 hover:bg-blue-100 hover:text-blue-800 transition mr-1 cursor-pointer">
                         <i class="fa-solid fa-pen text-xs"></i>
                     </button>
-                    <button onclick="deleteCustomer('${c.phoneId}', '${safeName}')" title="Xóa khách hàng" class="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-red-50 text-red-500 hover:bg-red-100 hover:text-red-700 transition">
+                    <button onclick="deleteCustomer('${c.phoneId}', '${safeName}')" title="Xóa khách hàng" class="inline-flex items-center justify-center w-7 h-7 rounded bg-red-50 text-red-500 hover:bg-red-100 hover:text-red-700 transition cursor-pointer">
                         <i class="fa-solid fa-trash text-xs"></i>
                     </button>
                 </td>
