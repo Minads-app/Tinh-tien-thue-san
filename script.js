@@ -7621,56 +7621,217 @@ function getFilteredCourts() {
     return allCourts;
 }
 
+function isSameCourt(courtA, courtB) {
+    if (!courtA || !courtB) return false;
+    const a = courtA.trim().toLowerCase();
+    const b = courtB.trim().toLowerCase();
+    if (a === b) return true;
+    if (a.replace(/^sân\s+/, '') === b.replace(/^sân\s+/, '')) return true;
+    return false;
+}
+
+function normalizeIsoDate(dateStr) {
+    if (!dateStr) return '';
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
+    const parts = dateStr.split('/');
+    if (parts.length === 3) {
+        const d = parts[0].padStart(2, '0');
+        const m = parts[1].padStart(2, '0');
+        const y = parts[2];
+        return `${y}-${m}-${d}`;
+    }
+    return dateStr;
+}
+
 function getBookingsForDate(targetDate) {
     const bookings = [];
     if (!cachedTransactions || cachedTransactions.length === 0) return bookings;
+
+    const isoTarget = normalizeIsoDate(targetDate);
+    if (!isoTarget) return bookings;
+
+    const [ty, tm, td] = isoTarget.split('-').map(Number);
+    const targetD = new Date(ty, tm - 1, td, 12, 0, 0);
+    const targetDayOfWeek = targetD.getDay(); // 0 = CN, 1 = T2...
+    const dStrPadded = String(td).padStart(2, '0');
+    const mStrPadded = String(tm).padStart(2, '0');
+    const targetDisplayDate = `${dStrPadded}/${mStrPadded}/${ty}`;
+    const targetDisplayDateShort = `${td}/${tm}/${ty}`;
+    const targetShortDate = `${td}/${tm}`;
+    const targetShortDatePadded = `${dStrPadded}/${mStrPadded}`;
 
     cachedTransactions.forEach(tx => {
         if (tx.status === 'cancelled') return;
         if (!tx.items || !Array.isArray(tx.items)) return;
 
         tx.items.forEach(item => {
-            if (!item.sessions || !Array.isArray(item.sessions)) return;
+            // 1. Xác định khoảng ngày hiệu lực của item
+            let itemStart = null;
+            let itemEnd = null;
 
-            // Check if this item has a session on the target date
-            const hasSession = item.sessions.some(s => s.isoDate === targetDate);
-            if (!hasSession) return;
+            if (item.startDateStr && item.endDateStr) {
+                const [sy, sm, sd] = item.startDateStr.split('-').map(Number);
+                const [ey, em, ed] = item.endDateStr.split('-').map(Number);
+                itemStart = new Date(sy, sm - 1, sd, 0, 0, 0);
+                itemEnd = new Date(ey, em - 1, ed, 23, 59, 59);
+            } else if (tx.startDate && tx.endDate) {
+                const [sy, sm, sd] = tx.startDate.split('-').map(Number);
+                const [ey, em, ed] = tx.endDate.split('-').map(Number);
+                itemStart = new Date(sy, sm - 1, sd, 0, 0, 0);
+                itemEnd = new Date(ey, em - 1, ed, 23, 59, 59);
+            }
 
-            // Extract court name from item name like "Cầu lông [Sân cầu lông 1]"
+            // Fallback: phân tích từ item.desc
+            if (!itemStart || !itemEnd) {
+                const desc = item.desc || '';
+                const rangeMatch = desc.match(/(\d{1,2})\/(\d{1,2})(?:\/(\d{4}))?\s*-\s*(\d{1,2})\/(\d{1,2})(?:\/(\d{4}))?/);
+                if (rangeMatch) {
+                    const sd = parseInt(rangeMatch[1], 10);
+                    const sm = parseInt(rangeMatch[2], 10);
+                    const sy = rangeMatch[3] ? parseInt(rangeMatch[3], 10) : ty;
+                    const ed = parseInt(rangeMatch[4], 10);
+                    const em = parseInt(rangeMatch[5], 10);
+                    const ey = rangeMatch[6] ? parseInt(rangeMatch[6], 10) : sy;
+                    itemStart = new Date(sy, sm - 1, sd, 0, 0, 0);
+                    itemEnd = new Date(ey, em - 1, ed, 23, 59, 59);
+                } else {
+                    const singleMatch = desc.match(/(\d{1,2})\/(\d{1,2})(?:\/(\d{4}))?/);
+                    if (singleMatch) {
+                        const sd = parseInt(singleMatch[1], 10);
+                        const sm = parseInt(singleMatch[2], 10);
+                        const sy = singleMatch[3] ? parseInt(singleMatch[3], 10) : ty;
+                        itemStart = new Date(sy, sm - 1, sd, 0, 0, 0);
+                        itemEnd = new Date(sy, sm - 1, sd, 23, 59, 59);
+                    }
+                }
+            }
+
+            // 2. Kiểm tra xem ngày targetDate có diễn ra buổi thuê này không
+            let isMatch = false;
+
+            // Kiểm tra danh sách ngày bổ sung (addedDates)
+            const added = Array.isArray(item.addedDates) ? item.addedDates : [];
+            if (added.some(ad => ad === isoTarget || ad === targetDisplayDate || ad === targetDisplayDateShort || ad === targetShortDate || ad === targetShortDatePadded)) {
+                isMatch = true;
+            }
+
+            // Kiểm tra trong khoảng ngày start - end
+            if (!isMatch && itemStart && itemEnd) {
+                if (targetD >= itemStart && targetD <= itemEnd) {
+                    if (item.weekdays && Array.isArray(item.weekdays) && item.weekdays.length > 0) {
+                        const wDays = item.weekdays.map(Number);
+                        if (wDays.includes(targetDayOfWeek)) {
+                            isMatch = true;
+                        }
+                    } else {
+                        // Không có thứ cố định (đặt 1 ngày hoặc toàn bộ dải ngày)
+                        isMatch = true;
+                    }
+                }
+            }
+
+            // Fallback: kiểm tra desc có chứa ngày này không
+            if (!isMatch && item.desc) {
+                if (item.desc.includes(targetDisplayDate) || item.desc.includes(targetDisplayDateShort)) {
+                    isMatch = true;
+                }
+            }
+
+            // Fallback: nếu không có ngày nào khác, kiểm tra createdAt
+            if (!isMatch && !itemStart && !itemEnd && tx.createdAt) {
+                let cd = null;
+                if (tx.createdAt.toDate) cd = tx.createdAt.toDate();
+                else if (typeof tx.createdAt === 'string') cd = new Date(tx.createdAt);
+                if (cd && cd.getFullYear() === ty && cd.getMonth() === (tm - 1) && cd.getDate() === td) {
+                    isMatch = true;
+                }
+            }
+
+            // 3. Loại trừ nếu ngày này nằm trong danh sách nghỉ (skipped)
+            if (isMatch) {
+                const skipped = Array.isArray(item.skipped) ? item.skipped : [];
+                const isSkipped = skipped.some(sk => 
+                    sk === isoTarget || 
+                    sk === targetDisplayDate || 
+                    sk === targetDisplayDateShort || 
+                    sk === targetShortDate || 
+                    sk === targetShortDatePadded
+                );
+                if (isSkipped) {
+                    isMatch = false;
+                }
+            }
+
+            if (!isMatch) return;
+
+            // 4. Trích xuất tên sân
             let courtName = '';
-            const bracketMatch = item.name.match(/\[(.+?)\]/);
+            const itemName = item.name || '';
+            const bracketMatch = itemName.match(/\[(.+?)\]/);
             if (bracketMatch) {
-                courtName = bracketMatch[1];
+                courtName = bracketMatch[1].trim();
+            } else if (item.courtName) {
+                courtName = item.courtName.trim();
             } else {
-                courtName = item.name;
+                for (const [grp, courts] of Object.entries(COURT_MAP)) {
+                    for (const c of courts) {
+                        if (itemName.toLowerCase().includes(c.toLowerCase())) {
+                            courtName = c;
+                            break;
+                        }
+                    }
+                    if (courtName) break;
+                }
+                if (!courtName) courtName = itemName.trim();
             }
 
-            // Parse time
-            const desc = item.desc || '';
+            // 5. Trích xuất giờ
             let timeStart = '', timeEnd = '';
-            const timeMatch = desc.match(/(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})/);
-            if (timeMatch) {
-                timeStart = timeMatch[1];
-                timeEnd = timeMatch[2];
+            if (item.timeRange && item.timeRange.includes('-')) {
+                const parts = item.timeRange.split('-');
+                timeStart = parts[0].trim();
+                timeEnd = parts[1].trim();
+            } else {
+                const desc = item.desc || '';
+                const timeMatch = desc.match(/(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})/);
+                if (timeMatch) {
+                    timeStart = timeMatch[1].trim();
+                    timeEnd = timeMatch[2].trim();
+                }
             }
+
             if (!timeStart || !timeEnd) return;
 
             const [sh, sm] = timeStart.split(':').map(Number);
             const [eh, em] = timeEnd.split(':').map(Number);
 
+            // 6. Trích xuất môn
+            let sport = '';
+            if (itemName.includes('[')) {
+                sport = itemName.split('[')[0].trim();
+            } else {
+                for (const [grp, courts] of Object.entries(COURT_MAP)) {
+                    if (courts.includes(courtName)) {
+                        sport = grp;
+                        break;
+                    }
+                }
+            }
+
             bookings.push({
                 court: courtName,
-                sport: item.name.split('[')[0].trim() || '',
+                sport: sport,
                 startHour: sh,
                 startMin: sm,
                 endHour: eh,
                 endMin: em,
-                customerName: tx.customerName || 'N/A',
+                customerName: tx.customerName || 'Khách vãng lai',
                 customerPhone: tx.customerPhone || '',
-                invoiceId: tx.id || '',
-                totalPrice: item.price || 0,
-                duration: item.duration || 0,
-                txStatus: tx.status || 'unpaid'
+                invoiceId: tx.id || tx.docId || '',
+                totalPrice: item.total || item.price || 0,
+                duration: item.duration || ((eh * 60 + em) - (sh * 60 + sm)) / 60,
+                txStatus: tx.status || 'unpaid',
+                note: tx.note || ''
             });
         });
     });
@@ -7756,7 +7917,7 @@ function renderCourtTimeline() {
     // Render court rows
     let bodyHtml = '';
     courts.forEach((court, idx) => {
-        const courtBookings = bookings.filter(b => b.court === court.name);
+        const courtBookings = bookings.filter(b => b.court === court.name || isSameCourt(b.court, court.name));
         const isEven = idx % 2 === 0;
         const bgClass = isEven ? 'bg-white' : 'bg-gray-50';
 
@@ -7811,8 +7972,11 @@ function renderCourtTimeline() {
         courtBookings.forEach(b => {
             const startDecimal = b.startHour + b.startMin / 60;
             const endDecimal = b.endHour + b.endMin / 60;
-            const leftPct = ((startDecimal - START_HOUR) / TOTAL_HOURS) * 100;
-            const widthPct = ((endDecimal - startDecimal) / TOTAL_HOURS) * 100;
+            const clampedStart = Math.max(startDecimal, START_HOUR);
+            const clampedEnd = Math.min(endDecimal, END_HOUR);
+            if (clampedStart >= clampedEnd) return;
+            const leftPct = ((clampedStart - START_HOUR) / TOTAL_HOURS) * 100;
+            const widthPct = ((clampedEnd - clampedStart) / TOTAL_HOURS) * 100;
 
             const status = getBookingStatus(b);
             let barClass = '';
@@ -7917,7 +8081,7 @@ function renderUpcomingList(bookings) {
 
 function showBookingDetail(invoiceId, courtName, timeLabel) {
     if (!invoiceId) return;
-    const tx = cachedTransactions.find(t => t.id === invoiceId);
+    const tx = cachedTransactions.find(t => t.id === invoiceId || t.docId === invoiceId);
     if (!tx) {
         Swal.fire({ icon: 'info', title: 'Không tìm thấy', text: 'Không tìm thấy phiếu ' + invoiceId, confirmButtonColor: '#4f46e5' });
         return;
@@ -8007,7 +8171,7 @@ function renderWeekView() {
         weekDays.forEach((dayStr, dIdx) => {
             const dayDate = csParseDate(dayStr);
             const isToday = dayStr === todayStr;
-            const dayBookings = (allBookings[dayStr] || []).filter(b => b.court === court.name);
+            const dayBookings = (allBookings[dayStr] || []).filter(b => b.court === court.name || isSameCourt(b.court, court.name));
             const dayLabel = CS_WEEKDAY_NAMES[dayDate.getDay()];
             const dateShort = `${String(dayDate.getDate()).padStart(2,'0')}/${String(dayDate.getMonth()+1).padStart(2,'0')}`;
 
@@ -8033,11 +8197,33 @@ function renderWeekView() {
                     bodyHtml += `<div class="absolute top-0 bottom-0 w-0.5 bg-red-500 z-20 opacity-70" style="left:${curPct}%"></div>`;
                 }
             }
+            // Lock bars for this day & court
+            if (typeof getLocksForDate === 'function') {
+                const courtLocks = getLocksForDate(dayStr, court.name);
+                courtLocks.forEach(lock => {
+                    const lStartDec = lock.startHour + lock.startMin / 60;
+                    const lEndDec = lock.endHour + lock.endMin / 60;
+                    const lClampedStart = Math.max(lStartDec, START_HOUR);
+                    const lClampedEnd = Math.min(lEndDec, END_HOUR);
+                    if (lClampedStart >= lClampedEnd) return;
+                    const lLeftPct = ((lClampedStart - START_HOUR) / TOTAL_HOURS) * 100;
+                    const lWidthPct = ((lClampedEnd - lClampedStart) / TOTAL_HOURS) * 100;
+                    bodyHtml += `<div class="absolute top-0 bottom-0 lock-bar z-5 flex items-center justify-center" `;
+                    bodyHtml += `style="left:${Math.max(0, lLeftPct)}%; width:${Math.min(lWidthPct, 100 - lLeftPct)}%" `;
+                    bodyHtml += `title="🔒 ${lock.reason || 'Khóa'}\n${String(lock.startHour).padStart(2,'0')}:${String(lock.startMin).padStart(2,'0')} - ${String(lock.endHour).padStart(2,'0')}:${String(lock.endMin).padStart(2,'0')}">`;
+                    bodyHtml += `<span class="text-[8px] font-bold text-red-700/70 truncate px-0.5">🔒</span>`;
+                    bodyHtml += `</div>`;
+                });
+            }
+
             dayBookings.forEach(b => {
                 const startDec = b.startHour + b.startMin / 60;
                 const endDec = b.endHour + b.endMin / 60;
-                const leftPct = ((startDec - START_HOUR) / TOTAL_HOURS) * 100;
-                const widthPct = ((endDec - startDec) / TOTAL_HOURS) * 100;
+                const clampedStart = Math.max(startDec, START_HOUR);
+                const clampedEnd = Math.min(endDec, END_HOUR);
+                if (clampedStart >= clampedEnd) return;
+                const leftPct = ((clampedStart - START_HOUR) / TOTAL_HOURS) * 100;
+                const widthPct = ((clampedEnd - clampedStart) / TOTAL_HOURS) * 100;
                 const status = isToday ? getBookingStatus(b) : 'scheduled';
                 let barClass = 'bg-indigo-400 text-white';
                 if (status === 'active') { barClass = 'bg-emerald-500 text-white'; activeCourtsSet.add(court.name); totalActive++; }
@@ -8086,7 +8272,7 @@ function renderMonthView() {
     let totalMonthBookings = 0;
     days.forEach(dayStr => {
         const courtFilter = courts.map(c => c.name);
-        const dayData = getBookingsForDate(dayStr).filter(b => courtFilter.includes(b.court));
+        const dayData = getBookingsForDate(dayStr).filter(b => courtFilter.some(cf => cf === b.court || isSameCourt(cf, b.court)));
         monthBookings[dayStr] = dayData;
         totalMonthBookings += dayData.length;
     });
@@ -8272,8 +8458,9 @@ document.addEventListener('DOMContentLoaded', function() {
         }, { passive: false });
     }
 });
+
 // ==========================================
-// COURT LOCK MANAGEMENT (KhÃ³a SÃ¢n)
+// COURT LOCK MANAGEMENT (Khóa Sân)
 // ==========================================
 
 let cachedCourtLocks = { fixedLocks: [], dateLocks: [] };
@@ -8294,20 +8481,12 @@ function fetchCourtLocks() {
                 cachedCourtLocks = { fixedLocks: [], dateLocks: [] };
             }
             renderLockTable();
-            // Re-render timeline if court-status tab is visible
             const csTab = document.getElementById('tab-court-status');
             if (csTab && !csTab.classList.contains('hidden')) renderCourtTimeline();
         });
     } catch(e) { console.warn('Error fetching court locks:', e); }
 }
 
-// Call fetchCourtLocks after auth
-const _origFetchSettings = typeof fetchSettings === 'function' ? fetchSettings : null;
-if (_origFetchSettings) {
-    const _wrapFetch = fetchSettings;
-    // We'll call fetchCourtLocks in the existing init flow
-}
-// Safe: just call it when DOM is ready
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => setTimeout(fetchCourtLocks, 2000));
 } else {
@@ -8317,33 +8496,26 @@ if (document.readyState === 'loading') {
 function getLocksForDate(dateStr, courtName) {
     const locks = [];
     const d = new Date(dateStr + 'T00:00:00');
-    const dayOfWeek = d.getDay(); // 0=Sun
-
-    // Check fixed locks
+    const dayOfWeek = d.getDay();
     (cachedCourtLocks.fixedLocks || []).forEach(lock => {
         if (!lock.enabled) return;
         if (!lock.daysOfWeek || !lock.daysOfWeek.includes(dayOfWeek)) return;
         if (!isCourtAffectedByLock(lock, courtName)) return;
         locks.push(lock);
     });
-
-    // Check date locks
     (cachedCourtLocks.dateLocks || []).forEach(lock => {
         if (!lock.enabled) return;
         if (lock.date !== dateStr) return;
         if (!isCourtAffectedByLock(lock, courtName)) return;
         locks.push(lock);
     });
-
     return locks;
 }
 
 function isCourtAffectedByLock(lock, courtName) {
     const courts = lock.courts || [];
     const excludes = lock.excludeCourts || [];
-    if (courts.includes('all')) {
-        return !excludes.includes(courtName);
-    }
+    if (courts.includes('all')) return !excludes.includes(courtName);
     return courts.includes(courtName);
 }
 
@@ -8358,13 +8530,10 @@ function isTimeOverlappingLock(lock, startH, startM, endH, endM) {
 function checkBookingAgainstLocks(courtName, dateStr, startH, startM, endH, endM) {
     const locks = getLocksForDate(dateStr, courtName);
     for (const lock of locks) {
-        if (isTimeOverlappingLock(lock, startH, startM, endH, endM)) {
-            return lock;
-        }
+        if (isTimeOverlappingLock(lock, startH, startM, endH, endM)) return lock;
     }
     return null;
 }
-
 // --- SETTINGS UI ---
 
 function switchLockTab(tab) {
@@ -8381,59 +8550,51 @@ function switchLockTab(tab) {
 function renderLockTable() {
     const container = document.getElementById('lock-table-container');
     if (!container) return;
-
     const locks = currentLockTab === 'fixed' ? (cachedCourtLocks.fixedLocks || []) : (cachedCourtLocks.dateLocks || []);
-    
     if (locks.length === 0) {
-        container.innerHTML = '<div class="text-xs text-gray-400 italic p-4 text-center">ChÆ°a cÃ³ khÃ³a nÃ o.</div>';
+        container.innerHTML = '<div class="text-xs text-gray-400 italic p-4 text-center">Chưa có khóa nào.</div>';
         return;
     }
-
     const dayNames = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
     let html = '<table class="w-full text-xs"><thead><tr class="bg-gray-50 text-gray-500">';
-    html += '<th class="px-3 py-2 text-left font-semibold">SÃ¢n</th>';
-    html += '<th class="px-3 py-2 text-left font-semibold">Khung giá»</th>';
-    html += '<th class="px-3 py-2 text-left font-semibold">' + (currentLockTab === 'fixed' ? 'Thá»©' : 'NgÃ y') + '</th>';
-    html += '<th class="px-3 py-2 text-left font-semibold">LÃ½ do</th>';
-    html += '<th class="px-3 py-2 text-center font-semibold w-16">Tráº¡ng thÃ¡i</th>';
+    html += '<th class="px-3 py-2 text-left font-semibold">Sân</th>';
+    html += '<th class="px-3 py-2 text-left font-semibold">Khung giờ</th>';
+    html += '<th class="px-3 py-2 text-left font-semibold">' + (currentLockTab === 'fixed' ? 'Thứ' : 'Ngày') + '</th>';
+    html += '<th class="px-3 py-2 text-left font-semibold">Lý do</th>';
+    html += '<th class="px-3 py-2 text-center font-semibold w-16">Trạng thái</th>';
     html += '<th class="px-3 py-2 text-center font-semibold w-12"></th>';
     html += '</tr></thead><tbody>';
-
     locks.forEach((lock, idx) => {
-        const courtLabel = lock.courts.includes('all') 
-            ? ('Táº¥t cáº£' + (lock.excludeCourts && lock.excludeCourts.length ? ' <span class="text-amber-600">(trá»« ' + lock.excludeCourts.join(', ') + ')</span>' : ''))
+        const courtLabel = lock.courts.includes('all')
+            ? ('Tất cả' + (lock.excludeCourts && lock.excludeCourts.length ? ' <span class="text-amber-600">(trừ ' + lock.excludeCourts.join(', ') + ')</span>' : ''))
             : lock.courts.join(', ');
-        const timeLabel = `${String(lock.startHour).padStart(2,'0')}:${String(lock.startMin).padStart(2,'0')} - ${String(lock.endHour).padStart(2,'0')}:${String(lock.endMin).padStart(2,'0')}`;
+        const timeLabel = String(lock.startHour).padStart(2,'0') + ':' + String(lock.startMin).padStart(2,'0') + ' - ' + String(lock.endHour).padStart(2,'0') + ':' + String(lock.endMin).padStart(2,'0');
         let periodLabel = '';
         if (currentLockTab === 'fixed') {
             periodLabel = (lock.daysOfWeek || []).map(d => dayNames[d]).join(', ');
         } else {
             const ld = lock.date ? lock.date.split('-') : [];
-            periodLabel = ld.length === 3 ? `${ld[2]}/${ld[1]}/${ld[0]}` : lock.date;
+            periodLabel = ld.length === 3 ? ld[2] + '/' + ld[1] + '/' + ld[0] : lock.date;
         }
         const enabledClass = lock.enabled ? 'bg-emerald-500' : 'bg-gray-300';
         const rowBg = idx % 2 === 0 ? '' : 'bg-gray-50';
-
-        html += `<tr class="border-t ${rowBg} hover:bg-red-50">`;
-        html += `<td class="px-3 py-2 font-medium">${courtLabel}</td>`;
-        html += `<td class="px-3 py-2 font-mono">${timeLabel}</td>`;
-        html += `<td class="px-3 py-2">${periodLabel}</td>`;
-        html += `<td class="px-3 py-2">${lock.reason || '-'}</td>`;
-        html += `<td class="px-3 py-2 text-center"><button onclick="toggleCourtLock('${lock.id}','${currentLockTab}')" class="w-10 h-5 rounded-full ${enabledClass} relative cursor-pointer transition-colors"><span class="absolute top-0.5 ${lock.enabled ? 'right-0.5' : 'left-0.5'} w-4 h-4 bg-white rounded-full shadow transition-all"></span></button></td>`;
-        html += `<td class="px-3 py-2 text-center"><button onclick="deleteCourtLock('${lock.id}','${currentLockTab}')" class="text-red-500 hover:text-red-700 cursor-pointer" title="XÃ³a"><i class="fa-solid fa-trash-can"></i></button></td>`;
+        html += '<tr class="border-t ' + rowBg + ' hover:bg-red-50">';
+        html += '<td class="px-3 py-2 font-medium">' + courtLabel + '</td>';
+        html += '<td class="px-3 py-2 font-mono">' + timeLabel + '</td>';
+        html += '<td class="px-3 py-2">' + periodLabel + '</td>';
+        html += '<td class="px-3 py-2">' + (lock.reason || '-') + '</td>';
+        html += '<td class="px-3 py-2 text-center"><button onclick="toggleCourtLock(\'' + lock.id + '\',\'' + currentLockTab + '\')" class="w-10 h-5 rounded-full ' + enabledClass + ' relative cursor-pointer transition-colors"><span class="absolute top-0.5 ' + (lock.enabled ? 'right-0.5' : 'left-0.5') + ' w-4 h-4 bg-white rounded-full shadow transition-all"></span></button></td>';
+        html += '<td class="px-3 py-2 text-center"><button onclick="deleteCourtLock(\'' + lock.id + '\',\'' + currentLockTab + '\')" class="text-red-500 hover:text-red-700 cursor-pointer" title="Xóa"><i class="fa-solid fa-trash-can"></i></button></td>';
         html += '</tr>';
     });
-
     html += '</tbody></table>';
     container.innerHTML = html;
 }
-
 // --- MODAL ---
 
 function openLockModal() {
     editingLockId = null;
-    document.getElementById('lock-modal-title').textContent = 'ThÃªm KhÃ³a SÃ¢n';
-    // Reset form
+    document.getElementById('lock-modal-title').textContent = 'Thêm Khóa Sân';
     document.querySelector('input[name="lock-type"][value="fixed"]').checked = true;
     document.getElementById('lock-court-all').checked = true;
     document.getElementById('lock-start-time').value = '12:00';
@@ -8441,8 +8602,7 @@ function openLockModal() {
     document.getElementById('lock-reason').value = '';
     document.querySelectorAll('.lock-day-check').forEach(cb => cb.checked = true);
     const today = new Date();
-    document.getElementById('lock-date-input').value = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
-    
+    document.getElementById('lock-date-input').value = today.getFullYear() + '-' + String(today.getMonth()+1).padStart(2,'0') + '-' + String(today.getDate()).padStart(2,'0');
     populateLockCourtCheckboxes();
     toggleLockTypeFields();
     toggleLockCourtAll();
@@ -8457,19 +8617,16 @@ function populateLockCourtCheckboxes() {
     const listEl = document.getElementById('lock-court-list');
     const excludeEl = document.getElementById('lock-exclude-list');
     if (!listEl || !excludeEl) return;
-
     let allCourts = [];
     for (const [group, courts] of Object.entries(COURT_MAP)) {
-        if (group === 'KhÃ¡c') continue;
+        if (group === 'Khác') continue;
         courts.forEach(c => allCourts.push(c));
     }
-
-    listEl.innerHTML = allCourts.map(c => 
-        `<label class="flex items-center gap-1.5 cursor-pointer text-xs"><input type="checkbox" value="${c}" class="lock-court-check text-red-600 rounded"> ${c}</label>`
+    listEl.innerHTML = allCourts.map(c =>
+        '<label class="flex items-center gap-1.5 cursor-pointer text-xs"><input type="checkbox" value="' + c + '" class="lock-court-check text-red-600 rounded"> ' + c + '</label>'
     ).join('');
-
     excludeEl.innerHTML = allCourts.map(c =>
-        `<label class="flex items-center gap-1.5 cursor-pointer text-xs"><input type="checkbox" value="${c}" class="lock-exclude-check text-amber-600 rounded"> ${c}</label>`
+        '<label class="flex items-center gap-1.5 cursor-pointer text-xs"><input type="checkbox" value="' + c + '" class="lock-exclude-check text-amber-600 rounded"> ' + c + '</label>'
     ).join('');
 }
 
@@ -8486,76 +8643,55 @@ function toggleLockCourtAll() {
 }
 
 async function saveLock() {
-    if (!db) return Swal.fire('Lá»—i', 'KhÃ´ng káº¿t ná»‘i Firebase!', 'error');
-
+    if (!db) return Swal.fire('Lỗi', 'Không kết nối Firebase!', 'error');
     const lockType = document.querySelector('input[name="lock-type"]:checked').value;
     const isAll = document.getElementById('lock-court-all').checked;
-    
-    let courts = [];
-    let excludeCourts = [];
+    let courts = [], excludeCourts = [];
     if (isAll) {
         courts = ['all'];
         document.querySelectorAll('.lock-exclude-check:checked').forEach(cb => excludeCourts.push(cb.value));
     } else {
         document.querySelectorAll('.lock-court-check:checked').forEach(cb => courts.push(cb.value));
-        if (courts.length === 0) return Swal.fire('Lá»—i', 'Vui lÃ²ng chá»n Ã­t nháº¥t 1 sÃ¢n!', 'warning');
+        if (courts.length === 0) return Swal.fire('Lỗi', 'Vui lòng chọn ít nhất 1 sân!', 'warning');
     }
-
     const startParts = document.getElementById('lock-start-time').value.split(':');
     const endParts = document.getElementById('lock-end-time').value.split(':');
     const startHour = parseInt(startParts[0]), startMin = parseInt(startParts[1] || 0);
     const endHour = parseInt(endParts[0]), endMin = parseInt(endParts[1] || 0);
-
     if (startHour * 60 + startMin >= endHour * 60 + endMin) {
-        return Swal.fire('Lá»—i', 'Giá» báº¯t Ä‘áº§u pháº£i nhá» hÆ¡n giá» káº¿t thÃºc!', 'warning');
+        return Swal.fire('Lỗi', 'Giờ bắt đầu phải nhỏ hơn giờ kết thúc!', 'warning');
     }
-
     const reason = document.getElementById('lock-reason').value.trim();
     const lockId = editingLockId || (lockType === 'fixed' ? 'fl_' : 'dl_') + Date.now();
-
-    const lockObj = {
-        id: lockId,
-        courts,
-        excludeCourts,
-        startHour, startMin,
-        endHour, endMin,
-        reason,
-        enabled: true
-    };
-
+    const lockObj = { id: lockId, courts, excludeCourts, startHour, startMin, endHour, endMin, reason, enabled: true };
     if (lockType === 'fixed') {
         const days = [];
         document.querySelectorAll('.lock-day-check:checked').forEach(cb => days.push(parseInt(cb.value)));
-        if (days.length === 0) return Swal.fire('Lá»—i', 'Chá»n Ã­t nháº¥t 1 ngÃ y trong tuáº§n!', 'warning');
+        if (days.length === 0) return Swal.fire('Lỗi', 'Chọn ít nhất 1 ngày trong tuần!', 'warning');
         lockObj.daysOfWeek = days;
     } else {
         const dateVal = document.getElementById('lock-date-input').value;
-        if (!dateVal) return Swal.fire('Lá»—i', 'Vui lÃ²ng chá»n ngÃ y!', 'warning');
+        if (!dateVal) return Swal.fire('Lỗi', 'Vui lòng chọn ngày!', 'warning');
         lockObj.date = dateVal;
     }
-
     try {
-        Swal.fire({ title: 'Äang lÆ°u...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+        Swal.fire({ title: 'Đang lưu...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
         const docRef = db.collection('config').doc('courtLocks');
         const doc = await docRef.get();
         const data = doc.exists ? doc.data() : { fixedLocks: [], dateLocks: [] };
-
         if (lockType === 'fixed') {
             const idx = data.fixedLocks.findIndex(l => l.id === lockId);
-            if (idx >= 0) data.fixedLocks[idx] = lockObj;
-            else data.fixedLocks.push(lockObj);
+            if (idx >= 0) data.fixedLocks[idx] = lockObj; else data.fixedLocks.push(lockObj);
         } else {
             const idx = data.dateLocks.findIndex(l => l.id === lockId);
-            if (idx >= 0) data.dateLocks[idx] = lockObj;
-            else data.dateLocks.push(lockObj);
+            if (idx >= 0) data.dateLocks[idx] = lockObj; else data.dateLocks.push(lockObj);
         }
-
         await docRef.set(data);
         closeLockModal();
-        Swal.fire({ icon: 'success', title: 'ÄÃ£ lÆ°u khÃ³a sÃ¢n!', timer: 1500, showConfirmButton: false });
+        Swal.fire({ icon: 'success', title: 'Đã lưu khóa sân!', timer: 1500, showConfirmButton: false });
     } catch(e) {
         console.error('Error saving lock:', e);
-        Swal.fire('Lá»—i', 'KhÃ´ng thá»ƒ lÆ°u. Vui lÃ²ng thá»­ láº¡i!', 'error');
+        Swal.fire('Lỗi', 'Không thể lưu. Vui lòng thử lại!', 'error');
     }
 }
 
@@ -8575,13 +8711,8 @@ async function toggleCourtLock(lockId, type) {
 
 async function deleteCourtLock(lockId, type) {
     const confirm = await Swal.fire({
-        icon: 'warning',
-        title: 'XÃ³a khÃ³a sÃ¢n?',
-        text: 'HÃ nh Ä‘á»™ng nÃ y khÃ´ng thá»ƒ hoÃ n tÃ¡c.',
-        showCancelButton: true,
-        confirmButtonText: 'XÃ³a',
-        cancelButtonText: 'Há»§y',
-        confirmButtonColor: '#dc2626'
+        icon: 'warning', title: 'Xóa khóa sân?', text: 'Hành động này không thể hoàn tác.',
+        showCancelButton: true, confirmButtonText: 'Xóa', cancelButtonText: 'Hủy', confirmButtonColor: '#dc2626'
     });
     if (!confirm.isConfirmed) return;
     try {
@@ -8589,16 +8720,12 @@ async function deleteCourtLock(lockId, type) {
         const doc = await docRef.get();
         if (!doc.exists) return;
         const data = doc.data();
-        if (type === 'fixed') {
-            data.fixedLocks = (data.fixedLocks || []).filter(l => l.id !== lockId);
-        } else {
-            data.dateLocks = (data.dateLocks || []).filter(l => l.id !== lockId);
-        }
+        if (type === 'fixed') { data.fixedLocks = (data.fixedLocks || []).filter(l => l.id !== lockId); }
+        else { data.dateLocks = (data.dateLocks || []).filter(l => l.id !== lockId); }
         await docRef.set(data);
-        Swal.fire({ icon: 'success', title: 'ÄÃ£ xÃ³a!', timer: 1000, showConfirmButton: false });
+        Swal.fire({ icon: 'success', title: 'Đã xóa!', timer: 1000, showConfirmButton: false });
     } catch(e) {
         console.error('Error deleting lock:', e);
-        Swal.fire('Lá»—i', 'KhÃ´ng thá»ƒ xÃ³a!', 'error');
+        Swal.fire('Lỗi', 'Không thể xóa!', 'error');
     }
 }
-
