@@ -7578,6 +7578,8 @@ function csUpdateTitle() {
     }
 }
 
+let courtPaymentFilter = 'all'; // 'all' | 'paid' | 'partial' | 'unpaid'
+
 function filterCourtTimeline(filter) {
     courtStatusFilter = filter;
     // Update pill styles
@@ -7597,6 +7599,123 @@ function filterCourtTimeline(filter) {
         activeBtn.className = 'cs-filter-pill px-3 py-1.5 rounded-lg font-bold bg-white text-teal-700 shadow-xs cursor-pointer';
     }
     renderCourtTimeline();
+}
+
+function filterCourtPayment(payFilter) {
+    // Toggle back to 'all' if clicking the already active specific filter
+    if (courtPaymentFilter === payFilter && payFilter !== 'all') {
+        courtPaymentFilter = 'all';
+    } else {
+        courtPaymentFilter = payFilter;
+    }
+
+    const baseClasses = {
+        'all': 'cs-pay-pill px-2.5 py-1.5 rounded-lg font-semibold text-gray-600 hover:bg-gray-200 cursor-pointer',
+        'paid': 'cs-pay-pill px-2.5 py-1.5 rounded-lg font-semibold text-emerald-700 hover:bg-emerald-50 cursor-pointer flex items-center gap-1',
+        'partial': 'cs-pay-pill px-2.5 py-1.5 rounded-lg font-semibold text-amber-700 hover:bg-amber-50 cursor-pointer flex items-center gap-1',
+        'unpaid': 'cs-pay-pill px-2.5 py-1.5 rounded-lg font-semibold text-rose-700 hover:bg-rose-50 cursor-pointer flex items-center gap-1'
+    };
+    const activeClasses = {
+        'all': 'cs-pay-pill px-2.5 py-1.5 rounded-lg font-bold bg-white text-teal-700 shadow-xs cursor-pointer',
+        'paid': 'cs-pay-pill px-2.5 py-1.5 rounded-lg font-bold bg-emerald-600 text-white shadow-xs cursor-pointer flex items-center gap-1',
+        'partial': 'cs-pay-pill px-2.5 py-1.5 rounded-lg font-bold bg-amber-500 text-white shadow-xs cursor-pointer flex items-center gap-1',
+        'unpaid': 'cs-pay-pill px-2.5 py-1.5 rounded-lg font-bold bg-rose-500 text-white shadow-xs cursor-pointer flex items-center gap-1'
+    };
+    const pillIds = {
+        'all': 'cs-pay-all',
+        'paid': 'cs-pay-paid',
+        'partial': 'cs-pay-partial',
+        'unpaid': 'cs-pay-unpaid'
+    };
+
+    for (const [key, id] of Object.entries(pillIds)) {
+        const el = document.getElementById(id);
+        if (el) {
+            el.className = (key === courtPaymentFilter) ? activeClasses[key] : baseClasses[key];
+        }
+    }
+
+    renderCourtTimeline();
+}
+
+function normalizePaymentStatus(txStatus) {
+    if (txStatus === 'paid' || txStatus === 'overpaid') return 'paid';
+    if (txStatus === 'partial') return 'partial';
+    return 'unpaid';
+}
+
+function getPaymentVisuals(booking, timeStatus) {
+    const cat = booking.payCategory || normalizePaymentStatus(booking.txStatus);
+    let barClass = '';
+    let iconHtml = '';
+    let badgeLabel = '';
+    let statusLabel = '';
+    let chipClass = '';
+    let upcomingCardClass = '';
+    let badgeHtml = '';
+
+    if (cat === 'paid') {
+        barClass = 'bg-emerald-600 text-white border-l-4 border-emerald-900';
+        iconHtml = '<i class="fa-solid fa-circle-check text-[10px] text-emerald-100 mr-1 shrink-0"></i>';
+        badgeLabel = 'Đã TT';
+        statusLabel = '✅ Đã thanh toán';
+        chipClass = 'bg-emerald-100 text-emerald-800 border-l-2 border-emerald-600';
+        upcomingCardClass = 'bg-emerald-50/70 border-emerald-200 hover:bg-emerald-100/80';
+        badgeHtml = '<span class="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 text-[9px] font-bold shrink-0">✓ Đã TT</span>';
+    } else if (cat === 'partial') {
+        barClass = 'bg-amber-500 text-white border-l-4 border-amber-800';
+        iconHtml = '<i class="fa-solid fa-circle-half-stroke text-[10px] text-amber-100 mr-1 shrink-0"></i>';
+        badgeLabel = '1 phần';
+        statusLabel = '⏳ Thanh toán 1 phần';
+        chipClass = 'bg-amber-100 text-amber-800 border-l-2 border-amber-600';
+        upcomingCardClass = 'bg-amber-50/70 border-amber-200 hover:bg-amber-100/80';
+        badgeHtml = '<span class="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[9px] font-bold shrink-0">⏳ 1 phần</span>';
+    } else {
+        barClass = 'bg-rose-500 text-white border-l-4 border-rose-900';
+        iconHtml = '<i class="fa-solid fa-circle-exclamation text-[10px] text-rose-100 mr-1 shrink-0"></i>';
+        badgeLabel = 'Chưa TT';
+        statusLabel = '❌ Chưa thanh toán';
+        chipClass = 'bg-rose-100 text-rose-800 border-l-2 border-rose-600';
+        upcomingCardClass = 'bg-rose-50/70 border-rose-200 hover:bg-rose-100/80';
+        badgeHtml = '<span class="px-1.5 py-0.5 rounded bg-rose-100 text-rose-800 text-[9px] font-bold shrink-0">! Chưa TT</span>';
+    }
+
+    let pulseDot = '';
+    if (timeStatus === 'active') {
+        barClass += ' ring-2 ring-teal-300 shadow-md';
+        pulseDot = '<span class="w-1.5 h-1.5 rounded-full bg-white animate-ping mr-1 shrink-0" title="Đang diễn ra"></span>';
+    } else if (timeStatus === 'completed') {
+        barClass += ' opacity-60 saturate-75';
+    }
+
+    return { barClass, iconHtml, pulseDot, badgeLabel, statusLabel, chipClass, upcomingCardClass, badgeHtml, cat };
+}
+
+function updatePaymentStatsUI(bookingsList) {
+    let paidCount = 0;
+    let partialCount = 0;
+    let unpaidCount = 0;
+
+    (bookingsList || []).forEach(b => {
+        const cat = b.payCategory || normalizePaymentStatus(b.txStatus);
+        if (cat === 'paid') paidCount++;
+        else if (cat === 'partial') partialCount++;
+        else unpaidCount++;
+    });
+
+    const elPaidPill = document.getElementById('cs-pay-count-paid');
+    const elPartialPill = document.getElementById('cs-pay-count-partial');
+    const elUnpaidPill = document.getElementById('cs-pay-count-unpaid');
+    if (elPaidPill) elPaidPill.textContent = paidCount;
+    if (elPartialPill) elPartialPill.textContent = partialCount;
+    if (elUnpaidPill) elUnpaidPill.textContent = unpaidCount;
+
+    const elStatPaid = document.getElementById('cs-stat-paid');
+    const elStatPartial = document.getElementById('cs-stat-partial');
+    const elStatUnpaid = document.getElementById('cs-stat-unpaid');
+    if (elStatPaid) elStatPaid.textContent = `${paidCount} lịch`;
+    if (elStatPartial) elStatPartial.textContent = `${partialCount} lịch`;
+    if (elStatUnpaid) elStatUnpaid.textContent = `${unpaidCount} lịch`;
 }
 
 function getFilteredCourts() {
@@ -7818,6 +7937,15 @@ function getBookingsForDate(targetDate) {
                 }
             }
 
+            const txTotal = tx.totalAmount || 0;
+            const rawStatus = tx.status || 'paid';
+            const txPaid = tx.paidAmount !== undefined ? tx.paidAmount : (rawStatus === 'paid' ? txTotal : 0);
+            const txRemaining = tx.remainingAmount !== undefined ? tx.remainingAmount : Math.max(0, txTotal - txPaid);
+            let effectiveStatus = rawStatus;
+            if (txPaid > 0 && txRemaining > 0) effectiveStatus = 'partial';
+            else if (txPaid >= txTotal && txTotal > 0 && rawStatus !== 'overpaid') effectiveStatus = 'paid';
+            else if (rawStatus === 'unpaid' && txPaid === 0) effectiveStatus = 'unpaid';
+
             bookings.push({
                 court: courtName,
                 sport: sport,
@@ -7830,7 +7958,11 @@ function getBookingsForDate(targetDate) {
                 invoiceId: tx.id || tx.docId || '',
                 totalPrice: item.total || item.price || 0,
                 duration: item.duration || ((eh * 60 + em) - (sh * 60 + sm)) / 60,
-                txStatus: tx.status || 'unpaid',
+                txStatus: effectiveStatus,
+                payCategory: normalizePaymentStatus(effectiveStatus),
+                txTotal: txTotal,
+                txPaid: txPaid,
+                txRemaining: txRemaining,
                 note: tx.note || ''
             });
         });
@@ -7865,10 +7997,16 @@ function renderCourtTimeline() {
     if (courtViewMode === 'week') { renderWeekView(); return; }
     if (courtViewMode === 'month') { renderMonthView(); return; }
 
-    // DAY VIEW (original logic)
+    // DAY VIEW
     const targetDate = courtStatusDate;
     const courts = getFilteredCourts();
-    const bookings = getBookingsForDate(targetDate);
+    const allDayBookings = getBookingsForDate(targetDate);
+    const sportFilteredBookings = allDayBookings.filter(b => courts.some(c => c.name === b.court || isSameCourt(c.name, b.court)));
+    updatePaymentStatsUI(sportFilteredBookings);
+
+    const bookings = courtPaymentFilter === 'all'
+        ? sportFilteredBookings
+        : sportFilteredBookings.filter(b => b.payCategory === courtPaymentFilter);
 
     // Render time header (6:00 - 22:00)
     const headerEl = document.getElementById('timeline-header');
@@ -7895,11 +8033,7 @@ function renderCourtTimeline() {
         }
     }
     // Last hour label
-    if (csTimeInterval === 30) {
-        headerHtml += `<div class="text-[10px] text-gray-500 font-mono text-center border-r border-gray-200" style="width:${100/SLOTS}%; min-width:${100/SLOTS}%">${END_HOUR}:00</div>`;
-    } else {
-        headerHtml += `<div class="text-[10px] text-gray-500 font-mono text-center border-r border-gray-200" style="width:${100/SLOTS}%; min-width:${100/SLOTS}%">${END_HOUR}:00</div>`;
-    }
+    headerHtml += `<div class="text-[10px] text-gray-500 font-mono text-center border-r border-gray-200" style="width:${100/SLOTS}%; min-width:${100/SLOTS}%">${END_HOUR}:00</div>`;
     headerEl.innerHTML = headerHtml;
 
     // Current time indicator position
@@ -7979,29 +8113,27 @@ function renderCourtTimeline() {
             const widthPct = ((clampedEnd - clampedStart) / TOTAL_HOURS) * 100;
 
             const status = getBookingStatus(b);
-            let barClass = '';
             if (status === 'active') {
-                barClass = 'bg-emerald-500 text-white';
                 activeCourts.add(court.name);
                 activeCount++;
-            } else if (status === 'upcoming') {
-                barClass = 'bg-blue-500 text-white';
+            } else if (status === 'upcoming' || status === 'scheduled') {
                 upcomingCount++;
-            } else if (status === 'completed') {
-                barClass = 'bg-gray-300 text-gray-600';
-            } else {
-                // 'scheduled' for non-today dates
-                barClass = 'bg-indigo-400 text-white';
             }
 
+            const vis = getPaymentVisuals(b, status);
             const timeLabel = `${String(b.startHour).padStart(2,'0')}:${String(b.startMin).padStart(2,'0')}-${String(b.endHour).padStart(2,'0')}:${String(b.endMin).padStart(2,'0')}`;
             const displayName = b.customerName.length > 12 ? b.customerName.substring(0, 12) + '…' : b.customerName;
+            const debtNote = b.txRemaining > 0 ? ` (Còn nợ: ${b.txRemaining.toLocaleString('vi-VN')} ₫)` : '';
+            const showInlineTag = widthPct >= 9;
 
-            bodyHtml += `<div class="absolute top-1 bottom-1 rounded ${barClass} flex items-center px-1.5 cursor-pointer z-10 transition-all hover:opacity-90 hover:shadow-md timeline-bar" `;
+            bodyHtml += `<div class="absolute top-1 bottom-1 rounded ${vis.barClass} flex items-center gap-0.5 px-1.5 cursor-pointer z-10 transition-all hover:opacity-95 hover:shadow-md timeline-bar" `;
             bodyHtml += `style="left:${Math.max(0, leftPct)}%; width:${Math.min(widthPct, 100 - leftPct)}%" `;
             bodyHtml += `onclick="showBookingDetail('${b.invoiceId.replace(/'/g, "\\'")}', '${b.court.replace(/'/g, "\\'")}', '${timeLabel}')" `;
-            bodyHtml += `title="${b.customerName} (${timeLabel})\nMã: ${b.invoiceId}">`;
-            bodyHtml += `<span class="text-[10px] font-bold truncate leading-tight">${displayName}</span>`;
+            bodyHtml += `title="👤 ${b.customerName} (${timeLabel})\n💳 ${vis.statusLabel}${debtNote}\n📄 Mã phiếu: ${b.invoiceId}">`;
+            bodyHtml += `${vis.pulseDot}${vis.iconHtml}<span class="text-[10px] font-bold truncate leading-tight">${displayName}</span>`;
+            if (showInlineTag) {
+                bodyHtml += `<span class="ml-auto text-[8px] font-extrabold bg-black/20 px-1 py-0.5 rounded leading-none shrink-0">${vis.badgeLabel}</span>`;
+            }
             bodyHtml += `</div>`;
         });
 
@@ -8055,10 +8187,10 @@ function renderUpcomingList(bookings) {
             return startMin > currentMinutes;
         }).sort((a, b) => (a.startHour * 60 + a.startMin) - (b.startHour * 60 + b.startMin));
     } else {
-        upcomingBookings = bookings.sort((a, b) => (a.startHour * 60 + a.startMin) - (b.startHour * 60 + b.startMin));
+        upcomingBookings = bookings.slice().sort((a, b) => (a.startHour * 60 + a.startMin) - (b.startHour * 60 + b.startMin));
     }
 
-    upcomingBookings = upcomingBookings.slice(0, 5);
+    upcomingBookings = upcomingBookings.slice(0, 6);
 
     if (upcomingBookings.length === 0) {
         listEl.innerHTML = '<div class="text-xs text-gray-400 italic py-2">Không có lịch sắp tới.</div>';
@@ -8067,12 +8199,20 @@ function renderUpcomingList(bookings) {
 
     let html = '';
     upcomingBookings.forEach(b => {
-        const timeLabel = `${String(b.startHour).padStart(2,'0')}:${String(b.startMin).padStart(2,'0')} - ${String(b.endHour).padStart(2,'0')}:${String(b.endMin).padStart(2,'0')}`;
-        html += `<div class="flex items-center gap-2 p-2 bg-amber-50 rounded border border-amber-100">`;
-        html += `<i class="fa-solid fa-clock text-amber-500 text-[10px]"></i>`;
+        const timeLabel = `${String(b.startHour).padStart(2,'0')}:${String(b.startMin).padStart(2,'0')}-${String(b.endHour).padStart(2,'0')}:${String(b.endMin).padStart(2,'0')}`;
+        const vis = getPaymentVisuals(b, 'upcoming');
+        html += `<div onclick="showBookingDetail('${b.invoiceId.replace(/'/g, "\\'")}', '${b.court.replace(/'/g, "\\'")}', '${timeLabel}')" class="flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition ${vis.upcomingCardClass}">`;
         html += `<div class="flex-1 min-w-0">`;
+        html += `<div class="flex items-center justify-between gap-1">`;
         html += `<div class="text-xs font-bold text-gray-800 truncate">${b.customerName}</div>`;
-        html += `<div class="text-[10px] text-gray-500">${b.court} · ${timeLabel}</div>`;
+        html += `${vis.badgeHtml}`;
+        html += `</div>`;
+        html += `<div class="text-[10px] text-gray-600 mt-0.5 flex items-center justify-between">`;
+        html += `<span><i class="fa-solid fa-location-dot text-teal-600 mr-0.5"></i>${b.court} · ${timeLabel}</span>`;
+        if (b.txRemaining > 0) {
+            html += `<span class="text-rose-600 font-semibold">Nợ: ${b.txRemaining.toLocaleString('vi-VN')}đ</span>`;
+        }
+        html += `</div>`;
         html += `</div>`;
         html += `</div>`;
     });
@@ -8087,15 +8227,25 @@ function showBookingDetail(invoiceId, courtName, timeLabel) {
         return;
     }
 
+    const totalNum = tx.totalAmount || 0;
+    const rawStatus = tx.status || 'paid';
+    const paidNum = tx.paidAmount !== undefined ? tx.paidAmount : (rawStatus === 'paid' ? totalNum : 0);
+    const remNum = tx.remainingAmount !== undefined ? tx.remainingAmount : Math.max(0, totalNum - paidNum);
+    let effStatus = rawStatus;
+    if (paidNum > 0 && remNum > 0) effStatus = 'partial';
+    else if (paidNum >= totalNum && totalNum > 0 && rawStatus !== 'overpaid') effStatus = 'paid';
+    else if (rawStatus === 'unpaid' && paidNum === 0) effStatus = 'unpaid';
+
     const statusMap = {
-        'paid': '<span class="text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full text-xs font-bold">✅ Đã TT</span>',
-        'partial': '<span class="text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full text-xs font-bold">⏳ TT 1 phần</span>',
-        'unpaid': '<span class="text-red-700 bg-red-100 px-2 py-0.5 rounded-full text-xs font-bold">❌ Chưa TT</span>',
-        'overpaid': '<span class="text-blue-700 bg-blue-100 px-2 py-0.5 rounded-full text-xs font-bold">💰 Dư</span>',
+        'paid': '<span class="text-emerald-700 bg-emerald-100 px-2.5 py-0.5 rounded-full text-xs font-bold">✅ Đã thanh toán</span>',
+        'partial': '<span class="text-amber-700 bg-amber-100 px-2.5 py-0.5 rounded-full text-xs font-bold">⏳ Thanh toán 1 phần</span>',
+        'unpaid': '<span class="text-rose-700 bg-rose-100 px-2.5 py-0.5 rounded-full text-xs font-bold">❌ Chưa thanh toán</span>',
+        'overpaid': '<span class="text-blue-700 bg-blue-100 px-2.5 py-0.5 rounded-full text-xs font-bold">💰 Trả thừa</span>',
     };
-    const statusBadge = statusMap[tx.status] || tx.status;
-    const totalFormatted = (tx.totalAmount || 0).toLocaleString('vi-VN') + ' ₫';
-    const paidFormatted = (tx.paidAmount || 0).toLocaleString('vi-VN') + ' ₫';
+    const statusBadge = statusMap[effStatus] || effStatus;
+    const totalFormatted = totalNum.toLocaleString('vi-VN') + ' ₫';
+    const paidFormatted = paidNum.toLocaleString('vi-VN') + ' ₫';
+    const remFormatted = remNum.toLocaleString('vi-VN') + ' ₫';
 
     Swal.fire({
         title: `<div class="text-left"><div class="text-base font-bold text-gray-800"><i class="fa-solid fa-receipt text-teal-600 mr-1"></i> Chi tiết đặt sân</div></div>`,
@@ -8103,7 +8253,7 @@ function showBookingDetail(invoiceId, courtName, timeLabel) {
             <div class="text-left space-y-3 text-sm">
                 <div class="bg-gray-50 p-3 rounded-lg border">
                     <div class="grid grid-cols-2 gap-2">
-                        <div><span class="text-gray-500 text-xs">Mã phiếu:</span><br><span class="font-mono font-bold text-indigo-700">${tx.id}</span></div>
+                        <div><span class="text-gray-500 text-xs">Mã phiếu:</span><br><span class="font-mono font-bold text-indigo-700">${tx.id || tx.docId}</span></div>
                         <div class="text-right"><span class="text-gray-500 text-xs">Trạng thái:</span><br>${statusBadge}</div>
                     </div>
                 </div>
@@ -8115,9 +8265,10 @@ function showBookingDetail(invoiceId, courtName, timeLabel) {
                     <div><span class="text-gray-500 text-xs block">Sân:</span><span class="font-semibold text-teal-700">${courtName}</span></div>
                     <div><span class="text-gray-500 text-xs block">Giờ:</span><span class="font-mono font-bold">${timeLabel}</span></div>
                 </div>
-                <div class="border-t pt-2 grid grid-cols-2 gap-3">
+                <div class="border-t pt-2 grid grid-cols-3 gap-2">
                     <div><span class="text-gray-500 text-xs block">Tổng phiếu:</span><span class="font-bold text-blue-800">${totalFormatted}</span></div>
-                    <div><span class="text-gray-500 text-xs block">Đã thanh toán:</span><span class="font-bold text-emerald-700">${paidFormatted}</span></div>
+                    <div><span class="text-gray-500 text-xs block">Đã trả:</span><span class="font-bold text-emerald-700">${paidFormatted}</span></div>
+                    <div><span class="text-gray-500 text-xs block">Còn nợ:</span><span class="font-bold ${remNum > 0 ? 'text-rose-600' : 'text-gray-400'}">${remFormatted}</span></div>
                 </div>
             </div>
         `,
@@ -8129,13 +8280,10 @@ function showBookingDetail(invoiceId, courtName, timeLabel) {
         customClass: { popup: 'rounded-xl' }
     }).then(result => {
         if (result.isConfirmed) {
-            // Navigate to the report and highlight this invoice
             switchTab('reports');
         }
     });
 }
-
-
 
 
 // ==========================================
@@ -8155,7 +8303,15 @@ function renderWeekView() {
     const TOTAL_HOURS = END_HOUR - START_HOUR;
 
     const allBookings = {};
-    weekDays.forEach(day => { allBookings[day] = getBookingsForDate(day); });
+    let weekSportBookings = [];
+    weekDays.forEach(day => {
+        const dayAll = getBookingsForDate(day).filter(b => courts.some(c => c.name === b.court || isSameCourt(c.name, b.court)));
+        weekSportBookings = weekSportBookings.concat(dayAll);
+        allBookings[day] = courtPaymentFilter === 'all'
+            ? dayAll
+            : dayAll.filter(b => b.payCategory === courtPaymentFilter);
+    });
+    updatePaymentStatsUI(weekSportBookings);
 
     let headerHtml = '';
     for (let h = START_HOUR; h <= END_HOUR; h++) {
@@ -8225,17 +8381,19 @@ function renderWeekView() {
                 const leftPct = ((clampedStart - START_HOUR) / TOTAL_HOURS) * 100;
                 const widthPct = ((clampedEnd - clampedStart) / TOTAL_HOURS) * 100;
                 const status = isToday ? getBookingStatus(b) : 'scheduled';
-                let barClass = 'bg-indigo-400 text-white';
-                if (status === 'active') { barClass = 'bg-emerald-500 text-white'; activeCourtsSet.add(court.name); totalActive++; }
-                else if (status === 'upcoming') { barClass = 'bg-blue-500 text-white'; totalUpcoming++; }
-                else if (status === 'completed') { barClass = 'bg-gray-300 text-gray-600'; }
+                if (status === 'active') { activeCourtsSet.add(court.name); totalActive++; }
+                else if (status === 'upcoming' || status === 'scheduled') { totalUpcoming++; }
+
+                const vis = getPaymentVisuals(b, status);
                 const timeLabel = `${String(b.startHour).padStart(2,'0')}:${String(b.startMin).padStart(2,'0')}-${String(b.endHour).padStart(2,'0')}:${String(b.endMin).padStart(2,'0')}`;
                 const displayName = b.customerName.length > 10 ? b.customerName.substring(0,10) + '\u2026' : b.customerName;
-                bodyHtml += `<div class="absolute top-0.5 bottom-0.5 rounded ${barClass} flex items-center px-1 cursor-pointer z-10 transition-all hover:opacity-90 hover:shadow-md timeline-bar" `;
+                const debtNote = b.txRemaining > 0 ? ` (Còn nợ: ${b.txRemaining.toLocaleString('vi-VN')} ₫)` : '';
+
+                bodyHtml += `<div class="absolute top-0.5 bottom-0.5 rounded ${vis.barClass} flex items-center px-1 cursor-pointer z-10 transition-all hover:opacity-95 hover:shadow-md timeline-bar" `;
                 bodyHtml += `style="left:${Math.max(0,leftPct)}%;width:${Math.min(widthPct,100-leftPct)}%" `;
                 bodyHtml += `onclick="showBookingDetail('${b.invoiceId.replace(/'/g,"\\'")}','${b.court.replace(/'/g,"\\'")}','${timeLabel}')" `;
-                bodyHtml += `title="${b.customerName} (${timeLabel})\nM\u00e3: ${b.invoiceId}">`;
-                bodyHtml += `<span class="text-[9px] font-bold truncate leading-tight">${displayName}</span>`;
+                bodyHtml += `title="👤 ${b.customerName} (${timeLabel})\n💳 ${vis.statusLabel}${debtNote}\n📄 Mã: ${b.invoiceId}">`;
+                bodyHtml += `${vis.pulseDot}${vis.iconHtml}<span class="text-[9px] font-bold truncate leading-tight">${displayName}</span>`;
                 bodyHtml += `</div>`;
             });
             bodyHtml += `</div></div>`;
@@ -8269,13 +8427,19 @@ function renderMonthView() {
     const todayStr = csFormatDate(new Date());
 
     const monthBookings = {};
+    let allMonthSportBookings = [];
     let totalMonthBookings = 0;
     days.forEach(dayStr => {
         const courtFilter = courts.map(c => c.name);
-        const dayData = getBookingsForDate(dayStr).filter(b => courtFilter.some(cf => cf === b.court || isSameCourt(cf, b.court)));
+        const daySportData = getBookingsForDate(dayStr).filter(b => courtFilter.some(cf => cf === b.court || isSameCourt(cf, b.court)));
+        allMonthSportBookings = allMonthSportBookings.concat(daySportData);
+        const dayData = courtPaymentFilter === 'all'
+            ? daySportData
+            : daySportData.filter(b => b.payCategory === courtPaymentFilter);
         monthBookings[dayStr] = dayData;
         totalMonthBookings += dayData.length;
     });
+    updatePaymentStatsUI(allMonthSportBookings);
 
     headerEl.innerHTML = ['T2','T3','T4','T5','T6','T7','CN'].map(d =>
         `<div class="flex-1 text-center text-xs font-bold text-gray-600 py-1 border-r border-gray-200">${d}</div>`
@@ -8296,9 +8460,9 @@ function renderMonthView() {
         const bookingCount = dayBookings.length;
 
         let bgColor = 'bg-white';
-        if (bookingCount >= 10) bgColor = 'bg-emerald-100';
-        else if (bookingCount >= 5) bgColor = 'bg-emerald-50';
-        else if (bookingCount >= 1) bgColor = 'bg-blue-50';
+        if (bookingCount >= 10) bgColor = 'bg-emerald-50/70';
+        else if (bookingCount >= 5) bgColor = 'bg-teal-50/50';
+        else if (bookingCount >= 1) bgColor = 'bg-slate-50/80';
 
         const todayRing = isToday ? 'ring-2 ring-teal-500 ring-inset' : '';
         const isPast = d < new Date(new Date().setHours(0,0,0,0)) && !isToday;
@@ -8307,7 +8471,7 @@ function renderMonthView() {
         bodyHtml += `<div class="flex justify-between items-start">`;
         bodyHtml += `<span class="text-xs font-bold ${isToday ? 'bg-teal-600 text-white w-5 h-5 rounded-full flex items-center justify-center' : isPast ? 'text-gray-400' : 'text-gray-700'}">${dayNum}</span>`;
         if (bookingCount > 0) {
-            bodyHtml += `<span class="text-[9px] font-bold px-1.5 py-0.5 rounded-full ${bookingCount >= 5 ? 'bg-emerald-600 text-white' : 'bg-blue-100 text-blue-800'}">${bookingCount}</span>`;
+            bodyHtml += `<span class="text-[9px] font-bold px-1.5 py-0.5 rounded-full ${bookingCount >= 5 ? 'bg-teal-600 text-white' : 'bg-gray-200 text-gray-800'}">${bookingCount}</span>`;
         }
         bodyHtml += `</div>`;
 
@@ -8317,8 +8481,9 @@ function renderMonthView() {
             shown.forEach(b => {
                 const shortName = b.customerName.length > 8 ? b.customerName.substring(0,8) + '\u2026' : b.customerName;
                 const timeStr = `${String(b.startHour).padStart(2,'0')}:${String(b.startMin).padStart(2,'0')}`;
-                bodyHtml += `<div class="text-[8px] leading-tight truncate px-1 py-0.5 rounded ${isPast ? 'bg-gray-200 text-gray-500' : 'bg-indigo-100 text-indigo-800'}" title="${b.customerName} - ${b.court} (${timeStr})">`;
-                bodyHtml += `<span class="font-semibold">${timeStr}</span> ${shortName}`;
+                const vis = getPaymentVisuals(b, isPast ? 'completed' : 'scheduled');
+                bodyHtml += `<div class="text-[8px] leading-tight truncate px-1 py-0.5 rounded ${vis.chipClass} ${isPast ? 'opacity-70' : ''}" title="👤 ${b.customerName} - ${b.court} (${timeStr})\n💳 ${vis.statusLabel}">`;
+                bodyHtml += `<span class="font-bold">${timeStr}</span> ${shortName}`;
                 bodyHtml += `</div>`;
             });
             if (bookingCount > 3) {

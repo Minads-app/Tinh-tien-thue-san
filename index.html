@@ -727,6 +727,13 @@
                                     <button onclick="filterCourtTimeline('Bóng đá')" id="cs-filter-bd" class="cs-filter-pill px-3 py-1.5 rounded-lg font-semibold text-gray-600 hover:bg-gray-200 cursor-pointer">Bóng đá</button>
                                     <button onclick="filterCourtTimeline('Hồ bơi')" id="cs-filter-hb" class="cs-filter-pill px-3 py-1.5 rounded-lg font-semibold text-gray-600 hover:bg-gray-200 cursor-pointer">Hồ bơi</button>
                                 </div>
+                                <!-- Payment status filter -->
+                                <div class="flex items-center gap-1 bg-gray-100 p-1 rounded-xl text-xs border border-gray-200">
+                                    <button onclick="filterCourtPayment('all')" id="cs-pay-all" class="cs-pay-pill px-2.5 py-1.5 rounded-lg font-bold bg-white text-teal-700 shadow-xs cursor-pointer">Tất cả TT</button>
+                                    <button onclick="filterCourtPayment('paid')" id="cs-pay-paid" class="cs-pay-pill px-2.5 py-1.5 rounded-lg font-semibold text-emerald-700 hover:bg-emerald-50 cursor-pointer flex items-center gap-1"><i class="fa-solid fa-circle-check text-[10px]"></i>Đã TT <span id="cs-pay-count-paid" class="text-[10px] bg-emerald-100 text-emerald-800 px-1.5 rounded-full">0</span></button>
+                                    <button onclick="filterCourtPayment('partial')" id="cs-pay-partial" class="cs-pay-pill px-2.5 py-1.5 rounded-lg font-semibold text-amber-700 hover:bg-amber-50 cursor-pointer flex items-center gap-1"><i class="fa-solid fa-circle-half-stroke text-[10px]"></i>1 phần <span id="cs-pay-count-partial" class="text-[10px] bg-amber-100 text-amber-800 px-1.5 rounded-full">0</span></button>
+                                    <button onclick="filterCourtPayment('unpaid')" id="cs-pay-unpaid" class="cs-pay-pill px-2.5 py-1.5 rounded-lg font-semibold text-rose-700 hover:bg-rose-50 cursor-pointer flex items-center gap-1"><i class="fa-solid fa-circle-exclamation text-[10px]"></i>Chưa TT <span id="cs-pay-count-unpaid" class="text-[10px] bg-rose-100 text-rose-800 px-1.5 rounded-full">0</span></button>
+                                </div>
                                 <!-- Zoom & Interval controls -->
                                 <div class="flex items-center gap-1 ml-auto">
                                     <div class="flex items-center bg-gray-100 p-1 rounded-xl text-xs border border-gray-200">
@@ -776,16 +783,41 @@
                                 <div class="text-2xl font-black text-amber-800" id="cs-stat-upcoming">0 <span class="text-sm font-medium">lịch</span></div>
                             </div>
                         </div>
+                        <!-- Thống kê Thanh toán -->
+                        <div class="mt-4 pt-3 border-t border-gray-100">
+                            <div class="text-[11px] font-bold text-gray-500 uppercase mb-2 flex items-center gap-1">
+                                <i class="fa-solid fa-wallet text-indigo-500"></i> Phân loại thanh toán
+                            </div>
+                            <div class="space-y-1.5 text-xs">
+                                <div onclick="filterCourtPayment('paid')" class="flex items-center justify-between p-2 rounded-lg bg-emerald-50/80 border border-emerald-200 hover:bg-emerald-100 cursor-pointer transition">
+                                    <span class="font-semibold text-emerald-800 flex items-center gap-1.5"><i class="fa-solid fa-circle-check text-emerald-600"></i> Đã thanh toán</span>
+                                    <span class="font-black text-emerald-700" id="cs-stat-paid">0 lịch</span>
+                                </div>
+                                <div onclick="filterCourtPayment('partial')" class="flex items-center justify-between p-2 rounded-lg bg-amber-50/80 border border-amber-200 hover:bg-amber-100 cursor-pointer transition">
+                                    <span class="font-semibold text-amber-800 flex items-center gap-1.5"><i class="fa-solid fa-circle-half-stroke text-amber-600"></i> TT 1 phần</span>
+                                    <span class="font-black text-amber-700" id="cs-stat-partial">0 lịch</span>
+                                </div>
+                                <div onclick="filterCourtPayment('unpaid')" class="flex items-center justify-between p-2 rounded-lg bg-rose-50/80 border border-rose-200 hover:bg-rose-100 cursor-pointer transition">
+                                    <span class="font-semibold text-rose-800 flex items-center gap-1.5"><i class="fa-solid fa-circle-exclamation text-rose-600"></i> Chưa thanh toán</span>
+                                    <span class="font-black text-rose-700" id="cs-stat-unpaid">0 lịch</span>
+                                </div>
+                            </div>
+                        </div>
                     </div>
 
                     <!-- Legend -->
                     <div class="bg-white p-4 rounded-lg shadow-sm">
-                        <h3 class="text-xs font-bold text-gray-500 uppercase mb-2">Chú thích</h3>
+                        <h3 class="text-xs font-bold text-gray-500 uppercase mb-2">Chú thích màu sắc</h3>
                         <div class="space-y-2 text-xs">
-                            <div class="flex items-center gap-2"><span class="w-4 h-3 rounded bg-emerald-500 inline-block"></span> Đang diễn ra</div>
-                            <div class="flex items-center gap-2"><span class="w-4 h-3 rounded bg-blue-500 inline-block"></span> Sắp tới</div>
-                            <div class="flex items-center gap-2"><span class="w-4 h-3 rounded bg-gray-300 inline-block"></span> Đã kết thúc</div>
-                            <div class="flex items-center gap-2"><span class="w-0.5 h-3 bg-red-500 inline-block"></span> Giờ hiện tại</div>
+                            <div class="flex items-center gap-2"><span class="w-4 h-3.5 rounded bg-emerald-600 border-l-4 border-emerald-900 inline-flex items-center justify-center text-[8px] text-white"><i class="fa-solid fa-check"></i></span> <span class="font-semibold text-emerald-800">Đã thanh toán</span></div>
+                            <div class="flex items-center gap-2"><span class="w-4 h-3.5 rounded bg-amber-500 border-l-4 border-amber-800 inline-flex items-center justify-center text-[8px] text-white"><i class="fa-solid fa-circle-half-stroke"></i></span> <span class="font-semibold text-amber-800">Thanh toán 1 phần</span></div>
+                            <div class="flex items-center gap-2"><span class="w-4 h-3.5 rounded bg-rose-500 border-l-4 border-rose-900 inline-flex items-center justify-center text-[8px] text-white"><i class="fa-solid fa-exclamation"></i></span> <span class="font-semibold text-rose-800">Chưa thanh toán</span></div>
+                            <div class="border-t border-gray-100 my-1.5 pt-1.5 space-y-1.5">
+                                <div class="flex items-center gap-2"><span class="w-4 h-3 rounded bg-teal-500 ring-2 ring-teal-300 inline-flex items-center justify-center"><span class="w-1.5 h-1.5 rounded-full bg-white"></span></span> Đang diễn ra (viền sáng)</div>
+                                <div class="flex items-center gap-2"><span class="w-4 h-3 rounded bg-gray-400 opacity-60 inline-block"></span> Đã qua giờ (hiển thị mờ)</div>
+                                <div class="flex items-center gap-2"><span class="w-4 h-3 rounded lock-bar inline-block"></span> Khóa sân / Bảo trì</div>
+                                <div class="flex items-center gap-2"><span class="w-0.5 h-3 bg-red-500 inline-block ml-1.5 mr-2"></span> Vạch giờ hiện tại</div>
+                            </div>
                         </div>
                     </div>
 

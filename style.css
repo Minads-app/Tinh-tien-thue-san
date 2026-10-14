@@ -124,7 +124,8 @@ body {
     box-shadow: 0 2px 8px rgba(0,0,0,0.2);
 }
 
-.cs-filter-pill {
+.cs-filter-pill,
+.cs-pay-pill {
     transition: all 0.15s ease;
 }
 
