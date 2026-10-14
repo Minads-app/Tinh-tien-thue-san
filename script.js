@@ -8013,6 +8013,9 @@ function renderCourtTimeline() {
     const bodyEl = document.getElementById('timeline-body');
     if (!headerEl || !bodyEl) return;
 
+    const colHeaderEl = document.getElementById('timeline-court-col-header');
+    if (colHeaderEl) colHeaderEl.classList.remove('hidden');
+
     const START_HOUR = siteSettings.operatingStart !== undefined ? siteSettings.operatingStart : 6;
     const END_HOUR = siteSettings.operatingEnd !== undefined ? siteSettings.operatingEnd : 22;
     const TOTAL_HOURS = END_HOUR - START_HOUR;
@@ -8064,14 +8067,14 @@ function renderCourtTimeline() {
         else if (court.group.includes('Hồ bơi')) { sportIcon = 'fa-person-swimming'; sportColor = 'text-cyan-600'; }
 
         bodyHtml += `<div class="flex border-b ${bgClass} relative timeline-row" style="min-height:40px">`;
-        // Court name label
-        bodyHtml += `<div class="w-36 flex-shrink-0 flex items-center gap-1.5 px-2 py-1 border-r text-xs font-semibold text-gray-700 truncate">`;
+        // Court name label (sticky first column)
+        bodyHtml += `<div class="w-36 flex-shrink-0 flex items-center gap-1.5 px-2 py-1 border-r text-xs font-semibold text-gray-700 truncate ${bgClass} timeline-sticky-col">`;
         bodyHtml += `<i class="fa-solid ${sportIcon} ${sportColor} text-[10px]"></i>`;
         bodyHtml += `<span class="truncate">${court.name}</span>`;
         bodyHtml += `</div>`;
 
         // Timeline area
-        bodyHtml += `<div class="flex-1 relative" style="min-height:40px">`;
+        bodyHtml += `<div class="flex-1 relative overflow-hidden" style="min-height:40px">`;
 
         // Grid lines (hour + half-hour markers)
         for (let h = START_HOUR; h < END_HOUR; h++) {
@@ -8294,6 +8297,12 @@ function renderWeekView() {
     const bodyEl = document.getElementById('timeline-body');
     if (!headerEl || !bodyEl) return;
 
+    const colHeaderEl = document.getElementById('timeline-court-col-header');
+    if (colHeaderEl) colHeaderEl.classList.remove('hidden');
+
+    const innerEl = document.getElementById('timeline-inner');
+    if (innerEl) innerEl.style.minWidth = Math.max(800, 800 * csZoomLevel / 100) + 'px';
+
     const courts = getFilteredCourts();
     const weekDays = csGetWeekRange(courtStatusDate);
     const todayStr = csFormatDate(new Date());
@@ -8335,14 +8344,14 @@ function renderWeekView() {
             const borderClass = dIdx === 6 ? 'border-b-2 border-gray-300' : 'border-b';
 
             bodyHtml += `<div class="flex ${borderClass} ${bgClass} relative timeline-row" style="min-height:32px">`;
-            bodyHtml += `<div class="w-36 flex-shrink-0 flex items-center gap-1 px-2 py-0.5 border-r text-[10px] text-gray-600 truncate">`;
+            bodyHtml += `<div class="w-36 flex-shrink-0 flex items-center gap-1 px-2 py-0.5 border-r text-[10px] text-gray-600 truncate ${bgClass} timeline-sticky-col">`;
             if (dIdx === 0) {
                 bodyHtml += `<span class="font-bold text-gray-800 truncate">${court.name}</span>`;
             }
             bodyHtml += `<span class="ml-auto font-mono ${isToday ? 'text-teal-700 font-bold' : ''}">${dayLabel} ${dateShort}</span>`;
             bodyHtml += `</div>`;
 
-            bodyHtml += `<div class="flex-1 relative" style="min-height:32px">`;
+            bodyHtml += `<div class="flex-1 relative overflow-hidden" style="min-height:32px">`;
             for (let h = START_HOUR; h < END_HOUR; h++) {
                 bodyHtml += `<div class="absolute top-0 bottom-0 border-r border-gray-100" style="left:${((h-START_HOUR)/TOTAL_HOURS)*100}%"></div>`;
             }
@@ -8421,6 +8430,9 @@ function renderMonthView() {
     const headerEl = document.getElementById('timeline-header');
     const bodyEl = document.getElementById('timeline-body');
     if (!headerEl || !bodyEl) return;
+
+    const colHeaderEl = document.getElementById('timeline-court-col-header');
+    if (colHeaderEl) colHeaderEl.classList.add('hidden');
 
     const courts = getFilteredCourts();
     const { days, firstDay, year, month } = csGetMonthDays(courtStatusDate);
