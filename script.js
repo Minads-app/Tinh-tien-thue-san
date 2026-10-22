@@ -115,19 +115,32 @@ async function fetchVietQrAsBase64(qrUrl) {
     if (qrUrl.startsWith('data:image/png;base64,')) {
         return qrUrl;
     }
+    // Chuyển -compact.png sang -compact.svg để tránh lỗi 301 Redirect thiếu CORS header của VietQR
+    const normalizedUrl = qrUrl.replace(/-compact\.png\b/g, '-compact.svg');
+    if (qrImageCache[normalizedUrl]) {
+        return qrImageCache[normalizedUrl];
+    }
     if (qrImageCache[qrUrl]) {
         return qrImageCache[qrUrl];
     }
     try {
-        const response = await fetch(qrUrl);
-        if (!response.ok) throw new Error('HTTP ' + response.status);
+        let response;
+        try {
+            response = await fetch(normalizedUrl);
+            if (!response.ok) throw new Error('HTTP ' + response.status);
+        } catch (directErr) {
+            // Fallback qua proxy nội bộ trên server nếu trình duyệt chặn CORS trực tiếp
+            response = await fetch('/api/vietqr?url=' + encodeURIComponent(normalizedUrl));
+            if (!response.ok) throw directErr;
+        }
         
         const contentType = response.headers.get('content-type') || '';
-        if (contentType.includes('svg') || contentType.includes('xml')) {
+        if (contentType.includes('svg') || contentType.includes('xml') || normalizedUrl.includes('.svg')) {
             const svgText = await response.text();
             try {
                 const pngDataUrl = await svgToPngBase64(svgText);
                 if (pngDataUrl && pngDataUrl.length > 1000) {
+                    qrImageCache[normalizedUrl] = pngDataUrl;
                     qrImageCache[qrUrl] = pngDataUrl;
                     return pngDataUrl;
                 }
@@ -142,15 +155,16 @@ async function fetchVietQrAsBase64(qrUrl) {
             const reader = new FileReader();
             reader.onloadend = () => {
                 const res = reader.result;
+                qrImageCache[normalizedUrl] = res;
                 qrImageCache[qrUrl] = res;
                 resolve(res);
             };
-            reader.onerror = () => resolve(qrUrl);
+            reader.onerror = () => resolve(normalizedUrl);
             reader.readAsDataURL(blob);
         });
     } catch (err) {
         console.warn('Lỗi fetch VietQR sang Base64:', err);
-        return qrUrl; // Fallback URL gốc nếu lỗi mạng
+        return normalizedUrl; // Fallback URL gốc nếu lỗi mạng
     }
 }
 
@@ -2245,7 +2259,7 @@ async function captureAndShowReceiptPopup() {
 
         let targetQrUrl = '';
         if (selectedBank && selectedBank.qrString) {
-            targetQrUrl = `https://img.vietqr.io/image/${selectedBank.qrString}-compact.png?amount=${finalTotalNum}&addInfo=SEVQR%20${cleanInvoiceId}&accountName=${encodeURIComponent(selectedBank.accName || '')}`;
+            targetQrUrl = `https://img.vietqr.io/image/${selectedBank.qrString}-compact.svg?amount=${finalTotalNum}&addInfo=SEVQR%20${cleanInvoiceId}&accountName=${encodeURIComponent(selectedBank.accName || '')}`;
         }
 
         if (qrImg) {
@@ -2685,7 +2699,7 @@ function updatePaymentInfo(finalTotal, isVatChecked) {
         // Chuẩn hóa mã phiếu: Xóa dấu gạch ngang (VD: HBA-20260320-1966 -> HBA202603201966)
         // Thêm tiền tố SEVQR để Vietinbank đẩy thông báo cho SePay
         const cleanInvoiceId = (currentInvoiceId || '').replace(/-/g, '');
-        const rawUrl = `https://img.vietqr.io/image/${selectedBank.qrString}-compact.png?amount=${finalTotal}&addInfo=SEVQR%20${cleanInvoiceId}&accountName=${encodeURIComponent(selectedBank.accName || '')}`;
+        const rawUrl = `https://img.vietqr.io/image/${selectedBank.qrString}-compact.svg?amount=${finalTotal}&addInfo=SEVQR%20${cleanInvoiceId}&accountName=${encodeURIComponent(selectedBank.accName || '')}`;
         
         const reqId = ++currentQrRequestId;
         
@@ -2693,17 +2707,20 @@ function updatePaymentInfo(finalTotal, isVatChecked) {
             if (qrImageEl) {
                 qrImageEl.crossOrigin = 'anonymous';
                 qrImageEl.src = qrImageCache[rawUrl];
+                qrImageEl.dataset.qrTarget = rawUrl;
             }
         } else {
             if (qrImageEl) {
                 qrImageEl.crossOrigin = 'anonymous';
                 qrImageEl.src = rawUrl;
+                qrImageEl.dataset.qrTarget = rawUrl;
             }
             // Tải ảnh VietQR và trích xuất Base64 PNG để hỗ trợ in / chụp ảnh html2canvas
             fetchVietQrAsBase64(rawUrl).then(base64Data => {
                 if (reqId === currentQrRequestId && qrImageEl && base64Data) {
                     qrImageEl.crossOrigin = 'anonymous';
                     qrImageEl.src = base64Data;
+                    qrImageEl.dataset.qrTarget = rawUrl;
                 }
             }).catch(e => {
                 console.warn("Lỗi chuyển đổi ảnh QR sang Base64:", e);
@@ -3864,7 +3881,7 @@ function viewReceipt(dataStrEncoded) {
         const bankChoice = (data.bankType === 'company') ? (siteSettings.bankCompany || {}) : (siteSettings.bankPersonal || {});
         if (bankChoice && bankChoice.qrString) {
             const cleanId = (data.id || data.docId || '').replace(/-/g, '');
-            modalQrUrl = `https://img.vietqr.io/image/${bankChoice.qrString}-compact.png?amount=${remainingToPay}&addInfo=SEVQR%20${cleanId}&accountName=${encodeURIComponent(bankChoice.accName || '')}`;
+            modalQrUrl = `https://img.vietqr.io/image/${bankChoice.qrString}-compact.svg?amount=${remainingToPay}&addInfo=SEVQR%20${cleanId}&accountName=${encodeURIComponent(bankChoice.accName || '')}`;
             
             modalQrSectionHtml = `
                 <div class="mt-4 p-4 bg-gradient-to-br from-indigo-50/80 to-blue-50/80 border border-indigo-200 rounded-xl shadow-xs">
@@ -4101,6 +4118,7 @@ async function printReceipt(data) {
     }
     if (document.getElementById('vat-amount')) document.getElementById('vat-amount').textContent = formatVND(vatAmount);
     if (document.getElementById('final-total')) document.getElementById('final-total').textContent = formatVND(data.totalAmount || 0);
+    updatePaymentInfo(data.totalAmount || 0, vatAmount > 0);
     
     // Nếu đã thanh toán, thêm dòng trạng thái ĐÃ THANH TOÁN
     if (isPaid) {
@@ -4109,10 +4127,10 @@ async function printReceipt(data) {
 
     // Đảm bảo ảnh QR đã tải xong Base64 trước khi in
     const qrImg = document.getElementById('qr-image');
-    if (qrImg && qrImg.src && !qrImg.src.startsWith('data:image/')) {
+    if (qrImg && qrImg.src && !qrImg.src.startsWith('data:image/png;base64,')) {
         try {
             const b64 = await fetchVietQrAsBase64(qrImg.src);
-            if (b64 && b64.startsWith('data:image/')) {
+            if (b64 && b64.startsWith('data:image/png;base64,')) {
                 qrImg.src = b64;
             }
         } catch(e) {}
@@ -4205,6 +4223,7 @@ async function printAndShareReceipt(data) {
     }
     if (document.getElementById('vat-amount')) document.getElementById('vat-amount').textContent = formatVND(vatAmount);
     if (document.getElementById('final-total')) document.getElementById('final-total').textContent = formatVND(data.totalAmount || 0);
+    updatePaymentInfo(data.totalAmount || 0, vatAmount > 0);
     
     if (isPaid && document.getElementById('print-note')) {
         document.getElementById('print-note').textContent = (data.note ? data.note + ' | ' : '') + '✅ ĐÃ THANH TOÁN';

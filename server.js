@@ -1,4 +1,4 @@
-﻿/**
+/**
  * server.js - Express Server cho du an Quan ly Thue San
  * Chay tren VPS, thay the Netlify Functions
  *
@@ -157,13 +157,36 @@ app.post('/api/sepay-webhook', async (req, res) => {
     }
 });
 
-// ── 3. HEALTH CHECK ──────────────────────────────────────────────────────────
+// ── 3. HEALTH CHECK & VIETQR PROXY ───────────────────────────────────────────
 app.get('/health', (req, res) => {
     res.status(200).json({
         status:  'ok',
         project: 'thue-san-hba',
         time:    new Date().toISOString()
     });
+});
+
+app.get('/api/vietqr', async (req, res) => {
+    try {
+        const targetUrl = String(req.query.url || '');
+        if (!targetUrl.startsWith('https://img.vietqr.io/')) {
+            return res.status(400).send('Invalid QR URL');
+        }
+        const normalized = targetUrl.replace(/-compact\.png\b/g, '-compact.svg');
+        const upstream = await fetch(normalized);
+        if (!upstream.ok) {
+            return res.status(upstream.status).send('Upstream error');
+        }
+        const contentType = upstream.headers.get('content-type') || 'image/svg+xml; charset=utf-8';
+        const buf = Buffer.from(await upstream.arrayBuffer());
+        res.setHeader('Content-Type', contentType);
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Cache-Control', 'public, max-age=86400');
+        return res.status(200).send(buf);
+    } catch (err) {
+        console.error('VietQR Proxy Error:', err.message);
+        return res.status(500).send('Proxy error');
+    }
 });
 
 // ── 4. PHUC VU FILE TINH (HTML / CSS / JS) ───────────────────────────────────
