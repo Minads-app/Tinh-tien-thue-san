@@ -16,13 +16,13 @@ function removeVietnameseTones(str) {
 }
 
 let siteSettings = {
-    venueName: '',
-    venueSub: '',
+    venueName: 'SÂN THỂ THAO HBA',
+    venueSub: 'HỆ THỐNG SÂN CHUYÊN NGHIỆP',
     venueAddress: '',
     operatingStart: 6,
     operatingEnd: 22,
-    bankPersonal: { name: '', accName: '', accNum: '', qrString: '' },
-    bankCompany: { name: '', accName: '', accNum: '', qrString: '' }
+    bankPersonal: { name: 'BIDV', accName: 'NGUYEN THI THU TRANG', accNum: '962471HC26', qrString: '970418-962471HC26' },
+    bankCompany: { name: 'ACB', accName: 'CONG TY TNHH DANG TIEN', accNum: '80808668', qrString: '970416-80808668' }
 };
 
 // Nạp cache cấu hình từ localStorage để có thông tin ngân hàng & QR ngay lập tức
@@ -40,11 +40,81 @@ const qrImageCache = {};
 let currentQrRequestId = 0;
 
 /**
- * Tải ảnh VietQR và trích xuất Base64 PNG thực sự (VietQR bọc ảnh PNG trong SVG)
- * Giúp html2canvas và window.print luôn hiển thị mã QR 100% không bị trắng
+ * Chuyển đổi toàn bộ nội dung SVG (bao gồm cả khung hình nền, các đường vector QR path và logo)
+ * thành ảnh PNG Base64 Data URL sắc nét qua Canvas HTML5.
+ */
+function svgToPngBase64(svgText) {
+    return new Promise((resolve, reject) => {
+        try {
+            let blobUrl = '';
+            let isBlob = false;
+            try {
+                const blob = new Blob([svgText], { type: 'image/svg+xml;charset=utf-8' });
+                blobUrl = URL.createObjectURL(blob);
+                isBlob = true;
+            } catch (bErr) {
+                blobUrl = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgText);
+            }
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            img.onload = () => {
+                try {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = 540;
+                    canvas.height = 540;
+                    const ctx = canvas.getContext('2d');
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillRect(0, 0, 540, 540);
+                    ctx.drawImage(img, 0, 0, 540, 540);
+                    if (isBlob && blobUrl) URL.revokeObjectURL(blobUrl);
+                    resolve(canvas.toDataURL('image/png'));
+                } catch (err) {
+                    if (isBlob && blobUrl) URL.revokeObjectURL(blobUrl);
+                    reject(err);
+                }
+            };
+            img.onerror = (e) => {
+                if (isBlob && blobUrl) URL.revokeObjectURL(blobUrl);
+                if (isBlob) {
+                    const fallbackImg = new Image();
+                    fallbackImg.crossOrigin = 'anonymous';
+                    fallbackImg.onload = () => {
+                        try {
+                            const canvas = document.createElement('canvas');
+                            canvas.width = 540;
+                            canvas.height = 540;
+                            const ctx = canvas.getContext('2d');
+                            ctx.fillStyle = '#ffffff';
+                            ctx.fillRect(0, 0, 540, 540);
+                            ctx.drawImage(fallbackImg, 0, 0, 540, 540);
+                            resolve(canvas.toDataURL('image/png'));
+                        } catch (err2) {
+                            reject(err2);
+                        }
+                    };
+                    fallbackImg.onerror = reject;
+                    fallbackImg.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgText);
+                } else {
+                    reject(e);
+                }
+            };
+            img.src = blobUrl;
+        } catch (e) {
+            reject(e);
+        }
+    });
+}
+
+/**
+ * Tải ảnh VietQR và chuyển đổi toàn diện sang Base64 PNG thực sự
+ * Đảm bảo bao gồm cả các đường vector QR code (thẻ path) và khung viền template
+ * Giúp html2canvas và window.print luôn hiển thị mã QR 100% đầy đủ
  */
 async function fetchVietQrAsBase64(qrUrl) {
     if (!qrUrl) return '';
+    if (qrUrl.startsWith('data:image/png;base64,')) {
+        return qrUrl;
+    }
     if (qrImageCache[qrUrl]) {
         return qrImageCache[qrUrl];
     }
@@ -55,11 +125,14 @@ async function fetchVietQrAsBase64(qrUrl) {
         const contentType = response.headers.get('content-type') || '';
         if (contentType.includes('svg') || contentType.includes('xml')) {
             const svgText = await response.text();
-            // VietQR nhúng ảnh PNG dưới dạng Base64 bên trong thẻ <image href="data:image/png;base64,...">
-            const match = svgText.match(/href="(data:image\/png;base64,[^"]+)"/);
-            if (match && match[1]) {
-                qrImageCache[qrUrl] = match[1];
-                return match[1];
+            try {
+                const pngDataUrl = await svgToPngBase64(svgText);
+                if (pngDataUrl && pngDataUrl.length > 1000) {
+                    qrImageCache[qrUrl] = pngDataUrl;
+                    return pngDataUrl;
+                }
+            } catch (svgErr) {
+                console.warn('Lỗi rasterize SVG sang Canvas:', svgErr);
             }
         }
         
@@ -2162,16 +2235,34 @@ async function captureAndShowReceiptPopup() {
     }
 
     try {
-        // Đảm bảo QR image đã được chuyển sang Base64 PNG trước khi chụp html2canvas
+        // Đảm bảo mã QR luôn được tính toán và chuyển đổi sang Base64 PNG hoàn chỉnh trước khi chụp html2canvas
         const qrImg = document.getElementById('qr-image');
-        if (qrImg && qrImg.src && !qrImg.src.startsWith('data:image/')) {
-            try {
-                const b64 = await fetchVietQrAsBase64(qrImg.src);
-                if (b64 && b64.startsWith('data:image/')) {
-                    qrImg.src = b64;
+        const bankChoice = document.querySelector('input[name="bank-select"]:checked')?.value || 'personal';
+        const selectedBank = (bankChoice === 'company') ? (siteSettings.bankCompany || {}) : (siteSettings.bankPersonal || {});
+        const finalTotalStr = document.getElementById('final-total')?.textContent?.replace(/[^0-9]/g, '') || '0';
+        const finalTotalNum = parseInt(finalTotalStr) || 0;
+        const cleanInvoiceId = (currentInvoiceId || '').replace(/-/g, '');
+
+        let targetQrUrl = '';
+        if (selectedBank && selectedBank.qrString) {
+            targetQrUrl = `https://img.vietqr.io/image/${selectedBank.qrString}-compact.png?amount=${finalTotalNum}&addInfo=SEVQR%20${cleanInvoiceId}&accountName=${encodeURIComponent(selectedBank.accName || '')}`;
+        }
+
+        if (qrImg) {
+            qrImg.crossOrigin = 'anonymous';
+            const currentSrc = qrImg.src || '';
+            const needsFetch = !currentSrc.startsWith('data:image/png;base64,') || (targetQrUrl && qrImg.dataset.qrTarget !== targetQrUrl);
+            const urlToFetch = targetQrUrl || currentSrc;
+            if (needsFetch && urlToFetch) {
+                try {
+                    const b64 = await fetchVietQrAsBase64(urlToFetch);
+                    if (b64 && b64.startsWith('data:image/png;base64,')) {
+                        qrImg.src = b64;
+                        qrImg.dataset.qrTarget = targetQrUrl;
+                    }
+                } catch (e) {
+                    console.warn("Lỗi tiền xử lý Base64 cho QR code trước khi chụp:", e);
                 }
-            } catch (e) {
-                console.warn("Lỗi tiền xử lý Base64 cho QR code trước khi chụp:", e);
             }
         }
 
@@ -2219,6 +2310,8 @@ async function captureAndShowReceiptPopup() {
                     clonedQrImg.src = qrImg.src;
                     clonedQrImg.style.display = 'block';
                     clonedQrImg.style.visibility = 'visible';
+                    clonedQrImg.style.width = '192px';
+                    clonedQrImg.style.height = '192px';
                 }
                 // Hiện các phần tử print-only trong bản clone
                 clonedDoc.querySelectorAll('.print-only').forEach(el => {
@@ -3968,8 +4061,11 @@ async function printReceipt(data) {
     if (document.getElementById('display-tax-address')) document.getElementById('display-tax-address').textContent = data.taxAddress ? `Đ/C: ${data.taxAddress}` : '';
     document.getElementById('display-gender').textContent = '';
     
-    // Set hình thức thanh toán
+    // Set hình thức thanh toán & tài khoản ngân hàng phù hợp
     document.getElementById('print-pay-method').textContent = data.paymentMethod || 'Tiền mặt';
+    const targetBank = (data.bankType === 'company') ? 'company' : 'personal';
+    const bankRadio = document.querySelector(`input[name="bank-select"][value="${targetBank}"]`);
+    if (bankRadio) bankRadio.checked = true;
     
     // Set ghi chú
     document.getElementById('print-note').textContent = data.note || '';
@@ -4078,6 +4174,9 @@ async function printAndShareReceipt(data) {
     if (document.getElementById('display-gender')) document.getElementById('display-gender').textContent = '';
     
     if (document.getElementById('print-pay-method')) document.getElementById('print-pay-method').textContent = data.paymentMethod || 'Tiền mặt';
+    const targetBank = (data.bankType === 'company') ? 'company' : 'personal';
+    const bankRadio = document.querySelector(`input[name="bank-select"][value="${targetBank}"]`);
+    if (bankRadio) bankRadio.checked = true;
     if (document.getElementById('print-note')) document.getElementById('print-note').textContent = data.note || '';
     
     billItems = (data.items || []).map((item, idx) => ({
