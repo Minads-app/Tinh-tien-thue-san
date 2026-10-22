@@ -25,6 +25,62 @@ let siteSettings = {
     bankCompany: { name: '', accName: '', accNum: '', qrString: '' }
 };
 
+// Nạp cache cấu hình từ localStorage để có thông tin ngân hàng & QR ngay lập tức
+try {
+    const cachedSettings = localStorage.getItem('hba_site_settings');
+    if (cachedSettings) {
+        siteSettings = Object.assign(siteSettings, JSON.parse(cachedSettings));
+    }
+} catch (e) {
+    console.warn("Lỗi đọc cache cài đặt:", e);
+}
+
+// Bộ nhớ đệm ảnh QR Base64 PNG để phục vụ in & chụp hình html2canvas không bị lỗi CORS/SVG
+const qrImageCache = {};
+let currentQrRequestId = 0;
+
+/**
+ * Tải ảnh VietQR và trích xuất Base64 PNG thực sự (VietQR bọc ảnh PNG trong SVG)
+ * Giúp html2canvas và window.print luôn hiển thị mã QR 100% không bị trắng
+ */
+async function fetchVietQrAsBase64(qrUrl) {
+    if (!qrUrl) return '';
+    if (qrImageCache[qrUrl]) {
+        return qrImageCache[qrUrl];
+    }
+    try {
+        const response = await fetch(qrUrl);
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        
+        const contentType = response.headers.get('content-type') || '';
+        if (contentType.includes('svg') || contentType.includes('xml')) {
+            const svgText = await response.text();
+            // VietQR nhúng ảnh PNG dưới dạng Base64 bên trong thẻ <image href="data:image/png;base64,...">
+            const match = svgText.match(/href="(data:image\/png;base64,[^"]+)"/);
+            if (match && match[1]) {
+                qrImageCache[qrUrl] = match[1];
+                return match[1];
+            }
+        }
+        
+        // Trường hợp file ảnh nhị phân trực tiếp
+        const blob = await response.blob();
+        return await new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                const res = reader.result;
+                qrImageCache[qrUrl] = res;
+                resolve(res);
+            };
+            reader.onerror = () => resolve(qrUrl);
+            reader.readAsDataURL(blob);
+        });
+    } catch (err) {
+        console.warn('Lỗi fetch VietQR sang Base64:', err);
+        return qrUrl; // Fallback URL gốc nếu lỗi mạng
+    }
+}
+
 const COURT_MAP = {
     'Hồ bơi': ['Hồ bơi'],
     'Bóng đá': ['Sân bóng đá'],
@@ -2106,8 +2162,20 @@ async function captureAndShowReceiptPopup() {
     }
 
     try {
-        // Chờ QR image load xong (nếu có)
+        // Đảm bảo QR image đã được chuyển sang Base64 PNG trước khi chụp html2canvas
         const qrImg = document.getElementById('qr-image');
+        if (qrImg && qrImg.src && !qrImg.src.startsWith('data:image/')) {
+            try {
+                const b64 = await fetchVietQrAsBase64(qrImg.src);
+                if (b64 && b64.startsWith('data:image/')) {
+                    qrImg.src = b64;
+                }
+            } catch (e) {
+                console.warn("Lỗi tiền xử lý Base64 cho QR code trước khi chụp:", e);
+            }
+        }
+
+        // Chờ QR image load xong (nếu có)
         if (qrImg && qrImg.src && !qrImg.complete) {
             await new Promise((resolve) => {
                 qrImg.onload = resolve;
@@ -2138,6 +2206,19 @@ async function captureAndShowReceiptPopup() {
                 if (clonedInvoice) {
                     clonedInvoice.style.display = 'flex';
                     clonedInvoice.style.visibility = 'visible';
+                }
+                // Đảm bảo khối QR hiển thị đầy đủ trên bản clone
+                const clonedQrSection = clonedDoc.getElementById('qr-section');
+                if (clonedQrSection) {
+                    clonedQrSection.style.display = 'block';
+                    clonedQrSection.style.visibility = 'visible';
+                    clonedQrSection.style.opacity = '1';
+                }
+                const clonedQrImg = clonedDoc.getElementById('qr-image');
+                if (clonedQrImg && qrImg && qrImg.src) {
+                    clonedQrImg.src = qrImg.src;
+                    clonedQrImg.style.display = 'block';
+                    clonedQrImg.style.visibility = 'visible';
                 }
                 // Hiện các phần tử print-only trong bản clone
                 clonedDoc.querySelectorAll('.print-only').forEach(el => {
@@ -2474,9 +2555,11 @@ function updatePaymentInfo(finalTotal, isVatChecked) {
     let selectedBank;
     const bankInfoEl = document.getElementById('bank-info-display');
     if(bankType === 'company') {
-        selectedBank = siteSettings.bankCompany;
-        qrSection.classList.remove('bg-indigo-50', 'border-indigo-200');
-        qrSection.classList.add('bg-blue-50', 'border-blue-300');
+        selectedBank = siteSettings.bankCompany || {};
+        if(qrSection) {
+            qrSection.classList.remove('bg-indigo-50', 'border-indigo-200');
+            qrSection.classList.add('bg-blue-50', 'border-blue-300');
+        }
         if(printBankType) printBankType.textContent = 'TK Công ty';
         // Hiển thị thông tin TK Công ty
         if(bankInfoEl) {
@@ -2489,9 +2572,11 @@ function updatePaymentInfo(finalTotal, isVatChecked) {
                 </div>`;
         }
     } else {
-        selectedBank = siteSettings.bankPersonal;
-        qrSection.classList.add('bg-indigo-50', 'border-indigo-200');
-        qrSection.classList.remove('bg-blue-50', 'border-blue-300');
+        selectedBank = siteSettings.bankPersonal || {};
+        if(qrSection) {
+            qrSection.classList.add('bg-indigo-50', 'border-indigo-200');
+            qrSection.classList.remove('bg-blue-50', 'border-blue-300');
+        }
         if(printBankType) printBankType.textContent = 'TK Cá nhân';
         if(bankInfoEl) {
             bankInfoEl.classList.add('hidden');
@@ -2499,17 +2584,40 @@ function updatePaymentInfo(finalTotal, isVatChecked) {
         }
     }
 
-    bankNameEl.textContent = selectedBank.name || '---';
-    accNameEl.textContent = selectedBank.accName || '---';
-    accNumEl.textContent = selectedBank.accNum || '---';
-    if(selectedBank.qrString) {
+    if(bankNameEl) bankNameEl.textContent = selectedBank.name || '---';
+    if(accNameEl) accNameEl.textContent = selectedBank.accName || '---';
+    if(accNumEl) accNumEl.textContent = selectedBank.accNum || '---';
+
+    if(selectedBank && selectedBank.qrString) {
         // Chuẩn hóa mã phiếu: Xóa dấu gạch ngang (VD: HBA-20260320-1966 -> HBA202603201966)
         // Thêm tiền tố SEVQR để Vietinbank đẩy thông báo cho SePay
-        const cleanInvoiceId = currentInvoiceId.replace(/-/g, '');
-        qrImageEl.crossOrigin = 'anonymous';
-        qrImageEl.src = `https://img.vietqr.io/image/${selectedBank.qrString}-compact.png?amount=${finalTotal}&addInfo=SEVQR%20${cleanInvoiceId}&accountName=${encodeURIComponent(selectedBank.accName || '')}`;
+        const cleanInvoiceId = (currentInvoiceId || '').replace(/-/g, '');
+        const rawUrl = `https://img.vietqr.io/image/${selectedBank.qrString}-compact.png?amount=${finalTotal}&addInfo=SEVQR%20${cleanInvoiceId}&accountName=${encodeURIComponent(selectedBank.accName || '')}`;
+        
+        const reqId = ++currentQrRequestId;
+        
+        if (qrImageCache[rawUrl]) {
+            if (qrImageEl) {
+                qrImageEl.crossOrigin = 'anonymous';
+                qrImageEl.src = qrImageCache[rawUrl];
+            }
+        } else {
+            if (qrImageEl) {
+                qrImageEl.crossOrigin = 'anonymous';
+                qrImageEl.src = rawUrl;
+            }
+            // Tải ảnh VietQR và trích xuất Base64 PNG để hỗ trợ in / chụp ảnh html2canvas
+            fetchVietQrAsBase64(rawUrl).then(base64Data => {
+                if (reqId === currentQrRequestId && qrImageEl && base64Data) {
+                    qrImageEl.crossOrigin = 'anonymous';
+                    qrImageEl.src = base64Data;
+                }
+            }).catch(e => {
+                console.warn("Lỗi chuyển đổi ảnh QR sang Base64:", e);
+            });
+        }
     } else {
-        qrImageEl.src = '';
+        if(qrImageEl) qrImageEl.src = '';
     }
 }
 
@@ -3463,6 +3571,9 @@ async function fetchSettings() {
                 siteSettings.operatingEnd = d.operatingEnd !== undefined ? d.operatingEnd : 22;
                 siteSettings.bankPersonal = d.bankPersonal || { name: '', accName: '', accNum: '', qrString: '' };
                 siteSettings.bankCompany = d.bankCompany || { name: '', accName: '', accNum: '', qrString: '' };
+                try {
+                    localStorage.setItem('hba_site_settings', JSON.stringify(siteSettings));
+                } catch(e) {}
                 applySettingsToUI();
                 populateSettingsForm();
             }
@@ -3519,6 +3630,9 @@ async function saveSettings() {
     try {
         Swal.fire({ title: 'Đang lưu...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
         await db.collection('config').doc('settings').set(siteSettings);
+        try {
+            localStorage.setItem('hba_site_settings', JSON.stringify(siteSettings));
+        } catch(e) {}
         applySettingsToUI();
         Swal.fire({ icon: 'success', title: 'Đã lưu cài đặt thành công!', text: 'Thông tin sân và tài khoản đã được cập nhật.', timer: 2000, showConfirmButton: false });
     } catch (e) {
@@ -3648,6 +3762,39 @@ function viewReceipt(dataStrEncoded) {
         `;
     }
 
+    // Tạo phần QR thanh toán trực tiếp trong modal chi tiết phiếu nếu phiếu chưa thanh toán hoặc còn nợ
+    let modalQrSectionHtml = '';
+    let modalQrUrl = '';
+    const remainingToPay = data.remainingAmount !== undefined ? data.remainingAmount : (status === 'paid' ? 0 : (data.totalAmount || 0));
+    
+    if (status !== 'paid' && remainingToPay > 0) {
+        const bankChoice = (data.bankType === 'company') ? (siteSettings.bankCompany || {}) : (siteSettings.bankPersonal || {});
+        if (bankChoice && bankChoice.qrString) {
+            const cleanId = (data.id || data.docId || '').replace(/-/g, '');
+            modalQrUrl = `https://img.vietqr.io/image/${bankChoice.qrString}-compact.png?amount=${remainingToPay}&addInfo=SEVQR%20${cleanId}&accountName=${encodeURIComponent(bankChoice.accName || '')}`;
+            
+            modalQrSectionHtml = `
+                <div class="mt-4 p-4 bg-gradient-to-br from-indigo-50/80 to-blue-50/80 border border-indigo-200 rounded-xl shadow-xs">
+                    <div class="flex flex-col sm:flex-row items-center gap-4">
+                        <div class="bg-white p-2 rounded-lg shadow-xs border border-indigo-100 flex-shrink-0">
+                            <img id="rm-qr-image" src="${modalQrUrl}" alt="Mã QR thanh toán" class="w-36 h-36 object-contain rounded" crossorigin="anonymous">
+                        </div>
+                        <div class="flex-grow text-center sm:text-left space-y-1">
+                            <div class="inline-flex items-center gap-1.5 px-2.5 py-1 bg-indigo-600 text-white rounded-lg text-xs font-bold uppercase tracking-wider mb-1">
+                                <i class="fa-solid fa-qrcode"></i> Quét mã QR thanh toán
+                            </div>
+                            <p class="text-sm text-gray-700">Ngân hàng: <b class="text-indigo-800 font-bold">${bankChoice.name || '---'}</b></p>
+                            <p class="text-sm text-gray-700">Số tài khoản: <b class="font-mono text-indigo-700 font-bold text-base">${bankChoice.accNum || '---'}</b></p>
+                            <p class="text-sm text-gray-700">Chủ tài khoản: <b class="font-bold text-gray-800">${bankChoice.accName || '---'}</b></p>
+                            <p class="text-xs text-gray-500 pt-0.5">Nội dung CK: <b class="font-mono text-indigo-900 bg-indigo-100/70 px-1.5 py-0.5 rounded">SEVQR ${cleanId}</b></p>
+                            <p class="text-xs font-bold text-emerald-700 mt-1">Số tiền cần quét: <span class="text-sm font-black text-red-600">${formatVND(remainingToPay)}</span></p>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+    }
+
     const html = `
         ${statusBannerHtml}
         ${mainProofHtml}
@@ -3677,9 +3824,18 @@ function viewReceipt(dataStrEncoded) {
             <p class="text-sm font-bold text-green-700">Đã thanh toán: ${formatVND(data.paidAmount !== undefined ? data.paidAmount : (status==='paid' ? data.totalAmount : 0))}</p>
             <p class="text-sm font-bold ${data.remainingAmount > 0 ? "text-red-600" : (data.remainingAmount < 0 ? "text-purple-600" : "text-gray-600")}">Còn nợ: ${formatVND(data.remainingAmount !== undefined ? data.remainingAmount : (status==='paid' ? 0 : (data.totalAmount||0)))}</p>
         </div>
+        ${modalQrSectionHtml}
     `;
 
     document.getElementById('rm-content').innerHTML = html;
+
+    // Chuyển mã QR trong modal sang Base64 nếu có
+    if (status !== 'paid' && modalQrUrl) {
+        fetchVietQrAsBase64(modalQrUrl).then(b64 => {
+            const el = document.getElementById('rm-qr-image');
+            if (el && b64) el.src = b64;
+        }).catch(() => {});
+    }
 
     const historyTableBody = document.getElementById('payment-history-table');
     const historyEmpty = document.getElementById('payment-history-empty');
@@ -3778,7 +3934,7 @@ function closeReceiptModal() {
     document.getElementById('receipt-modal').classList.add('hidden');
 }
 
-function printReceipt(data) {
+async function printReceipt(data) {
     const status = data.status || 'paid';
     const isPaid = (status === 'paid');
     const docTitle = isPaid ? 'HÓA ĐƠN' : 'PHIẾU THANH TOÁN';
@@ -3853,6 +4009,20 @@ function printReceipt(data) {
     // Nếu đã thanh toán, thêm dòng trạng thái ĐÃ THANH TOÁN
     if (isPaid) {
         document.getElementById('print-note').textContent = (data.note ? data.note + ' | ' : '') + '✅ ĐÃ THANH TOÁN';
+    }
+
+    // Đảm bảo ảnh QR đã tải xong Base64 trước khi in
+    const qrImg = document.getElementById('qr-image');
+    if (qrImg && qrImg.src && !qrImg.src.startsWith('data:image/')) {
+        try {
+            const b64 = await fetchVietQrAsBase64(qrImg.src);
+            if (b64 && b64.startsWith('data:image/')) {
+                qrImg.src = b64;
+            }
+        } catch(e) {}
+    }
+    if (qrImg && qrImg.src && !qrImg.complete) {
+        await new Promise(r => { qrImg.onload = r; qrImg.onerror = r; setTimeout(r, 1500); });
     }
     
     // Đóng modal, chờ render xong rồi in

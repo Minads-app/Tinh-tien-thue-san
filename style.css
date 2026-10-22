@@ -74,6 +74,19 @@ body {
         display: none !important;
     }
 
+    /* Đảm bảo khối QR hiển thị đầy đủ và rõ ràng khi in */
+    #qr-section {
+        display: block !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+    }
+    #qr-image {
+        display: block !important;
+        visibility: visible !important;
+        max-width: 192px !important;
+        height: auto !important;
+    }
+
     /* Reset background và margin để in full trang A4/A5 */
     body, #invoice-area { 
         background-color: white !important; 
